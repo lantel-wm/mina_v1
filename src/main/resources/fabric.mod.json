@@ -1,0 +1,27 @@
+{
+	"schemaVersion": 1,
+	"id": "mina",
+	"version": "${version}",
+	"name": "mina",
+	"description": "A Fabric mod for Minecraft 1.21.11.",
+	"authors": [
+		"mina developers"
+	],
+	"contact": {},
+	"license": "CC0-1.0",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.mina.MinaMod"
+		],
+		"client": [
+			"com.mina.client.MinaClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.2",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
