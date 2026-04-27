@@ -23,6 +23,15 @@ loom {
 			sourceSet sourceSets.client
 		}
 	}
+
+	runs {
+		e2eServer {
+			inherit server
+			name "Mina E2E Server"
+			vmArg "-Dmina.testHarness=true"
+			runDir "build/e2e/server"
+		}
+	}
 }
 
 dependencies {

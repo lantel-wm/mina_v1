@@ -1,7 +1,6 @@
 package com.mina.game;
 
 import com.google.gson.JsonObject;
-import com.mina.MinaMod;
 import com.mina.config.MinaConfig;
 import com.mina.net.SidecarClient;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -11,26 +10,20 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 
 public final class MinaCommands {
 	private final MinaConfig config;
 	private final SidecarClient sidecarClient;
-	private final MinaSnapshotter snapshotter;
 	private final MinaActionExecutor actionExecutor;
-	private final Map<UUID, CompletableFuture<JsonObject>> activeTurns = new ConcurrentHashMap<>();
+	private final MinaTurnController turnController;
 
-	public MinaCommands(MinaConfig config, SidecarClient sidecarClient, MinaSnapshotter snapshotter, MinaActionExecutor actionExecutor) {
+	public MinaCommands(MinaConfig config, SidecarClient sidecarClient, MinaActionExecutor actionExecutor, MinaTurnController turnController) {
 		this.config = config;
 		this.sidecarClient = sidecarClient;
-		this.snapshotter = snapshotter;
 		this.actionExecutor = actionExecutor;
+		this.turnController = turnController;
 	}
 
 	public void register() {
@@ -66,32 +59,7 @@ public final class MinaCommands {
 			return 0;
 		}
 
-		MinecraftServer server = source.getServer();
-		UUID playerId = player.getUUID();
-		CompletableFuture<JsonObject> previous = activeTurns.remove(playerId);
-		if (previous != null) {
-			previous.cancel(true);
-		}
-
-		String requestId = UUID.randomUUID().toString();
-		JsonObject payload = snapshotter.createTurnPayload(server, player, config, "command", content, requestId);
-		MinaMod.LOGGER.info("mina turn start requestId={} player={} content={}", requestId, player.getGameProfile().name(), content);
-		player.sendSystemMessage(Component.literal("[Mina] thinking..."));
-		CompletableFuture<JsonObject> future = sidecarClient.turn(config, payload);
-		activeTurns.put(playerId, future);
-		future.whenComplete((response, throwable) -> {
-			activeTurns.remove(playerId, future);
-			server.executeIfPossible(() -> {
-				if (throwable != null) {
-					MinaMod.LOGGER.warn("Mina sidecar turn failed", throwable);
-					player.sendSystemMessage(Component.literal("[Mina] sidecar request failed: " + rootMessage(throwable)));
-					return;
-				}
-				MinaMod.LOGGER.info("mina turn response requestId={} response={}", requestId, response);
-				actionExecutor.executeResponse(server, player, config, response);
-			});
-		});
-		return 1;
+			return turnController.submitPlayerTurn(source.getServer(), player, "command", content, true);
 	}
 
 	private int status(CommandSourceStack source) {
@@ -142,8 +110,7 @@ public final class MinaCommands {
 		ServerPlayer player = source.getPlayer();
 		return player != null && source.getServer().getPlayerList().isOp(player.nameAndId());
 	}
-
-	private static String rootMessage(Throwable throwable) {
+	static String rootMessage(Throwable throwable) {
 		Throwable current = throwable;
 		while (current.getCause() != null) {
 			current = current.getCause();

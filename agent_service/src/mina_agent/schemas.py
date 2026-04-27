@@ -11,6 +11,7 @@ JsonDict = dict[str, Any]
 class ToolResult:
     content: str
     action: JsonDict | None = None
+    actions: list[JsonDict] = field(default_factory=list)
 
 
 @dataclass
@@ -27,4 +28,3 @@ class TurnResponse:
         if self.debug:
             data["debug"] = self.debug
         return data
-

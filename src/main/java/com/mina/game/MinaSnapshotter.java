@@ -17,6 +17,8 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
@@ -53,7 +55,7 @@ public final class MinaSnapshotter {
 		snapshot.add("world_state", worldState(server, level, player));
 		snapshot.add("inventory", inventory(player, config));
 		snapshot.add("nearby_entities", nearbyEntities(level, player, config));
-		snapshot.add("nearby_blocks", nearbyBlocks(level, player));
+		snapshot.add("nearby_blocks", nearbyBlocks(server, level, player, config));
 		snapshot.add("environment", environment(level, player));
 		return snapshot;
 	}
@@ -108,9 +110,13 @@ public final class MinaSnapshotter {
 			json.addProperty("x", round(body.getX()));
 			json.addProperty("y", round(body.getY()));
 			json.addProperty("z", round(body.getZ()));
+			json.addProperty("yaw", round(body.getYRot()));
+			json.addProperty("pitch", round(body.getXRot()));
 			json.addProperty("distance_to_requester", round(Math.sqrt(requester.distanceToSqr(body))));
 			json.addProperty("health", body.getHealth());
 			json.addProperty("food", body.getFoodData().getFoodLevel());
+			json.add("selected_item", selectedItem(body));
+			json.add("targeted_block", targetedBlock(body));
 		}
 		return json;
 	}
@@ -206,8 +212,43 @@ public final class MinaSnapshotter {
 		return json;
 	}
 
-	private JsonArray nearbyBlocks(ServerLevel level, ServerPlayer player) {
-		BlockPos center = player.blockPosition();
+	private JsonObject selectedItem(ServerPlayer player) {
+		JsonObject json = new JsonObject();
+		ItemStack stack = player.getInventory().getSelectedItem();
+		if (!stack.isEmpty()) {
+			json.addProperty("slot", player.getInventory().getSelectedSlot());
+			json.addProperty("item", BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+			json.addProperty("count", stack.getCount());
+			json.addProperty("name", stack.getHoverName().getString());
+		}
+		return json;
+	}
+
+	private JsonObject targetedBlock(ServerPlayer player) {
+		JsonObject json = new JsonObject();
+		HitResult hit = player.pick(5.0D, 0.0F, false);
+		if (hit instanceof BlockHitResult blockHit && hit.getType() == HitResult.Type.BLOCK) {
+			BlockPos pos = blockHit.getBlockPos();
+			BlockState state = player.level().getBlockState(pos);
+			json.addProperty("x", pos.getX());
+			json.addProperty("y", pos.getY());
+			json.addProperty("z", pos.getZ());
+			json.addProperty("block", BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+		}
+		return json;
+	}
+
+	private JsonObject nearbyBlocks(MinecraftServer server, ServerLevel level, ServerPlayer player, MinaConfig config) {
+		JsonObject json = new JsonObject();
+		json.add("requester", nearbyBlocksAround(level, player.blockPosition()));
+		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
+		if (body != null && body.level() instanceof ServerLevel bodyLevel) {
+			json.add("body", nearbyBlocksAround(bodyLevel, body.blockPosition()));
+		}
+		return json;
+	}
+
+	private JsonArray nearbyBlocksAround(ServerLevel level, BlockPos center) {
 		int horizontalRadius = 12;
 		int down = 4;
 		int up = 8;

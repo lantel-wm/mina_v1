@@ -69,6 +69,28 @@ class MemoryStore:
                     status text not null,
                     created_at real not null
                 );
+                create table if not exists task_events (
+                    id integer primary key autoincrement,
+                    task_id text not null,
+                    event_type text not null,
+                    payload_json text not null,
+                    created_at real not null
+                );
+                create table if not exists skill_reflections (
+                    id integer primary key autoincrement,
+                    skill_name text not null,
+                    reflection text not null,
+                    payload_json text not null,
+                    created_at real not null
+                );
+                create virtual table if not exists memory_fts using fts5(
+                    kind,
+                    scope_id,
+                    label,
+                    content,
+                    content='',
+                    tokenize='unicode61'
+                );
                 """
             )
 
@@ -92,12 +114,20 @@ class MemoryStore:
                 "insert into conversations(request_id, player_id, role, content, created_at) values(?, ?, ?, ?, ?)",
                 (request_id, player_id, role, content, time.time()),
             )
+            conn.execute(
+                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                ("conversation", player_id, role, content),
+            )
 
     def add_event(self, player_id: str, event_type: str, payload: dict[str, Any], importance: int = 1) -> None:
         with self._connect() as conn:
             conn.execute(
                 "insert into events(player_id, event_type, payload_json, importance, created_at) values(?, ?, ?, ?, ?)",
                 (player_id, event_type, json.dumps(payload, ensure_ascii=False), importance, time.time()),
+            )
+            conn.execute(
+                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                ("event", player_id, event_type, json.dumps(payload, ensure_ascii=False)),
             )
 
     def record_tool_call(
@@ -121,6 +151,57 @@ class MemoryStore:
                 ),
             )
 
+    def record_task_event(self, task_id: str, event_type: str, payload: dict[str, Any]) -> None:
+        content = json.dumps(payload, ensure_ascii=False)
+        with self._connect() as conn:
+            conn.execute(
+                "insert into task_events(task_id, event_type, payload_json, created_at) values(?, ?, ?, ?)",
+                (task_id, event_type, content, time.time()),
+            )
+            conn.execute(
+                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                ("task_event", task_id, event_type, content),
+            )
+
+    def add_skill_reflection(self, skill_name: str, reflection: str, payload: dict[str, Any]) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "insert into skill_reflections(skill_name, reflection, payload_json, created_at) values(?, ?, ?, ?)",
+                (skill_name, reflection, json.dumps(payload, ensure_ascii=False), time.time()),
+            )
+            conn.execute(
+                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                ("skill_reflection", skill_name, skill_name, reflection),
+            )
+
+    def recent_task_events(self, task_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                select task_id, event_type, payload_json, created_at
+                from task_events
+                where task_id = ?
+                order by id desc
+                limit ?
+                """,
+                (task_id, limit),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+    def recent_skill_reflections(self, skill_name: str, limit: int = 6) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                select skill_name, reflection, payload_json, created_at
+                from skill_reflections
+                where skill_name = ?
+                order by id desc
+                limit ?
+                """,
+                (skill_name, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def recent_conversation(self, player_id: str, limit: int = 12) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -137,6 +218,19 @@ class MemoryStore:
     def search(self, player_id: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
         pattern = f"%{query[:80]}%"
         with self._connect() as conn:
+            try:
+                fts_rows = conn.execute(
+                    """
+                    select kind, label, content, bm25(memory_fts) as score
+                    from memory_fts
+                    where memory_fts match ?
+                    order by score
+                    limit ?
+                    """,
+                    (_fts_query(query), limit),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                fts_rows = []
             conversations = conn.execute(
                 """
                 select 'conversation' as kind, role as label, content, created_at
@@ -157,5 +251,12 @@ class MemoryStore:
                 """,
                 (player_id, pattern, limit),
             ).fetchall()
-        return [dict(row) for row in conversations + events][:limit]
+        merged = [dict(row) for row in fts_rows + conversations + events]
+        return merged[:limit]
 
+
+def _fts_query(query: str) -> str:
+    terms = [term.replace('"', "").strip() for term in query.split() if term.strip()]
+    if not terms:
+        return '""'
+    return " OR ".join(f'"{term}"' for term in terms[:8])

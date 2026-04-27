@@ -141,6 +141,14 @@ This verifies:
 - Body tools require action permission.
 - Allowed body tools schedule Fabric actions.
 
+Headless real-game E2E:
+
+```sh
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario chop_tree --sidecar scripted
+```
+
+This starts a scripted sidecar and a dedicated Fabric server in `build/e2e/server`, downloads PuppetPlayers/Fabric Language Kotlin into that runtime if missing, and drives the test-only `/mina-test` commands. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task. The `chop_tree` scenario requires `/mina-test ready` before the request and passes only after the target log is observed as air. The task summary is written to `build/e2e/trace-summary.json`; task/action/result events are written to `build/e2e/trace.jsonl`.
+
 ## Run Sidecar
 
 Create `agent_service/.env` from `agent_service/.env.example`, then set at least:

@@ -15,6 +15,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -23,14 +25,15 @@ public final class MinaActionExecutor {
 	private static final Pattern SELECTOR = Pattern.compile("[A-Za-z0-9_:@\\[\\]=,.!\\-]+");
 	private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9_:.\\-/#]+");
 	private static final double BODY_EYE_HEIGHT = 1.62D;
+	private final ThreadLocal<List<CommandExecution>> commandLog = ThreadLocal.withInitial(ArrayList::new);
 
-	public void executeResponse(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject response) {
+	public JsonArray executeResponse(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject response) {
 		if (response == null) {
-			return;
+			return new JsonArray();
 		}
 		MinaMod.LOGGER.info("mina execute response messages={} actions={}", count(response.getAsJsonArray("messages")), count(response.getAsJsonArray("actions")));
 		sendMessages(server, requester, response.getAsJsonArray("messages"));
-		executeActions(server, requester, config, response.getAsJsonArray("actions"));
+		return executeActions(server, requester, config, response.getAsJsonArray("actions"));
 	}
 
 	public void stopBody(MinecraftServer server, ServerPlayer requester, MinaConfig config) {
@@ -71,9 +74,10 @@ public final class MinaActionExecutor {
 		}
 	}
 
-	private void executeActions(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonArray actions) {
+	private JsonArray executeActions(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonArray actions) {
+		JsonArray results = new JsonArray();
 		if (actions == null) {
-			return;
+			return results;
 		}
 		for (JsonElement element : actions) {
 			if (!element.isJsonObject()) {
@@ -86,18 +90,43 @@ public final class MinaActionExecutor {
 				: new JsonObject();
 			boolean requiresPermission = bool(action, "requires_permission", false);
 			MinaMod.LOGGER.info("mina action start name={} requiresPermission={} args={}", name, requiresPermission, args);
+			List<CommandExecution> commands = commandLog.get();
+			commands.clear();
+			JsonObject result = baseActionResult(action, name);
 			if (requiresPermission && !config.canUseActions(server, requester)) {
 				MinaMod.LOGGER.info("mina action denied name={} player={}", name, requester == null ? "<server>" : requester.getGameProfile().name());
 				message(requester, "Action denied by Mina permissions.");
+				result.addProperty("status", "permission_denied");
+				result.addProperty("command_success", false);
+				result.addProperty("error", "permission denied");
+				results.add(result);
 				continue;
 			}
 			try {
 				executeAction(server, requester, config, name, args);
+				result.add("command_results", commandResults(commands));
+				boolean commandSuccess = commandSuccess(commands);
+				result.addProperty("command_success", commandSuccess);
+				if (!commandSuccess) {
+					result.addProperty("status", "command_failed");
+					result.addProperty("error", "one or more Minecraft commands failed");
+				} else if (action.has("monitor") && action.get("monitor").isJsonObject()) {
+					result.addProperty("status", "monitor_pending");
+					result.add("monitor", action.getAsJsonObject("monitor"));
+				} else {
+					result.addProperty("status", "completed");
+				}
 			} catch (RuntimeException exception) {
 				MinaMod.LOGGER.warn("Failed to execute Mina action {}", name, exception);
 				message(requester, "Mina action failed: " + exception.getMessage());
+				result.add("command_results", commandResults(commands));
+				result.addProperty("command_success", false);
+				result.addProperty("status", "failed");
+				result.addProperty("error", exception.getMessage());
 			}
+			results.add(result);
 		}
+		return results;
 	}
 
 	private void executeAction(MinecraftServer server, ServerPlayer requester, MinaConfig config, String name, JsonObject args) {
@@ -121,7 +150,7 @@ public final class MinaActionExecutor {
 			case "body_chain" -> bodyChain(server, requester, config, args);
 			case "body_swap_slot" -> puppetAction(server, requester, config, "minecraft:swap_slot " + clampInt(args, "slot", 0, 0, 8));
 			case "body_stop" -> stopBody(server, requester, config);
-			default -> MinaMod.LOGGER.info("Ignoring unknown Mina action {}", name);
+			default -> throw new IllegalArgumentException("unknown Mina action " + name);
 		}
 	}
 
@@ -146,11 +175,7 @@ public final class MinaActionExecutor {
 	}
 
 	private void bodySpawn(MinecraftServer server, ServerPlayer requester, MinaConfig config) {
-		if (!isBodyAvailable(config)) {
-			MinaMod.LOGGER.info("mina body unavailable enableBody={} bodyUsername={}", config.enableBody, config.bodyUsername);
-			message(requester, "Mina body is unavailable because PuppetPlayers is not installed or body use is disabled.");
-			return;
-		}
+		requireBodyAvailable(config);
 		CommandExecution execution = runCommand(server, requester, "puppet " + config.bodyUsername + " spawn");
 		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
 		if (body == null) {
@@ -244,11 +269,7 @@ public final class MinaActionExecutor {
 	}
 
 	private void bodyChain(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject args) {
-		if (!isBodyAvailable(config)) {
-			MinaMod.LOGGER.info("mina body unavailable enableBody={} bodyUsername={}", config.enableBody, config.bodyUsername);
-			message(requester, "Mina body is unavailable because PuppetPlayers is not installed or body use is disabled.");
-			return;
-		}
+		requireBodyAvailable(config);
 		if (!args.has("actions") || !args.get("actions").isJsonArray()) {
 			throw new IllegalArgumentException("body_chain requires actions array");
 		}
@@ -309,12 +330,15 @@ public final class MinaActionExecutor {
 	}
 
 	private void puppetAction(MinecraftServer server, ServerPlayer requester, MinaConfig config, String action) {
+		requireBodyAvailable(config);
+		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run " + action);
+	}
+
+	private void requireBodyAvailable(MinaConfig config) {
 		if (!isBodyAvailable(config)) {
 			MinaMod.LOGGER.info("mina body unavailable enableBody={} bodyUsername={}", config.enableBody, config.bodyUsername);
-			message(requester, "Mina body is unavailable because PuppetPlayers is not installed or body use is disabled.");
-			return;
+			throw new IllegalArgumentException("Mina body is unavailable because PuppetPlayers is not installed or body use is disabled.");
 		}
-		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run " + action);
 	}
 
 	private CommandExecution runCommand(MinecraftServer server, ServerPlayer requester, String command) {
@@ -323,7 +347,7 @@ public final class MinaActionExecutor {
 		CommandSourceStack source = requester == null
 			? server.createCommandSourceStack()
 			: requester.createCommandSourceStack();
-		CommandSource loggingSource = new LoggingCommandSource(requester, execution.command());
+		CommandSource loggingSource = new LoggingCommandSource(requester, execution);
 		CommandResultCallback callback = (success, result) -> {
 			execution.setResult(success, result);
 			MinaMod.LOGGER.info("mina command callback command={} success={} result={}", execution.command(), success, result);
@@ -331,9 +355,52 @@ public final class MinaActionExecutor {
 		source = source
 			.withSource(loggingSource)
 			.withMaximumPermission(PermissionSet.ALL_PERMISSIONS)
-			.withCallback(callback);
+				.withCallback(callback);
 		server.getCommands().performPrefixedCommand(source, stripSlash(command));
+		commandLog.get().add(execution);
 		return execution;
+	}
+
+	private static JsonObject baseActionResult(JsonObject action, String name) {
+		JsonObject result = new JsonObject();
+		result.addProperty("action_id", string(action, "id", ""));
+		result.addProperty("task_id", string(action, "task_id", ""));
+		result.addProperty("step_id", string(action, "step_id", ""));
+		result.addProperty("name", name);
+		if (action.has("expected_effect") && action.get("expected_effect").isJsonObject()) {
+			result.add("expected_effect", action.getAsJsonObject("expected_effect"));
+		}
+		return result;
+	}
+
+	private static JsonArray commandResults(List<CommandExecution> commands) {
+		JsonArray array = new JsonArray();
+		for (CommandExecution command : commands) {
+			JsonObject json = new JsonObject();
+			json.addProperty("command", command.command());
+			json.addProperty("completed", command.completed());
+			json.addProperty("success", command.success());
+			json.addProperty("result", command.result());
+			JsonArray outputs = new JsonArray();
+			for (String output : command.outputs()) {
+				outputs.add(output);
+			}
+			json.add("outputs", outputs);
+			array.add(json);
+		}
+		return array;
+	}
+
+	private static boolean commandSuccess(List<CommandExecution> commands) {
+		if (commands.isEmpty()) {
+			return true;
+		}
+		for (CommandExecution command : commands) {
+			if (!command.success()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static void message(ServerPlayer player, String content) {
@@ -478,6 +545,7 @@ public final class MinaActionExecutor {
 
 	private static final class CommandExecution {
 		private final String command;
+		private final List<String> outputs = new ArrayList<>();
 		private boolean completed;
 		private boolean success;
 		private int result;
@@ -494,12 +562,24 @@ public final class MinaActionExecutor {
 			return completed && success;
 		}
 
+		private boolean completed() {
+			return completed;
+		}
+
 		private boolean failure() {
 			return completed && !success;
 		}
 
 		private int result() {
 			return result;
+		}
+
+		private List<String> outputs() {
+			return outputs;
+		}
+
+		private void addOutput(String output) {
+			outputs.add(output);
 		}
 
 		private void setResult(boolean success, int result) {
@@ -511,16 +591,17 @@ public final class MinaActionExecutor {
 
 	private static final class LoggingCommandSource implements CommandSource {
 		private final ServerPlayer requester;
-		private final String command;
+		private final CommandExecution execution;
 
-		private LoggingCommandSource(ServerPlayer requester, String command) {
+		private LoggingCommandSource(ServerPlayer requester, CommandExecution execution) {
 			this.requester = requester;
-			this.command = command;
+			this.execution = execution;
 		}
 
 		@Override
 		public void sendSystemMessage(Component message) {
-			MinaMod.LOGGER.info("mina command output command={} message={}", command, message.getString());
+			execution.addOutput(message.getString());
+			MinaMod.LOGGER.info("mina command output command={} message={}", execution.command(), message.getString());
 			if (requester != null) {
 				requester.sendSystemMessage(Component.literal("[Mina command] " + message.getString()));
 			}

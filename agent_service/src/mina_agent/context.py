@@ -8,14 +8,13 @@ from .memory import MemoryStore
 
 SYSTEM_PROMPT = """You are Mina, an in-game Minecraft companion agent.
 You speak naturally and concisely in the player's language.
-You can use tools to search the web, remember important player context, send Minecraft messages, run safe commands, and control a PuppetPlayers execution body.
+You can use tools to search the web, remember important player context, inspect task status, and start or stop high-level body tasks.
 The body is only for execution, not companionship. Companionship happens through messages.
 When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
 If you do not know a required argument, do not call that tool yet.
-Never claim an action succeeded until a tool result says it was scheduled or completed.
-If a tool result says an action was scheduled, say that Mina is trying or has started the action; do not say it succeeded or completed.
-For world-interaction tasks, use the structured Minecraft context to choose concrete targets, then compose movement, looking, and action tools.
-Breaking blocks requires ordered PuppetPlayers actions. Use body_chain for mining/chopping: move_to_position to a safe approach coordinate, look_at_position at the block center, attack hold, delay long enough to break the block, then attack release. If continuing, verify with the next Minecraft snapshot before claiming the block was broken.
+Never call low-level movement, look, attack, body_chain, or server command tools. For body execution, call start_body_task with a high-level task_type.
+Never claim a Minecraft action succeeded until task_status or the system context says the task is completed.
+If a body task was started, say Mina has started trying the task and will continue based on real observations.
 Respect permissions: if a tool says permission denied, explain briefly and offer a safe alternative.
 Do not request banned server governance commands such as op, deop, stop, ban, whitelist, or save control unless the server config explicitly allows them.
 """
@@ -36,21 +35,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
                 + "\n".join(f"{row['role']}: {row['content']}" for row in recent),
             }
         )
-    messages.append(
-        {
-            "role": "system",
-            "content": "Current Minecraft context JSON:\n"
-            + json.dumps(
-                {
-                    "trigger": turn.get("trigger"),
-                    "player": player,
-                    "permissions": turn.get("permissions") or {},
-                    "snapshot": snapshot,
-                },
-                ensure_ascii=False,
-            )[:18000],
-        }
-    )
+    messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
     target_summary = build_target_summary(snapshot)
     if target_summary:
         messages.append({"role": "system", "content": target_summary})
@@ -67,9 +52,10 @@ def build_target_summary(snapshot: dict[str, Any]) -> str:
     if isinstance(body_state, dict):
         lines.append("Mina body state: " + json.dumps(body_state, ensure_ascii=False))
     nearby_blocks = snapshot.get("nearby_blocks")
-    if isinstance(nearby_blocks, list) and nearby_blocks:
+    blocks = _flatten_blocks(nearby_blocks)
+    if blocks:
         lines.append("Nearby block targets with usable coordinates. Use approach for move_to_position and center for look_at_position:")
-        for block in nearby_blocks[:20]:
+        for block in blocks[:20]:
             if not isinstance(block, dict):
                 continue
             category = block.get("category")
@@ -81,3 +67,43 @@ def build_target_summary(snapshot: dict[str, Any]) -> str:
                 approach = f" approach=({block.get('approach_x')},{block.get('approach_y')},{block.get('approach_z')})"
             lines.append(f"- {category} {name} {block_pos} {center}{approach}")
     return "\n".join(lines)
+
+
+def build_context_summary(turn: dict[str, Any]) -> str:
+    snapshot = turn.get("snapshot") or {}
+    player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    body_state = snapshot.get("body_state") if isinstance(snapshot.get("body_state"), dict) else {}
+    permissions = turn.get("permissions") or {}
+    nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
+    logs = [block for block in nearby_blocks if block.get("category") == "log"][:12]
+    hostile = [entity for entity in nearby_entities if entity.get("category") == "hostile"][:8]
+    payload = {
+        "trigger": turn.get("trigger"),
+        "player": turn.get("player") or {},
+        "permissions": permissions,
+        "player_state": {
+            "health": player_state.get("health"),
+            "food": player_state.get("food"),
+            "dimension": player_state.get("dimension"),
+            "x": player_state.get("x"),
+            "y": player_state.get("y"),
+            "z": player_state.get("z"),
+        },
+        "body_state": body_state,
+        "candidate_logs": logs,
+        "nearby_hostiles": hostile,
+        "active_task": snapshot.get("active_task"),
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        blocks: list[dict[str, Any]] = []
+        for nested in value.values():
+            blocks.extend(_flatten_blocks(nested))
+        return blocks
+    return []

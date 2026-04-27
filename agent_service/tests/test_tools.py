@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from mina_agent.memory import MemoryStore
 from mina_agent.searxng import SearxngClient
-from mina_agent.tools import ToolRunner
+from mina_agent.tools import ToolRunner, tool_specs
 
 
 class FakeSearxng(SearxngClient):
@@ -13,109 +13,79 @@ class FakeSearxng(SearxngClient):
         return [{"title": query, "url": "https://example.com", "content": "ok"}]
 
 
-def test_body_tool_requires_permission(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
+def _runner(tmp_path) -> ToolRunner:
+    return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
 
-    result = runner.run("body_spawn", {}, {"permissions": {"can_use_actions": False}})
+
+def _allowed_turn() -> dict:
+    return {
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {
+            "body_state": {"online": True, "x": 0.5, "y": 80, "z": -1.5},
+            "nearby_blocks": {
+                "requester": [
+                    {
+                        "block": "minecraft:spruce_log",
+                        "category": "log",
+                        "x": 2,
+                        "y": 80,
+                        "z": 0,
+                        "center_x": 2.5,
+                        "center_y": 80.5,
+                        "center_z": 0.5,
+                        "distance": 3.0,
+                        "approach_x": 2.5,
+                        "approach_y": 80,
+                        "approach_z": -0.5,
+                    }
+                ]
+            },
+        },
+    }
+
+
+def test_model_tool_specs_do_not_expose_low_level_body_tools() -> None:
+    names = {spec["function"]["name"] for spec in tool_specs()}
+
+    assert "start_body_task" in names
+    assert "body_chain" not in names
+    assert "run_safe_command" not in names
+
+
+def test_start_body_task_requires_permission(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": ""}, {"permissions": {"can_use_actions": False}})
 
     assert "permission denied" in result.content
-    assert result.action is None
+    assert result.actions == []
 
 
-def test_body_tool_schedules_action_when_allowed(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
+def test_start_body_task_schedules_observable_move_when_body_online(tmp_path) -> None:
+    runner = _runner(tmp_path)
 
-    result = runner.run("body_spawn", {}, {"permissions": {"can_use_actions": True}})
+    result = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, _allowed_turn())
 
-    assert result.action is not None
-    assert result.action["name"] == "body_spawn"
-
-
-def test_body_move_to_empty_args_does_not_guess_requester(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
-
-    result = runner.run("body_move_to", {}, {"permissions": {"can_use_actions": True}})
-
-    assert result.action is None
-    assert "requires target_type" in result.content
+    assert result.actions
+    action = result.actions[0]
+    assert action["name"] == "body_move_to_position"
+    assert action["task_id"]
+    assert action["monitor"]["type"] == "body_near"
+    assert action["step_id"].startswith("move:")
 
 
-def test_body_move_to_explicit_requester_is_allowed(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
+def test_low_level_body_tool_is_rejected(tmp_path) -> None:
+    runner = _runner(tmp_path)
 
-    result = runner.run("body_move_to", {"target_type": "requester"}, {"permissions": {"can_use_actions": True}})
+    result = runner.run("body_chain", {"actions": []}, _allowed_turn())
 
-    assert result.action is not None
-    assert result.action["args"]["target_type"] == "requester"
-
-
-def test_body_spawn_is_skipped_when_body_already_online(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
-
-    result = runner.run(
-        "body_spawn",
-        {},
-        {"permissions": {"can_use_actions": True}, "snapshot": {"body_state": {"online": True}}},
-    )
-
-    assert result.action is None
-    assert "already online" in result.content
-
-
-def test_run_safe_command_empty_args_are_rejected(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
-
-    result = runner.run("run_safe_command", {}, {"permissions": {"can_use_actions": True}})
-
-    assert result.action is None
-    assert "requires command" in result.content
-
-
-def test_body_attack_empty_args_are_rejected(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
-
-    result = runner.run("body_attack", {}, {"permissions": {"can_use_actions": True}})
-
-    assert result.action is None
-    assert "requires mode" in result.content
-
-
-def test_body_chain_requires_actions(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
-
-    result = runner.run("body_chain", {"clear": True, "loop": False, "restart": True}, {"permissions": {"can_use_actions": True}})
-
-    assert result.action is None
-    assert "requires actions" in result.content
-
-
-def test_body_chain_accepts_block_break_sequence(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
-
-    result = runner.run(
-        "body_chain",
-        {
-            "clear": True,
-            "loop": False,
-            "restart": True,
-            "actions": [
-                {"type": "move_to_position", "x": 1.5, "y": 64, "z": 2.5, "sprint": False, "jump": False},
-                {"type": "look_at_position", "x": 1.5, "y": 64.5, "z": 3.5},
-                {"type": "attack", "mode": "hold"},
-                {"type": "delay", "seconds": 4.5},
-                {"type": "attack", "mode": "release"},
-            ],
-        },
-        {"permissions": {"can_use_actions": True}},
-    )
-
-    assert result.action is not None
-    assert result.action["name"] == "body_chain"
-    assert result.action["args"]["actions"][3]["seconds"] == 4.5
+    assert result.actions == []
+    assert "private executor primitive" in result.content
 
 
 def test_mcp_call_is_explicitly_unavailable_without_config(tmp_path) -> None:
-    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
+    runner = _runner(tmp_path)
 
     result = runner.run("mcp_call", {"server": "local", "tool": "ping", "arguments": {}}, {})
 

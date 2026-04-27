@@ -26,6 +26,14 @@ public final class SidecarClient implements Closeable {
 		return post(config, "/v1/turn", payload);
 	}
 
+	public CompletableFuture<JsonObject> actionResults(MinaConfig config, JsonObject payload) {
+		return post(config, "/v1/action-results", payload);
+	}
+
+	public CompletableFuture<JsonObject> observations(MinaConfig config, JsonObject payload) {
+		return post(config, "/v1/observations", payload);
+	}
+
 	public CompletableFuture<JsonObject> health(MinaConfig config) {
 		HttpRequest request = HttpRequest.newBuilder()
 			.uri(URI.create(config.sidecarBaseUrl + "/healthz"))

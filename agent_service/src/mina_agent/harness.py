@@ -108,8 +108,12 @@ class AgentHarness:
                         _truncate(json.dumps(args, ensure_ascii=False), 1200),
                     )
                     result = self.tools.run(name, args, turn)
+                    result_actions = []
                     if result.action:
-                        actions.append(result.action)
+                        result_actions.append(result.action)
+                    result_actions.extend(result.actions)
+                    if result_actions:
+                        actions.extend(result_actions)
                         invalid_tool_results = 0
                     elif _is_tool_error(result.content):
                         invalid_tool_results += 1
@@ -120,15 +124,15 @@ class AgentHarness:
                         request_id,
                         subturn,
                         name,
-                        result.action,
+                        result_actions,
                         _truncate(result.content, 1200),
                     )
                     self.memory.record_tool_call(
                         request_id,
                         name,
                         args,
-                        {"content": result.content, "action": result.action},
-                        "ok" if result.action or "error" not in result.content else "error",
+                        {"content": result.content, "actions": result_actions},
+                        "ok" if result_actions or "error" not in result.content else "error",
                     )
                     messages.append(
                         {
