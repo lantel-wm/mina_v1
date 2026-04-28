@@ -41,6 +41,7 @@ def main() -> int:
             "model_task_status",
             "model_stop_follow",
             "model_permission_denied",
+            "model_body_unavailable",
             "offline_body_unavailable",
             "offline_knowledge_query",
             "offline_read_only_command",
@@ -61,7 +62,11 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
 
-    prepare_runtime(args.port, args.server_port, enable_body=args.scenario not in {"body_unavailable", "offline_body_unavailable"})
+    prepare_runtime(
+        args.port,
+        args.server_port,
+        enable_body=args.scenario not in {"body_unavailable", "offline_body_unavailable", "model_body_unavailable"},
+    )
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
@@ -83,6 +88,7 @@ def main() -> int:
         "model_task_status",
         "model_stop_follow",
         "model_permission_denied",
+        "model_body_unavailable",
     }
     service_scenarios = {*offline_service_scenarios, *fake_deepseek_scenarios}
     fake_search = start_fake_search(args.search_port) if args.scenario in {"offline_knowledge_query", "model_knowledge_query"} else None
@@ -123,6 +129,7 @@ def main() -> int:
                 "model_task_status",
                 "model_stop_follow",
                 "model_permission_denied",
+                "model_body_unavailable",
                 "offline_body_unavailable",
                 "offline_follow",
                 "offline_task_status",
@@ -173,6 +180,8 @@ def main() -> int:
             run_model_stop_follow(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_permission_denied":
             run_model_permission_denied(server, output, args.port, args.deepseek_port)
+        elif args.scenario == "model_body_unavailable":
+            run_model_body_unavailable(server, output, args.port, args.deepseek_port)
         elif args.scenario == "offline_body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "offline_knowledge_query":
@@ -734,6 +743,19 @@ def run_model_permission_denied(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 2:
         raise AssertionError(f"fake DeepSeek should have two calls for denied follow tool loop, got {calls!r}")
+
+
+def run_model_body_unavailable(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    run_body_unavailable(proc, output)
+    assert_body_task_tool_call(sidecar_port, "follow_player")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 1:
+        raise AssertionError(f"fake DeepSeek should have one call before body unavailable dispatch, got {calls!r}")
 
 
 def run_permission_denied(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int) -> None:
