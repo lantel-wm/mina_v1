@@ -41,6 +41,7 @@ def main() -> int:
             "model_chop_target_disappears",
             "model_replace_follow_with_chop",
             "model_follow_player",
+            "model_spawn_body_follow",
             "model_action_barrier",
             "model_read_only_command",
             "model_knowledge_query",
@@ -94,6 +95,7 @@ def main() -> int:
         "model_chop_target_disappears",
         "model_replace_follow_with_chop",
         "model_follow_player",
+        "model_spawn_body_follow",
         "model_banned_command",
         "model_action_barrier",
         "model_read_only_command",
@@ -149,6 +151,7 @@ def main() -> int:
                 "stop_follow",
                 "body_unavailable",
                 "model_follow_player",
+                "model_spawn_body_follow",
                 "model_action_barrier",
                 "model_read_only_command",
                 "model_knowledge_query",
@@ -207,6 +210,8 @@ def main() -> int:
             run_model_replace_follow_with_chop(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_follow_player":
             run_model_follow_player(server, output, args.timeout, args.port, args.deepseek_port)
+        elif args.scenario == "model_spawn_body_follow":
+            run_model_spawn_body_follow(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_action_barrier":
             run_model_action_barrier(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_read_only_command":
@@ -847,6 +852,57 @@ def run_model_follow_player(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before follow_player dispatch, got {calls!r}")
+
+
+def run_model_spawn_body_follow(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    timeout: float,
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    send(proc, "mina-test leave_body")
+    output.wait_for("Mina test body left.", timeout=10)
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    assert_body_task_tool_call(sidecar_port, "follow_player")
+    spawn = wait_action_event(
+        sidecar_port,
+        lambda item: item.get("event_type") == "action_scheduled" and item.get("action_name") == "body_spawn",
+        timeout=10,
+    )
+    if not spawn:
+        raise AssertionError("offline body follow did not schedule body_spawn")
+    move = wait_action_event(
+        sidecar_port,
+        lambda item: item.get("event_type") == "action_scheduled" and item.get("action_name") == "body_move_to_requester",
+        timeout=30,
+    )
+    if not move:
+        raise AssertionError("offline body follow did not continue with body_move_to_requester")
+    poll_command(
+        proc,
+        output,
+        "mina-test assert follow_player",
+        success="Mina test follow_player passed",
+        pending=["Mina test follow_player failed"],
+        timeout=timeout,
+        interval=2.0,
+    )
+    send(proc, "mina-test move_requester_far")
+    output.wait_for("Mina test requester moved far", timeout=10)
+    poll_command(
+        proc,
+        output,
+        "mina-test assert follow_player",
+        success="Mina test follow_player passed",
+        pending=["Mina test follow_player failed"],
+        timeout=timeout,
+        interval=2.0,
+    )
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 1:
+        raise AssertionError(f"fake DeepSeek should have one call before spawn-and-follow dispatch, got {calls!r}")
 
 
 def assert_body_task_tool_call(sidecar_port: int | None, task_type: str) -> None:

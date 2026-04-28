@@ -53,6 +53,7 @@ public final class MinaTestCommands {
 				.then(literal("ready").executes(context -> ready(context.getSource())))
 				.then(literal("deny_actions").executes(context -> denyActions(context.getSource())))
 				.then(literal("allow_actions").executes(context -> allowActions(context.getSource())))
+				.then(literal("leave_body").executes(context -> leaveBody(context.getSource())))
 				.then(literal("move_requester_far").executes(context -> moveRequesterFar(context.getSource())))
 				.then(literal("move_body_far").executes(context -> moveBodyFar(context.getSource())))
 				.then(literal("remove_target_log").executes(context -> removeTargetLog(context.getSource())))
@@ -124,6 +125,12 @@ public final class MinaTestCommands {
 	private int allowActions(CommandSourceStack source) {
 		config.allow(TEST_PLAYER);
 		source.sendSuccess(() -> Component.literal("Mina test actions allowed for " + TEST_PLAYER + "."), false);
+		return 1;
+	}
+
+	private int leaveBody(CommandSourceStack source) {
+		run(source.getServer(), "puppet " + config.bodyUsername + " leave");
+		source.sendSuccess(() -> Component.literal("Mina test body left."), false);
 		return 1;
 	}
 
