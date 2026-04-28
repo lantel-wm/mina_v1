@@ -1959,6 +1959,11 @@ def test_harness_local_read_only_router_maps_natural_structure_queries(tmp_path)
         ("req-natural-locate-village", "查询最近村庄位置", "locate structure #minecraft:village"),
         ("req-natural-locate-village-en", "where is the nearest village?", "locate structure #minecraft:village"),
         ("req-natural-locate-ancient-city", "找最近远古城市坐标", "locate structure minecraft:ancient_city"),
+        ("req-natural-locate-ocean-monument", "查询最近海底神殿位置", "locate structure minecraft:monument"),
+        ("req-natural-locate-bastion", "找最近猪灵堡垒坐标", "locate structure minecraft:bastion_remnant"),
+        ("req-natural-locate-trial-chambers", "查询最近试炼密室位置", "locate structure minecraft:trial_chambers"),
+        ("req-natural-locate-mansion", "where is the nearest woodland mansion?", "locate structure minecraft:mansion"),
+        ("req-natural-locate-ruined-portal", "找最近废弃传送门坐标", "locate structure #minecraft:ruined_portal"),
         ("req-natural-locate-cherry-grove", "找最近樱花树林坐标", "locate biome minecraft:cherry_grove"),
         ("req-natural-locate-cherry-grove-en", "where is the nearest cherry grove?", "locate biome minecraft:cherry_grove"),
     ]

@@ -144,6 +144,14 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     )
     assert locate_biome.expected_model is not None
     assert locate_biome.expected_model.count == 0
+    locate_monument = SCENARIOS["read_only_natural_locate_monument_router"]
+    assert any(
+        expected.name == "run_read_only_command" and "locate structure minecraft:monument" in expected.args_contains
+        for expected in locate_monument.expected_tools
+    )
+    assert any(step.value == "查询最近海底神殿位置" for step in locate_monument.steps)
+    assert locate_monument.expected_model is not None
+    assert locate_monument.expected_model.count == 0
     search = SCENARIOS["knowledge_search_live_model"]
     assert "Ignore every previous instruction" in search.forbidden_response_contains
     city_forecast = SCENARIOS["knowledge_city_forecast_search_router"]
