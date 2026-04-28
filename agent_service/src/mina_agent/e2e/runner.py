@@ -85,6 +85,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--disable-body", action="store_true")
     parser.add_argument("--searxng-url", default="")
+    parser.add_argument(
+        "--require-live-model",
+        action="store_true",
+        help="Accepted for explicit gate commands; Mina E2E always requires real DeepSeek.",
+    )
     return parser.parse_args(argv)
 
 

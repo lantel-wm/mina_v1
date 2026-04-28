@@ -70,6 +70,16 @@ def test_live_runner_requires_api_key_by_default(monkeypatch) -> None:
     assert "MINA_API_KEY is required" in str(exc.value)
 
 
+def test_require_live_model_flag_still_fails_fast_without_api_key(monkeypatch) -> None:
+    monkeypatch.setattr("mina_agent.e2e.runner.load_dotenv_defaults", lambda: None)
+    monkeypatch.delenv("MINA_API_KEY", raising=False)
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--suite", "live", "--require-live-model", "--skip-build"])
+
+    assert "MINA_API_KEY is required" in str(exc.value)
+
+
 def test_live_runner_refuses_loopback_deepseek(monkeypatch) -> None:
     monkeypatch.setenv("MINA_API_KEY", "test-key")
     monkeypatch.setenv("MINA_BASE_URL", "http://127.0.0.1:18889")
