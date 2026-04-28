@@ -171,6 +171,7 @@ public final class MinaTestCommands {
 		boolean targetReady = level.getBlockState(TARGET_LOG).is(Blocks.SPRUCE_LOG);
 		if (requester != null) {
 			run(server, "tp " + TEST_PLAYER + " 0.5 " + TREE_Y + " -2.5 0 0");
+			resetVitals(requester);
 		}
 		if (body != null) {
 			run(server, "tp " + config.bodyUsername + " 0.5 " + TREE_Y + " -1.5 0 0");
@@ -290,6 +291,7 @@ public final class MinaTestCommands {
 				yield 1;
 			}
 			case "low_health" -> lowHealth(source);
+			case "low_hunger" -> lowHunger(source);
 			default -> {
 				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
 				yield 0;
@@ -334,6 +336,24 @@ public final class MinaTestCommands {
 		requester.setHealth(4.0F);
 		source.sendSuccess(() -> Component.literal("Mina test world mutate low_health complete."), false);
 		return 1;
+	}
+
+	private int lowHunger(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		requester.getFoodData().setFoodLevel(4);
+		requester.getFoodData().setSaturation(0.0F);
+		source.sendSuccess(() -> Component.literal("Mina test world mutate low_hunger complete."), false);
+		return 1;
+	}
+
+	private void resetVitals(ServerPlayer player) {
+		player.setHealth(player.getMaxHealth());
+		player.getFoodData().setFoodLevel(20);
+		player.getFoodData().setSaturation(5.0F);
 	}
 
 	private int snapshot(CommandSourceStack source) {

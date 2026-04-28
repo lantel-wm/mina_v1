@@ -306,6 +306,37 @@ SCENARIO_DATA = [
         "rubric": "Companion ticks should emit timely low-health advice, then stay silent during cooldown, without using the model or controlling the body.",
     },
     {
+        "name": "companion_low_hunger_alert",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "companion", "safety"],
+        "steps": [
+            {"kind": "world_mutate", "value": "low_hunger", "wait_for": ["Mina test world mutate low_hunger complete."]},
+            {
+                "kind": "companion_tick",
+                "request_id": "companion-low-hunger",
+                "wait_for": ["饥饿值偏低"],
+                "timeout": 30,
+            },
+            {
+                "kind": "companion_tick",
+                "request_id": "companion-low-hunger-cooldown",
+                "wait_for": ['"messages":[]'],
+                "timeout": 30,
+            },
+        ],
+        "forbidden_actions": {
+            "body_spawn",
+            "body_move_to_position",
+            "body_move_to_requester",
+            "body_chain",
+            "body_attack",
+            "body_use",
+            "run_read_only_command",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Companion ticks should emit low-hunger advice, then stay silent during cooldown, without using the model or controlling the body.",
+    },
+    {
         "name": "read_only_time_live_model",
         "fixture": "follow_player",
         "tags": ["live", "core", "world_tool", "model"],
