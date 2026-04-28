@@ -333,7 +333,7 @@ class AgentHarness:
         if _local_memory_write_intent(normalized):
             return self._tool_response(
                 "memory_write",
-                {"event_type": "player_fact", "content": _offline_memory_content(message), "importance": 3},
+                {"event_type": "player_fact", "content": _local_memory_content(message, turn), "importance": 3},
                 turn,
                 "我记住了。",
                 {"local_memory": True, "intent": "memory_write"},
@@ -406,7 +406,7 @@ class AgentHarness:
         if _offline_memory_write_intent(normalized):
             return self._offline_tool_response(
                 "memory_write",
-                {"event_type": "player_fact", "content": _offline_memory_content(message), "importance": 3},
+                {"event_type": "player_fact", "content": _local_memory_content(message, turn), "importance": 3},
                 turn,
                 "我记住了。",
             )
@@ -658,6 +658,8 @@ def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: b
     message = str(turn.get("message") or "").strip()
     normalized = message.lower()
     if not normalized:
+        return None
+    if is_memory_recall_request(normalized):
         return None
     snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
     task_status_request = is_body_task_status_request(normalized)
@@ -919,6 +921,45 @@ def _offline_memory_content(message: str) -> str:
             content = content.split(marker, 1)[1].strip(" ：:，,。")
             break
     return content or message.strip()
+
+
+def _local_memory_content(message: str, turn: dict[str, Any]) -> str:
+    position_content = _position_memory_content(message, turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {})
+    if position_content:
+        return position_content
+    return _offline_memory_content(message)
+
+
+def _position_memory_content(message: str, snapshot: dict[str, Any]) -> str:
+    normalized = message.lower()
+    has_position_word = any(token in normalized for token in ("位置", "坐标", "location", "coordinate"))
+    has_named_place = any(token in normalized for token in ("基地", "base", "home"))
+    has_home_position = any(token in message for token in ("家位置", "家的位置", "家坐标", "家的坐标", "我家位置", "我家坐标"))
+    if not (has_position_word or has_named_place or has_home_position):
+        return ""
+    player = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    if not player:
+        return ""
+    x = _number_phrase(player.get("x"))
+    y = _number_phrase(player.get("y"))
+    z = _number_phrase(player.get("z"))
+    if not all((x, y, z)):
+        return ""
+    label = _position_memory_label(message)
+    dimension = str(player.get("dimension") or "").removeprefix("minecraft:")
+    dimension_part = f"{dimension} " if dimension else ""
+    return f"{label}：{dimension_part}坐标 ({x}, {y}, {z})。原始请求：{message.strip()}"
+
+
+def _position_memory_label(message: str) -> str:
+    normalized = message.lower()
+    if "基地" in message or "base" in normalized:
+        return "基地位置"
+    if "home" in normalized or any(token in message for token in ("家位置", "家的位置", "家坐标", "家的坐标", "我家位置", "我家坐标")):
+        return "家位置"
+    if "坐标" in message or "coordinate" in normalized:
+        return "玩家坐标"
+    return "玩家位置"
 
 
 def _offline_memory_query(message: str) -> str:

@@ -1260,7 +1260,14 @@ def test_harness_local_memory_router_handles_explicit_tool_wording_without_model
         "trigger": "command",
         "player": {"uuid": "player-1", "name": "Tester"},
         "permissions": {"can_use_actions": False},
-        "snapshot": {},
+        "snapshot": {
+            "player_state": {
+                "dimension": "minecraft:overworld",
+                "x": 12.5,
+                "y": 64.0,
+                "z": -7.25,
+            }
+        },
     }
 
     harness.run_turn(
@@ -1280,11 +1287,66 @@ def test_harness_local_memory_router_handles_explicit_tool_wording_without_model
 
     assert deepseek.calls == 0
     assert "Topaz-8642" in searched["messages"][0]["content"]
+    write_calls = memory.recent_tool_calls(request_id="req-explicit-memory-write", limit=10)
+    write_args = json.loads(write_calls[0]["args_json"])
+    assert "Topaz-8642" in write_args["content"]
+    assert "坐标" not in write_args["content"]
     assert '{"content"' not in searched["messages"][0]["content"]
     assert "memory_write" not in searched["messages"][0]["content"]
     calls = memory.recent_tool_calls(request_id="req-explicit-memory-search", limit=10)
     assert [call["tool_name"] for call in calls] == ["memory_search"]
     assert json.loads(calls[0]["args_json"])["query"] == "MinaExplicitMemoryCode"
+
+
+def test_harness_local_memory_router_records_current_position_from_snapshot(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": False},
+        "snapshot": {
+            "player_state": {
+                "dimension": "minecraft:overworld",
+                "x": 12.5,
+                "y": 64.0,
+                "z": -7.25,
+            }
+        },
+    }
+
+    written = harness.run_turn(
+        {
+            "request_id": "req-position-memory-write",
+            "message": "记住我的基地位置",
+            **base_turn,
+        }
+    )
+    searched = harness.run_turn(
+        {
+            "request_id": "req-position-memory-search",
+            "message": "你还记得我的基地位置吗？",
+            **base_turn,
+        }
+    )
+
+    assert deepseek.calls == 0
+    assert "我记住了" in written["messages"][0]["content"]
+    content = searched["messages"][0]["content"]
+    assert "基地位置" in content
+    assert "overworld" in content
+    assert "12.5" in content
+    assert "64" in content
+    assert "-7.25" in content
+    write_calls = memory.recent_tool_calls(request_id="req-position-memory-write", limit=10)
+    write_args = json.loads(write_calls[0]["args_json"])
+    assert "基地位置" in write_args["content"]
+    assert "12.5" in write_args["content"]
+    calls = memory.recent_tool_calls(request_id="req-position-memory-search", limit=10)
+    assert [call["tool_name"] for call in calls] == ["memory_search"]
+    assert json.loads(calls[0]["args_json"])["query"] == "基地位置"
 
 
 def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:

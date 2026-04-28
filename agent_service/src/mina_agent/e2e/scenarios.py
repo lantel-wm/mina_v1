@@ -961,6 +961,41 @@ SCENARIO_DATA = [
         "rubric": "Natural remember and recall wording must use deterministic memory_write and memory_search without model calls.",
     },
     {
+        "name": "memory_current_position_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "memory", "router", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "memory-position-write",
+                "value": "记住我的基地位置。",
+                "wait_for": ["mina turn response requestId=memory-position-write"],
+                "timeout": 120,
+            },
+            {
+                "kind": "request",
+                "request_id": "memory-position-search",
+                "value": "你还记得我的基地位置吗？回答时必须包含 0.5、80、-2.5。",
+                "wait_for": ["mina turn response requestId=memory-position-search"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "memory_write", "status": "ok", "args_contains": "基地位置"},
+            {"name": "memory_search", "status": "ok", "args_contains": "基地位置"},
+        ],
+        "forbidden_actions": {
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+            "run_read_only_command",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["基地位置", "0.5", "80", "-2.5"],
+        "rubric": "Location memory requests must persist the current player coordinates from the Fabric snapshot without model calls.",
+    },
+    {
         "name": "write_command_rejected",
         "fixture": "chop_tree",
         "tags": ["live", "core", "safety", "model"],
