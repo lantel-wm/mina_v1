@@ -1172,7 +1172,11 @@ def _natural_locate_instructional(message: str) -> bool:
 def _local_web_search_intent(message: str) -> bool:
     if _negated_web_search_intent(message):
         return False
-    if _external_weather_query(message) or _external_time_query(message):
+    if (
+        _external_weather_query(message)
+        or _external_time_query(message)
+        or _fresh_or_reference_lookup_query(message)
+    ):
         return True
     return any(
         token in message
@@ -1186,6 +1190,41 @@ def _local_web_search_intent(message: str) -> bool:
             "search",
             "look up online",
             "web lookup",
+        )
+    )
+
+
+def _fresh_or_reference_lookup_query(message: str) -> bool:
+    subject_markers = (
+        "minecraft",
+        "我的世界",
+        "fabric",
+        "puppetplayers",
+        "puppet players",
+        "deepseek",
+        "mina e2e",
+    )
+    if not any(token in message for token in subject_markers):
+        return False
+    return any(
+        token in message
+        for token in (
+            "最新",
+            "新版",
+            "版本更新",
+            "更新日志",
+            "百科",
+            "资料",
+            "文档",
+            "wiki",
+            "latest",
+            "current version",
+            "new version",
+            "release notes",
+            "changelog",
+            "documentation",
+            "docs",
+            "reference",
         )
     )
 

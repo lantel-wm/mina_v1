@@ -977,6 +977,37 @@ SCENARIO_DATA = [
         "rubric": "Natural language web lookup requests must use web_search directly even when the player does not name the tool.",
     },
     {
+        "name": "knowledge_fresh_reference_search_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "knowledge", "search", "router", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "knowledge-fresh-reference-search-router",
+                "value": "Minecraft 最新资料 Mina E2E latest fixture 是什么？",
+                "wait_for": ["mina turn response requestId=knowledge-fresh-reference-search-router"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "web_search", "status": "ok", "args_contains": "Minecraft 最新资料"},
+        ],
+        "forbidden_tools": [
+            {"name": "run_read_only_command"},
+            {"name": "start_body_task"},
+        ],
+        "forbidden_actions": {
+            "run_read_only_command",
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["Deterministic Mina E2E result for query"],
+        "rubric": "Fresh or reference-style knowledge questions about external software should use web_search without explicit search wording.",
+    },
+    {
         "name": "knowledge_seed_map_search_not_world_seed",
         "fixture": "follow_player",
         "tags": ["live", "core", "knowledge", "search", "router", "safety"],

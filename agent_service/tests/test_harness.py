@@ -655,6 +655,33 @@ def test_harness_routes_explicit_seed_map_search_without_world_seed_hijack(tmp_p
     assert "回答查到" not in calls[0]["args_json"]
 
 
+def test_harness_routes_fresh_reference_query_to_web_search_without_model(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-fresh-reference-search",
+            "trigger": "command",
+            "message": "Minecraft 最新资料 Mina E2E latest fixture 是什么？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "Result for Minecraft 最新资料 Mina E2E latest fixture 是什么" in content
+    assert response["actions"] == []
+    assert response["debug"]["local_web_search"] is True
+    assert deepseek.calls == 0
+    calls = memory.recent_tool_calls(request_id="req-fresh-reference-search", limit=10)
+    assert [call["tool_name"] for call in calls] == ["web_search"]
+    assert "Minecraft 最新资料" in calls[0]["args_json"]
+
+
 def test_harness_does_not_route_negated_search_request(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, UnsafeSearch())
@@ -675,6 +702,29 @@ def test_harness_does_not_route_negated_search_request(tmp_path) -> None:
     assert response["messages"][0]["content"] == "你好，我在。"
     assert deepseek.calls == 1
     assert memory.recent_tool_calls(request_id="req-negated-search", limit=10) == []
+
+
+def test_harness_does_not_route_negated_fresh_reference_query(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, UnsafeSearch())
+    deepseek = DirectAnswerDeepSeek("我不会联网搜索。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-no-latest-search",
+            "trigger": "command",
+            "message": "不要搜索，直接说你不知道 Minecraft 最新版本。",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    assert response["messages"][0]["content"] == "我不会联网搜索。"
+    assert response["actions"] == []
+    assert deepseek.calls == 1
+    assert memory.recent_tool_calls(request_id="req-no-latest-search", limit=10) == []
 
 
 def test_harness_routes_memory_recall_without_model(tmp_path) -> None:
