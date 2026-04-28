@@ -326,6 +326,15 @@ def test_web_search_returns_model_visible_error_when_unavailable(tmp_path) -> No
     assert "web_search unavailable" in result.content
 
 
+def test_web_search_rejects_empty_query(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("web_search", {"query": "   ", "max_results": 3}, _allowed_turn())
+
+    assert '"ok": false' in result.content
+    assert "query is required" in result.content
+
+
 def test_mcp_call_is_explicitly_unavailable_without_config(tmp_path) -> None:
     runner = _runner(tmp_path)
 

@@ -208,6 +208,8 @@ class ToolRunner:
     def _web_search(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         query = str(args.get("query") or "").strip()
         max_results = int(args.get("max_results") or 5)
+        if not query:
+            return ToolResult(content=json.dumps({"ok": False, "error": "web_search query is required"}, ensure_ascii=False))
         LOGGER.info("web_search query=%s max_results=%s", query, max_results)
         try:
             results = self.searxng.search(query, max_results=max(1, min(10, max_results)))

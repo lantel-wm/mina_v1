@@ -10,6 +10,7 @@ class SearxngClient:
     def __init__(self, base_url: str, timeout_seconds: float = 8.0):
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self._opener = _build_opener(self.base_url)
 
     def health(self) -> dict[str, Any]:
         try:
@@ -22,7 +23,7 @@ class SearxngClient:
         params = urllib.parse.urlencode({"q": query, "format": "json"})
         url = f"{self.base_url}/search?{params}"
         request = urllib.request.Request(url, headers={"User-Agent": "mina-agent/0.1"})
-        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+        with self._opener.open(request, timeout=self.timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))
         seen: set[str] = set()
         results: list[dict[str, str]] = []
@@ -42,3 +43,13 @@ class SearxngClient:
                 break
         return results
 
+
+def _build_opener(base_url: str):
+    if _is_loopback(base_url):
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener()
+
+
+def _is_loopback(base_url: str) -> bool:
+    host = urllib.parse.urlparse(base_url).hostname or ""
+    return host == "localhost" or host == "::1" or host.startswith("127.")
