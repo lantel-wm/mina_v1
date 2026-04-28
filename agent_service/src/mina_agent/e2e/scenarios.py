@@ -380,7 +380,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "body-collect-wood-chop-router",
-                "value": "帮我收集木头",
+                "value": "帮我收集点木材",
                 "wait_for": ["我开始砍树"],
             },
             {"kind": "assert", "value": "chop_tree", "timeout": 180},
@@ -397,7 +397,7 @@ SCENARIO_DATA = [
         "expected_model": {"mode": "exact", "count": 0},
         "trace_invariants": ["no_body_look_monitor_timeout"],
         "world_asserts": ["chop_tree", "upper_log_absent"],
-        "rubric": "Natural collect-wood requests must route to the deterministic chop_tree skill without exposing low-level body actions to the model.",
+        "rubric": "Natural collect-lumber requests must route to the deterministic chop_tree skill without exposing low-level body actions to the model.",
     },
     {
         "name": "body_get_wood_status_after_completion_router",

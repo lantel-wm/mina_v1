@@ -1506,6 +1506,8 @@ def test_harness_body_subagent_handles_colloquial_chop_without_model_call(tmp_pa
             "帮我挖点木头",
             "帮我撸树",
             "帮我收集木头",
+            "帮我收集点木材",
+            "帮我搞点木料",
             "帮我弄点木头",
             "帮我拿点木头",
             "获取一点原木",
@@ -1601,7 +1603,7 @@ def test_harness_body_subagent_treats_negative_colloquial_chop_as_stop(tmp_path)
 
 
 def test_harness_body_subagent_treats_continued_negative_chop_as_stop(tmp_path) -> None:
-    for index, message in enumerate(("不要继续砍树了", "先别再挖木头", "don't keep chopping wood")):
+    for index, message in enumerate(("不要继续砍树了", "先别再挖木头", "不用拿木材了", "don't keep chopping wood")):
         memory = MemoryStore(tmp_path / f"mina-negative-chop-{index}.sqlite3")
         tools = ToolRunner(memory, FakeSearch())
         deepseek = FailIfCalledDeepSeek()

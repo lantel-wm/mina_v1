@@ -129,7 +129,7 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     }:
         assert "no_body_look_monitor_timeout" in SCENARIOS[scenario_name].trace_invariants
     collect_wood = SCENARIOS["body_collect_wood_chop_router"]
-    assert any(step.value == "帮我收集木头" for step in collect_wood.steps)
+    assert any(step.value == "帮我收集点木材" for step in collect_wood.steps)
     assert collect_wood.expected_model is not None
     assert collect_wood.expected_model.count == 0
     get_wood = SCENARIOS["body_get_wood_status_after_completion_router"]

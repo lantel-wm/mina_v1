@@ -333,7 +333,7 @@ def is_body_chop_tree_request(message: str) -> bool:
 
 
 def _contains_chinese_tree_action(message: str) -> bool:
-    tree_terms = ("树", "木头", "原木", "树干")
+    tree_terms = ("树", "木头", "木材", "木料", "原木", "树干")
     action_terms = ("砍", "伐", "采", "采集", "收集", "获取", "获得", "拿", "挖", "打", "撸", "弄", "搞")
     return any(tree in message for tree in tree_terms) and any(action in message for action in action_terms)
 
@@ -475,6 +475,13 @@ def _contains_chinese_negative_body_action(message: str) -> bool:
         "伐",
         "采",
         "收集",
+        "拿木",
+        "拿原木",
+        "拿树",
+        "获取木",
+        "获取原木",
+        "获得木",
+        "获得原木",
         "弄木",
         "弄树",
         "搞木",
