@@ -34,6 +34,7 @@ def main() -> int:
             "stop_follow",
             "replace_follow_with_chop",
             "body_unavailable",
+            "offline_read_only_command",
             "offline_follow",
         ],
     )
@@ -48,8 +49,9 @@ def main() -> int:
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
-    sidecar_mode = "service" if args.scenario == "offline_follow" else args.sidecar
-    sidecar = start_sidecar(args.port, sidecar_mode, force_offline=args.scenario == "offline_follow")
+    offline_service_scenarios = {"offline_follow", "offline_read_only_command"}
+    sidecar_mode = "service" if args.scenario in offline_service_scenarios else args.sidecar
+    sidecar = start_sidecar(args.port, sidecar_mode, force_offline=args.scenario in offline_service_scenarios)
     server = None
     try:
         wait_http(f"http://127.0.0.1:{args.port}/healthz", timeout=20, proc=sidecar)
@@ -61,7 +63,15 @@ def main() -> int:
             "chop_tree"
             if args.scenario in {"replace_follow_with_chop", "banned_command"}
             else "follow_player"
-            if args.scenario in {"read_only_command", "knowledge_query", "task_status", "stop_follow", "body_unavailable", "offline_follow"}
+            if args.scenario in {
+                "read_only_command",
+                "knowledge_query",
+                "task_status",
+                "stop_follow",
+                "body_unavailable",
+                "offline_follow",
+                "offline_read_only_command",
+            }
             else args.scenario
         )
         send(server, f"mina-test setup {setup_scenario}")
@@ -92,6 +102,8 @@ def main() -> int:
             run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "body_unavailable":
             run_body_unavailable(server, output)
+        elif args.scenario == "offline_read_only_command":
+            run_read_only_command(server, output)
         elif args.scenario == "offline_follow":
             run_follow_player(server, output, args.timeout)
         write_trace_summary(args.port)
@@ -316,7 +328,9 @@ def run_follow_player(proc: subprocess.Popen[str], output: "OutputReader", timeo
 
 def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader") -> None:
     send(proc, "mina-test request 查询时间")
-    output.wait_for("我来查询当前游戏时间", timeout=30)
+    found = output.wait_for_any(["我来查询当前游戏时间", "我会执行这个只读查询"], timeout=30)
+    if not found:
+        raise TimeoutError("read-only command acknowledgement")
     output.wait_for("The time is", timeout=30)
 
 
