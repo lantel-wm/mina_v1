@@ -261,6 +261,26 @@ def test_start_body_task_spawns_body_when_snapshot_reports_offline(tmp_path) -> 
     assert action["monitor"]["type"] == "body_online"
 
 
+def test_unknown_observation_task_id_does_not_advance_active_task(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+    turn["snapshot"]["body_state"]["online"] = False
+
+    result = runner.run("start_body_task", {"task_type": "follow_player"}, turn)
+    task_id = result.actions[0]["task_id"]
+    advanced = runner.skills.handle_observation(
+        {
+            "task_id": "missing-task",
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+    status = runner.run("task_status", {"task_id": task_id}, turn)
+
+    assert advanced.actions == []
+    assert '"stage": "spawn_sent"' in status.content
+    assert '"active_action_id": "' + result.actions[0]["id"] + '"' in status.content
+
+
 def test_new_body_task_stops_replaced_active_task(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()

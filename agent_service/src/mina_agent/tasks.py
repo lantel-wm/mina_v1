@@ -126,14 +126,18 @@ class SkillRuntime:
         if not isinstance(snapshot, dict):
             return response
         with self._lock:
-            tasks = [self._tasks[task_id]] if task_id in self._tasks else [
-                task for task in self._tasks.values() if task.get("status") == "active"
-            ]
+            if task_id:
+                task = self._tasks.get(task_id)
+                if task is None:
+                    return response
+                tasks = [task]
+            else:
+                tasks = [task for task in self._tasks.values() if task.get("status") == "active"]
             for task in tasks:
                 task["latest_snapshot"] = snapshot
                 task["updated_at"] = time.time()
                 self.memory.record_task_event(task["task_id"], "observation", {"summary": _snapshot_summary(snapshot)})
-                if task.get("stage") == "spawn_sent" and _body_online(snapshot):
+                if task.get("status") == "active" and task.get("stage") == "spawn_sent" and _body_online(snapshot):
                     advanced = self._advance(task, snapshot)
                     response.messages.extend(advanced.messages)
                     response.actions.extend(advanced.actions)

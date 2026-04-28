@@ -61,10 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/v1/action-results")
     async def action_results(payload: dict[str, Any]) -> dict[str, Any]:
         request_id = str(payload.get("request_id") or "")
-        results = payload.get("action_results") if isinstance(payload.get("action_results"), list) else []
-        for result in results:
-            if isinstance(result, dict):
-                await asyncio.to_thread(memory.record_action_event, request_id, "action_result", result)
+        for result in _action_result_items(payload):
+            await asyncio.to_thread(memory.record_action_event, request_id, "action_result", result)
         response = await asyncio.to_thread(skills.handle_action_results, payload)
         data = response.to_dict()
         await record_scheduled_actions(request_id, data)
@@ -102,3 +100,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
+
+def _action_result_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    results = payload.get("action_results")
+    if isinstance(results, list):
+        return [result for result in results if isinstance(result, dict)]
+    single = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+    if not isinstance(single, dict):
+        return []
+    if single.get("action_id") or single.get("task_id") or single.get("name"):
+        return [single]
+    return []
