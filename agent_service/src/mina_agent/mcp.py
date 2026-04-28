@@ -16,12 +16,14 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 class McpRegistry:
     def __init__(self, config_path: Path | None = None):
         self.config_path = config_path or Path(os.getenv("MINA_MCP_CONFIG_PATH", "agent_service/config/mcp.json"))
+        self.load_error = ""
         self.servers = self._load()
 
     def health(self) -> dict[str, Any]:
         return {
             "configured": bool(self.servers),
             "servers": sorted(self.servers),
+            "error": self.load_error or None,
         }
 
     def list_tools(self, server: str) -> dict[str, Any]:
@@ -44,7 +46,7 @@ class McpRegistry:
             if transport in {"http", "streamable_http"}:
                 return self._http_request(config, method, params)
             return {"ok": False, "error": f"Unsupported MCP transport: {transport}"}
-        except (OSError, TimeoutError, subprocess.SubprocessError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        except (OSError, TimeoutError, ValueError, subprocess.SubprocessError, urllib.error.URLError, json.JSONDecodeError) as exc:
             return {"ok": False, "error": str(exc)}
 
     def _stdio_request(self, config: dict[str, Any], method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -57,7 +59,7 @@ class McpRegistry:
         env = config.get("env")
         if env is not None and not isinstance(env, dict):
             return {"ok": False, "error": "MCP stdio env must be an object"}
-        timeout_seconds = float(config.get("timeout_seconds") or 15)
+        timeout_seconds = _timeout_seconds(config)
         proc = subprocess.Popen(
             [command, *args],
             stdin=subprocess.PIPE,
@@ -97,15 +99,20 @@ class McpRegistry:
         body = json.dumps(_jsonrpc(1, method, params), ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(request, timeout=float(config.get("timeout_seconds") or 15)) as response:
+        with opener.open(request, timeout=_timeout_seconds(config)) as response:
             return _normalize_response(json.loads(response.read().decode("utf-8")))
 
     def _load(self) -> dict[str, dict[str, Any]]:
         if not self.config_path.exists():
             return {}
-        payload = json.loads(self.config_path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(self.config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            self.load_error = str(exc)
+            return {}
         servers = payload.get("servers") or payload.get("mcpServers") or {}
         if not isinstance(servers, dict):
+            self.load_error = "MCP config must contain an object at servers or mcpServers"
             return {}
         return {str(name): value for name, value in servers.items() if isinstance(value, dict)}
 
@@ -154,3 +161,13 @@ def _normalize_response(response: dict[str, Any]) -> dict[str, Any]:
         normalized.update(result)
         return normalized
     return {"ok": True, "result": result}
+
+
+def _timeout_seconds(config: dict[str, Any]) -> float:
+    try:
+        timeout_seconds = float(config.get("timeout_seconds") or 15)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MCP timeout_seconds must be numeric") from exc
+    if timeout_seconds <= 0:
+        raise ValueError("MCP timeout_seconds must be positive")
+    return timeout_seconds

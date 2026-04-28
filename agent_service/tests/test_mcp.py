@@ -131,3 +131,28 @@ def test_stdio_mcp_timeout_returns_model_visible_error(tmp_path) -> None:
 
     assert result["ok"] is False
     assert "did not respond" in result["error"]
+
+
+def test_mcp_invalid_timeout_returns_model_visible_error(tmp_path) -> None:
+    config = tmp_path / "mcp.json"
+    config.write_text(
+        json.dumps({"servers": {"bad": {"transport": "http", "url": "http://127.0.0.1:1", "timeout_seconds": "soon"}}}),
+        encoding="utf-8",
+    )
+    registry = McpRegistry(config)
+
+    result = registry.call("bad", "echo", {})
+
+    assert result["ok"] is False
+    assert "timeout_seconds must be numeric" in result["error"]
+
+
+def test_mcp_malformed_config_does_not_crash_registry(tmp_path) -> None:
+    config = tmp_path / "mcp.json"
+    config.write_text("{bad", encoding="utf-8")
+
+    registry = McpRegistry(config)
+
+    assert registry.servers == {}
+    assert registry.health()["configured"] is False
+    assert registry.health()["error"]
