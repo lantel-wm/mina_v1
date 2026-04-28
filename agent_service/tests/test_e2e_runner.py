@@ -114,6 +114,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert any(step.value == "不要停止跟随我" for step in negated_stop.steps)
     assert negated_stop.expected_model is not None
     assert negated_stop.expected_model.count == 0
+    task_status = SCENARIOS["body_task_status_router"]
+    assert any(step.value == "进度怎么样" for step in task_status.steps)
+    assert any(expected.name == "task_status" and expected.status == "ok" for expected in task_status.expected_tools)
+    assert task_status.expected_model is not None
+    assert task_status.expected_model.count == 0
     for scenario_name in {
         "body_replace_follow_with_chop_router",
         "body_chop_tree_router",

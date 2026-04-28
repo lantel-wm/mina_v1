@@ -557,6 +557,12 @@ SCENARIO_DATA = [
                 "value": "状态",
                 "wait_for": ["当前任务：follow_player"],
             },
+            {
+                "kind": "request",
+                "request_id": "body-status-progress",
+                "value": "进度怎么样",
+                "wait_for": ["当前任务：follow_player"],
+            },
         ],
         "expected_tools": [
             {"name": "task_status", "status": "error", "result_contains": "task not found"},

@@ -1369,6 +1369,29 @@ def test_harness_body_subagent_does_not_stop_on_negated_stop_request(tmp_path) -
         assert [call["tool_name"] for call in calls] == ["task_status"]
 
 
+def test_harness_body_subagent_handles_natural_task_status_without_model_call(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {"body_state": {"online": True}},
+    }
+
+    harness.run_turn({"request_id": "req-natural-status-start", "message": "跟随我", **base_turn})
+    for index, message in enumerate(("进度怎么样", "跟上了吗", "还在跟吗", "任务完成了吗")):
+        response = harness.run_turn({"request_id": f"req-natural-status-{index}", "message": message, **base_turn})
+
+        assert "当前任务：follow_player" in response["messages"][0]["content"]
+        calls = memory.recent_tool_calls(request_id=f"req-natural-status-{index}", limit=10)
+        assert [call["tool_name"] for call in calls] == ["task_status"]
+
+    assert deepseek.calls == 0
+
+
 def test_harness_body_subagent_handles_short_stop_without_model_call(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
