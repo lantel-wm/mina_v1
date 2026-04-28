@@ -82,22 +82,20 @@ def build_target_summary(snapshot: dict[str, Any]) -> str:
     lines: list[str] = []
     body_state = snapshot.get("body_state")
     if isinstance(body_state, dict):
-        lines.append("Mina body state: " + json.dumps(body_state, ensure_ascii=False))
+        lines.append("Mina body state: " + json.dumps(_compact_body_state(body_state), ensure_ascii=False))
     nearby_blocks = snapshot.get("nearby_blocks")
     blocks = _flatten_blocks(nearby_blocks)
     if blocks:
-        lines.append("Nearby block targets with usable coordinates. Use approach for move_to_position and center for look_at_position:")
-        for block in blocks[:20]:
+        lines.append("Nearby body-task targets. Use start_body_task; the sidecar skill runtime owns movement, look, and attack details:")
+        for block in blocks[:12]:
             if not isinstance(block, dict):
                 continue
-            category = block.get("category")
-            name = block.get("block")
-            block_pos = f"block=({block.get('x')},{block.get('y')},{block.get('z')})"
-            center = f"center=({block.get('center_x')},{block.get('center_y')},{block.get('center_z')})"
-            approach = ""
-            if all(key in block for key in ("approach_x", "approach_y", "approach_z")):
-                approach = f" approach=({block.get('approach_x')},{block.get('approach_y')},{block.get('approach_z')})"
-            lines.append(f"- {category} {name} {block_pos} {center}{approach}")
+            compact = _compact_block_target(block)
+            block_pos = f"block=({compact.get('x')},{compact.get('y')},{compact.get('z')})"
+            lines.append(
+                f"- {compact.get('category')} {compact.get('block')} {block_pos} "
+                f"distance={compact.get('distance')} approach_available={compact.get('approach_available')}"
+            )
     return "\n".join(lines)
 
 
@@ -122,8 +120,8 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "y": player_state.get("y"),
             "z": player_state.get("z"),
         },
-        "body_state": body_state,
-        "candidate_logs": logs,
+        "body_state": _compact_body_state(body_state),
+        "candidate_logs": [_compact_block_target(block) for block in logs],
         "nearby_hostiles": hostile,
         "active_task": snapshot.get("active_task"),
     }
@@ -139,6 +137,35 @@ def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
             blocks.extend(_flatten_blocks(nested))
         return blocks
     return []
+
+
+def _compact_body_state(body_state: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "online",
+        "name",
+        "x",
+        "y",
+        "z",
+        "yaw",
+        "pitch",
+        "distance_to_requester",
+        "selected_item",
+        "target_block",
+        "active_task",
+    )
+    return {key: body_state.get(key) for key in keys if key in body_state}
+
+
+def _compact_block_target(block: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "block": block.get("block"),
+        "category": block.get("category"),
+        "x": block.get("x"),
+        "y": block.get("y"),
+        "z": block.get("z"),
+        "distance": block.get("distance"),
+        "approach_available": all(key in block for key in ("approach_x", "approach_y", "approach_z")),
+    }
 
 
 def _intent_skill(message: str) -> str:
