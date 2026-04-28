@@ -197,7 +197,7 @@ def is_body_follow_request(message: str) -> bool:
 def is_body_chop_tree_request(message: str) -> bool:
     if is_body_instructional_request(message):
         return False
-    return _contains_chinese_tree_action(message) or any(
+    return _contains_chinese_tree_action(message) or _contains_english_tree_action(message) or any(
         token in message
         for token in (
             "砍树",
@@ -209,13 +209,24 @@ def is_body_chop_tree_request(message: str) -> bool:
             "cut down tree",
             "cut down a tree",
             "chop wood",
+            "break log",
+            "break logs",
+            "break wood",
+            "harvest wood",
+            "harvest logs",
         )
     )
 
 
 def _contains_chinese_tree_action(message: str) -> bool:
     tree_terms = ("树", "木头", "原木", "树干")
-    action_terms = ("砍", "伐", "采", "采集")
+    action_terms = ("砍", "伐", "采", "采集", "挖", "打", "撸")
+    return any(tree in message for tree in tree_terms) and any(action in message for action in action_terms)
+
+
+def _contains_english_tree_action(message: str) -> bool:
+    tree_terms = ("tree", "trees", "log", "logs", "wood")
+    action_terms = ("chop", "cut", "break", "harvest", "collect")
     return any(tree in message for tree in tree_terms) and any(action in message for action in action_terms)
 
 
@@ -274,6 +285,14 @@ def is_body_negative_stop_request(message: str) -> bool:
             "不要砍",
             "不用砍",
             "不必砍",
+            "别挖",
+            "不要挖",
+            "不用挖",
+            "不必挖",
+            "别打树",
+            "不要打树",
+            "别撸树",
+            "不要撸树",
             "别伐木",
             "不要伐木",
             "别动身体",
@@ -291,6 +310,10 @@ def is_body_negative_stop_request(message: str) -> bool:
             "do not chop",
             "dont chop",
             "stop chopping",
+            "don't break logs",
+            "do not break logs",
+            "stop breaking logs",
+            "stop harvesting wood",
             "don't control body",
             "do not control body",
         )

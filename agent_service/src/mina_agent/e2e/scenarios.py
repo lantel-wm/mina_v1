@@ -246,6 +246,32 @@ SCENARIO_DATA = [
         "rubric": "Referential Chinese chop requests such as '把这棵树砍了' must route to the same high-level chop skill without model calls.",
     },
     {
+        "name": "body_colloquial_chop_tree_router",
+        "fixture": "chop_tree",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-colloquial-chop-tree-router",
+                "value": "帮我撸树",
+                "wait_for": ["我开始砍树"],
+            },
+            {"kind": "assert", "value": "chop_tree", "timeout": 180},
+            {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_position"},
+            {"name": "body_look_at_position"},
+            {"name": "body_chain"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "world_asserts": ["chop_tree", "upper_log_absent"],
+        "rubric": "Colloquial chop requests such as '撸树' must route to the deterministic chop_tree skill without model calls.",
+    },
+    {
         "name": "body_chop_target_disappears_router",
         "fixture": "chop_tree",
         "tags": ["live", "core", "body", "router"],
@@ -867,7 +893,7 @@ SCENARIO_DATA = [
     {
         "name": "memory_roundtrip_live_model",
         "fixture": "follow_player",
-        "tags": ["live", "core", "memory", "model"],
+        "tags": ["live", "core", "memory", "router"],
         "steps": [
             {
                 "kind": "request",
@@ -895,14 +921,14 @@ SCENARIO_DATA = [
             "body_use",
             "run_read_only_command",
         },
-        "expected_model": {"mode": "at_least", "min_count": 2},
+        "expected_model": {"mode": "exact", "count": 0},
         "expected_response_contains": ["Quartz-1729"],
-        "rubric": "Player-scoped memory must persist across requests and be retrieved through memory_search when explicitly requested.",
+        "rubric": "Explicit memory tool wording should persist and retrieve player-scoped memory without relying on model compliance.",
     },
     {
         "name": "memory_natural_roundtrip_live_model",
         "fixture": "follow_player",
-        "tags": ["live", "core", "memory", "model"],
+        "tags": ["live", "core", "memory", "router"],
         "steps": [
             {
                 "kind": "request",
@@ -930,9 +956,9 @@ SCENARIO_DATA = [
             "body_use",
             "run_read_only_command",
         },
-        "expected_model": {"mode": "at_least", "min_count": 2},
+        "expected_model": {"mode": "exact", "count": 0},
         "expected_response_contains": ["Amethyst-2468"],
-        "rubric": "Natural remember and recall wording must use memory_write and memory_search without naming tools.",
+        "rubric": "Natural remember and recall wording must use deterministic memory_write and memory_search without model calls.",
     },
     {
         "name": "write_command_rejected",

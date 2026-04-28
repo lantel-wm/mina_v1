@@ -93,6 +93,15 @@ class AgentHarness:
             self._debug("turn local_read_only request_id=%s command=%s", request_id, local_read_only.debug.get("command"))
             return local_read_only.to_dict()
 
+        local_memory = self._local_memory_response(turn)
+        if local_memory is not None:
+            for message_item in local_memory.messages:
+                content = str(message_item.get("content") or "").strip()
+                if content:
+                    self.memory.add_conversation(request_id, player_id, "assistant", content)
+            self._debug("turn local_memory request_id=%s intent=%s", request_id, local_memory.debug.get("intent"))
+            return local_memory.to_dict()
+
         if not self.deepseek.configured():
             offline = self._offline_fallback(turn)
             if offline is not None:
@@ -293,6 +302,44 @@ class AgentHarness:
             "我会执行这个只读查询。",
             {"local_read_only": True, "command": command},
         )
+
+    def _local_memory_response(self, turn: dict[str, Any]) -> TurnResponse | None:
+        if turn.get("trigger") != "command":
+            return None
+        message = str(turn.get("message") or "").strip()
+        normalized = message.lower()
+        if not normalized or _memory_instructional_request(normalized):
+            return None
+
+        if _local_memory_search_intent(normalized):
+            args = {"query": _local_memory_query(message), "limit": 5}
+            result = self.tools.run("memory_search", args, turn)
+            self._record_tool_call(turn, "memory_search", args, result, [])
+            payload = _json_object(result.content)
+            if payload.get("ok") is True:
+                lines = _local_memory_result_lines(payload.get("results") or [])
+            else:
+                lines = []
+            if lines:
+                return TurnResponse(
+                    messages=[{"target": "requester", "content": "我找到了这些相关记忆：\n" + "\n".join(lines)}],
+                    debug={"local_memory": True, "intent": "memory_search", "query": args["query"]},
+                )
+            return TurnResponse(
+                messages=[{"target": "requester", "content": "我没有找到相关记忆。"}],
+                debug={"local_memory": True, "intent": "memory_search", "query": args["query"]},
+            )
+
+        if _local_memory_write_intent(normalized):
+            return self._tool_response(
+                "memory_write",
+                {"event_type": "player_fact", "content": _offline_memory_content(message), "importance": 3},
+                turn,
+                "我记住了。",
+                {"local_memory": True, "intent": "memory_write"},
+            )
+
+        return None
 
     def _offline_fallback(self, turn: dict[str, Any]) -> TurnResponse | None:
         message = str(turn.get("message") or "").strip()
@@ -848,6 +895,20 @@ def _offline_memory_search_intent(message: str) -> bool:
     return is_memory_recall_request(message)
 
 
+def _local_memory_write_intent(message: str) -> bool:
+    if _local_memory_search_intent(message):
+        return False
+    return "memory_write" in message or _contains_any(message, {"记住", "帮我记", "保存", "记录"})
+
+
+def _local_memory_search_intent(message: str) -> bool:
+    return is_memory_recall_request(message) or "memory_search" in message
+
+
+def _memory_instructional_request(message: str) -> bool:
+    return any(token in message for token in ("怎么", "如何", "怎样", "教程", "攻略", "解释", "how to", "what is"))
+
+
 def _offline_memory_content(message: str) -> str:
     content = message.strip()
     for prefix in ("请", "帮我", "麻烦你"):
@@ -871,6 +932,67 @@ def _offline_memory_query(message: str) -> str:
             query = query[: -len(suffix)].strip(" ：:，,。?？")
             break
     return query or message.strip()
+
+
+def _local_memory_query(message: str) -> str:
+    query = message.strip()
+    for marker in ("memory_search", "搜索", "search"):
+        if marker in query:
+            query = query.split(marker, 1)[1].strip(" ：:，,。?？")
+            break
+    else:
+        query = _offline_memory_query(query)
+    for marker in ("然后", "回答", "请回答", "时必须", "时请", "吗", "么", "呢"):
+        if marker in query:
+            query = query.split(marker, 1)[0].strip(" ：:，,。?？")
+    for prefix in ("搜索", "查找", "我的", "这个", "the"):
+        if query.startswith(prefix):
+            query = query[len(prefix) :].strip(" ：:，,。?？")
+    return query or message.strip()
+
+
+def _local_memory_result_lines(results: list[Any]) -> list[str]:
+    preferred: list[str] = []
+    fallback: list[str] = []
+    seen: set[str] = set()
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "")
+        label = str(item.get("label") or "")
+        content = _memory_result_content(item.get("content"))
+        if not content or _looks_like_memory_noise(content):
+            continue
+        if content in seen:
+            continue
+        seen.add(content)
+        line = _truncate(content, 160)
+        if kind == "event" and label in {"player_fact", "note", "preference", "world_fact"}:
+            preferred.append(line)
+        elif kind == "event":
+            fallback.append(line)
+    return (preferred or fallback)[:5]
+
+
+def _memory_result_content(value: Any) -> str:
+    content = str(value or "").strip()
+    if not content:
+        return ""
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return content
+    if isinstance(payload, dict):
+        inner = str(payload.get("content") or "").strip()
+        return inner or content
+    return content
+
+
+def _looks_like_memory_noise(content: str) -> bool:
+    lowered = content.lower()
+    if lowered.startswith(("我记住了", "我找到了这些相关记忆")):
+        return True
+    return any(token in lowered for token in ("memory_write", "memory_search", "回答时必须"))
 
 
 def _deepseek_error_message(exc: DeepSeekError) -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from mina_agent.config import Settings
@@ -549,11 +550,11 @@ def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     assert calls[0]["status"] == "ok"
 
 
-def test_harness_repairs_memory_recall_without_search(tmp_path) -> None:
+def test_harness_routes_memory_recall_without_model(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_event("player-1", "player_fact", {"content": "RecallCode=Emerald-2718"}, importance=4)
     tools = ToolRunner(memory, FakeSearch())
-    deepseek = RecallRepairDeepSeek()
+    deepseek = FailIfCalledDeepSeek()
     harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
 
     response = harness.run_turn(
@@ -568,7 +569,7 @@ def test_harness_repairs_memory_recall_without_search(tmp_path) -> None:
     )
 
     assert "Emerald-2718" in response["messages"][0]["content"]
-    assert deepseek.calls == 3
+    assert deepseek.calls == 0
     calls = memory.recent_tool_calls(request_id="req-recall-repair", limit=10)
     assert [call["tool_name"] for call in calls] == ["memory_search"]
     assert calls[0]["status"] == "ok"
@@ -869,6 +870,93 @@ def test_harness_body_subagent_handles_referential_chop_without_model_call(tmp_p
     assert [call["tool_name"] for call in calls] == ["start_body_task"]
 
 
+def test_harness_body_subagent_handles_colloquial_chop_without_model_call(tmp_path) -> None:
+    for index, message in enumerate(("帮我挖点木头", "帮我撸树", "break some logs")):
+        memory = MemoryStore(tmp_path / f"mina-{index}.sqlite3")
+        tools = ToolRunner(memory, FakeSearch())
+        deepseek = FailIfCalledDeepSeek()
+        harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / f"mina-{index}.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+        response = harness.run_turn(
+            {
+                "request_id": f"req-colloquial-chop-{index}",
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": True},
+                "snapshot": {
+                    "body_state": {"online": True},
+                    "nearby_blocks": {
+                        "requester": [
+                            {
+                                "block": "minecraft:oak_log",
+                                "category": "log",
+                                "x": 2,
+                                "y": 80,
+                                "z": 0,
+                                "center_x": 2.5,
+                                "center_y": 80.5,
+                                "center_z": 0.5,
+                                "distance": 3.0,
+                                "approach_x": 2.5,
+                                "approach_y": 80,
+                                "approach_z": -0.5,
+                            }
+                        ]
+                    },
+                },
+            }
+        )
+
+        assert deepseek.calls == 0
+        assert "我开始砍树" in response["messages"][0]["content"]
+        assert response["actions"][0]["name"] == "body_move_to_position"
+        calls = memory.recent_tool_calls(request_id=f"req-colloquial-chop-{index}", limit=10)
+        assert [call["tool_name"] for call in calls] == ["start_body_task"]
+
+
+def test_harness_body_subagent_treats_negative_colloquial_chop_as_stop(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {
+            "body_state": {"online": True},
+            "nearby_blocks": {
+                "requester": [
+                    {
+                        "block": "minecraft:oak_log",
+                        "category": "log",
+                        "x": 2,
+                        "y": 80,
+                        "z": 0,
+                        "center_x": 2.5,
+                        "center_y": 80.5,
+                        "center_z": 0.5,
+                        "distance": 3.0,
+                        "approach_x": 2.5,
+                        "approach_y": 80,
+                        "approach_z": -0.5,
+                    }
+                ]
+            },
+        },
+    }
+
+    harness.run_turn({"request_id": "req-colloquial-chop-start", "message": "帮我挖点木头", **base_turn})
+    response = harness.run_turn({"request_id": "req-colloquial-chop-stop", "message": "别撸树了", **base_turn})
+
+    assert deepseek.calls == 0
+    assert "我已经停止当前身体任务" in response["messages"][0]["content"]
+    assert response["actions"][0]["name"] == "body_stop"
+    calls = memory.recent_tool_calls(request_id="req-colloquial-chop-stop", limit=10)
+    assert [call["tool_name"] for call in calls] == ["stop_body_task"]
+
+
 def test_harness_body_subagent_does_not_intercept_tree_planning_request(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1121,6 +1209,82 @@ def test_harness_local_read_only_router_leaves_prefix_injection_to_policy(tmp_pa
     calls = memory.recent_tool_calls(request_id="req-local-read-only-injection", limit=10)
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
     assert calls[0]["status"] == "error"
+
+
+def test_harness_local_memory_router_writes_and_searches_without_model(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": False},
+        "snapshot": {},
+    }
+
+    written = harness.run_turn(
+        {
+            "request_id": "req-local-memory-write",
+            "message": "记住这个玩家事实：MinaLocalMemoryCode=Ruby-1357。以后我问你时请回答这个值。",
+            **base_turn,
+        }
+    )
+    searched = harness.run_turn(
+        {
+            "request_id": "req-local-memory-search",
+            "message": "你还记得我的 MinaLocalMemoryCode 吗？回答时包含 Ruby-1357。",
+            **base_turn,
+        }
+    )
+
+    assert deepseek.calls == 0
+    assert "我记住了" in written["messages"][0]["content"]
+    assert "Ruby-1357" in searched["messages"][0]["content"]
+    assert '{"content"' not in searched["messages"][0]["content"]
+    assert "memory_write" not in searched["messages"][0]["content"]
+    assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-local-memory-write", limit=10)] == [
+        "memory_write"
+    ]
+    calls = memory.recent_tool_calls(request_id="req-local-memory-search", limit=10)
+    assert [call["tool_name"] for call in calls] == ["memory_search"]
+    assert json.loads(calls[0]["args_json"])["query"] == "MinaLocalMemoryCode"
+
+
+def test_harness_local_memory_router_handles_explicit_tool_wording_without_model(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": False},
+        "snapshot": {},
+    }
+
+    harness.run_turn(
+        {
+            "request_id": "req-explicit-memory-write",
+            "message": "请调用 memory_write 记住这个玩家事实：MinaExplicitMemoryCode=Topaz-8642。",
+            **base_turn,
+        }
+    )
+    searched = harness.run_turn(
+        {
+            "request_id": "req-explicit-memory-search",
+            "message": "请调用 memory_search 搜索 MinaExplicitMemoryCode，然后回答时必须包含 Topaz-8642。",
+            **base_turn,
+        }
+    )
+
+    assert deepseek.calls == 0
+    assert "Topaz-8642" in searched["messages"][0]["content"]
+    assert '{"content"' not in searched["messages"][0]["content"]
+    assert "memory_write" not in searched["messages"][0]["content"]
+    calls = memory.recent_tool_calls(request_id="req-explicit-memory-search", limit=10)
+    assert [call["tool_name"] for call in calls] == ["memory_search"]
+    assert json.loads(calls[0]["args_json"])["query"] == "MinaExplicitMemoryCode"
 
 
 def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
