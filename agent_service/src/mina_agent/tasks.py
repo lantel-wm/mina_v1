@@ -370,13 +370,14 @@ class SkillRuntime:
                 return current_target
             target = current_target
             task["target"] = target
+            look_point = _look_point_for_target(target)
             action = _action(
                 task,
                 "body_look_at_position",
                 {
-                    "x": float(target["center_x"]),
-                    "y": float(target["center_y"]),
-                    "z": float(target["center_z"]),
+                    "x": look_point["x"],
+                    "y": look_point["y"],
+                    "z": look_point["z"],
                 },
                 step=f"look:{step_suffix}",
                 monitor={
@@ -583,6 +584,36 @@ def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
         if _is_reachable_log_candidate(block, snapshot):
             return dict(block)
     return None
+
+
+def _look_point_for_target(target: dict[str, Any]) -> dict[str, float]:
+    center = {
+        "x": float(target["center_x"]),
+        "y": float(target["center_y"]),
+        "z": float(target["center_z"]),
+    }
+    if not _has_approach(target):
+        return center
+    target_x = _float_value(target.get("x"))
+    target_y = _float_value(target.get("y"))
+    target_z = _float_value(target.get("z"))
+    approach_x = _float_value(target.get("approach_x"))
+    approach_z = _float_value(target.get("approach_z"))
+    if None in (target_x, target_y, target_z, approach_x, approach_z):
+        return center
+
+    # Aim at the exposed side face from the approach square. Center-aiming a
+    # lower trunk block can raycast into the stacked log above it from body eye
+    # height, which creates false progress for chop_tree.
+    epsilon = 0.02
+    point = {"x": center["x"], "y": float(target_y) + 0.65, "z": center["z"]}
+    dx = center["x"] - float(approach_x)
+    dz = center["z"] - float(approach_z)
+    if abs(dz) >= abs(dx):
+        point["z"] = float(target_z) + (epsilon if dz >= 0 else 1.0 - epsilon)
+    else:
+        point["x"] = float(target_x) + (epsilon if dx >= 0 else 1.0 - epsilon)
+    return point
 
 
 def _has_approach(block: dict[str, Any]) -> bool:

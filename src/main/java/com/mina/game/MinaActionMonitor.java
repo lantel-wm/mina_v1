@@ -150,11 +150,6 @@ public final class MinaActionMonitor {
 						success.addProperty("actual_block", actualBlock);
 					}
 				}
-				if (success == null && bodyAimMatches(body, monitor, expectedPos)) {
-					success = result("success", "body aimed at expected block");
-					success.addProperty("yaw", round(body.getYRot()));
-					success.addProperty("pitch", round(body.getXRot()));
-				}
 			}
 		} else if ("follow_requester".equals(type)) {
 			ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
@@ -215,34 +210,6 @@ public final class MinaActionMonitor {
 
 	private static double round(double value) {
 		return Math.round(value * 100.0D) / 100.0D;
-	}
-
-	private static boolean bodyAimMatches(ServerPlayer body, JsonObject monitor, BlockPos expectedPos) {
-		double targetX = expectedPos.getX() + 0.5D;
-		double targetY = expectedPos.getY() + 0.5D;
-		double targetZ = expectedPos.getZ() + 0.5D;
-		double dx = targetX - body.getX();
-		double dy = targetY - body.getEyeY();
-		double dz = targetZ - body.getZ();
-		double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-		double expectedYaw = wrapDegrees(Math.toDegrees(Math.atan2(dz, dx)) - 90.0D);
-		double expectedPitch = -Math.toDegrees(Math.atan2(dy, horizontalDistance));
-		expectedPitch = Math.max(-90.0D, Math.min(90.0D, expectedPitch));
-		double yawTolerance = doubleValue(monitor, "yaw_tolerance", 8.0D);
-		double pitchTolerance = doubleValue(monitor, "pitch_tolerance", 8.0D);
-		return Math.abs(wrapDegrees(body.getYRot() - expectedYaw)) <= yawTolerance
-			&& Math.abs(body.getXRot() - expectedPitch) <= pitchTolerance;
-	}
-
-	private static double wrapDegrees(double degrees) {
-		double wrapped = degrees % 360.0D;
-		if (wrapped >= 180.0D) {
-			wrapped -= 360.0D;
-		}
-		if (wrapped < -180.0D) {
-			wrapped += 360.0D;
-		}
-		return wrapped;
 	}
 
 	private record ActiveMonitor(

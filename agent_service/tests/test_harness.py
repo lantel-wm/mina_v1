@@ -630,6 +630,90 @@ def test_harness_answers_nearby_snapshot_summary_without_model_or_tools(tmp_path
     assert memory.recent_tool_calls(request_id="req-nearby-observation", limit=10) == []
 
 
+def test_harness_answers_nearby_danger_from_hostile_snapshot_without_model_or_tools(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-danger-observation",
+            "trigger": "command",
+            "message": "附近安全吗？有怪物吗？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "nearby_entities": [
+                    {"type": "minecraft:cow", "name": "Cow", "category": "passive", "distance": 3.25},
+                    {"type": "minecraft:creeper", "name": "Creeper", "category": "hostile", "distance": 2.0},
+                    {"type": "minecraft:zombie", "name": "Zombie", "category": "hostile", "distance": 9},
+                ],
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "附近危险：发现敌对生物 Creeper(2格)，Zombie(9格)" in content
+    assert "Cow" not in content
+    assert response["debug"]["intent"] == "danger_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-danger-observation", limit=10) == []
+
+
+def test_harness_answers_nearby_danger_clear_when_no_hostiles(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-danger-clear-observation",
+            "trigger": "command",
+            "message": "is it safe nearby?",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "nearby_entities": [
+                    {"type": "minecraft:cow", "name": "Cow", "category": "passive", "distance": 3.25},
+                ],
+            },
+        }
+    )
+
+    assert response["messages"][0]["content"] == "附近没有记录到敌对生物。"
+    assert response["debug"]["intent"] == "danger_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-danger-clear-observation", limit=10) == []
+
+
+def test_harness_does_not_treat_generic_command_safety_as_nearby_danger(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DirectAnswerDeepSeek("这是一个关于命令安全的问题。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-generic-command-safety",
+            "trigger": "command",
+            "message": "这个命令安全吗？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "nearby_entities": [
+                    {"type": "minecraft:creeper", "name": "Creeper", "category": "hostile", "distance": 2.0},
+                ],
+            },
+        }
+    )
+
+    assert response["messages"][0]["content"] == "这是一个关于命令安全的问题。"
+    assert response["debug"].get("local_observation") is None
+    assert deepseek.calls == 1
+
+
 def test_harness_answers_body_held_item_from_snapshot_without_model_or_tools(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

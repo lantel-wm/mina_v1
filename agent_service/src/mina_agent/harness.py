@@ -703,6 +703,11 @@ def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: b
             messages=[{"target": "requester", "content": _environment_observation_message(snapshot)}],
             debug={"local_observation": True, "intent": "environment_observation"},
         )
+    if _danger_observation_intent(normalized):
+        return TurnResponse(
+            messages=[{"target": "requester", "content": _danger_observation_message(snapshot)}],
+            debug={"local_observation": True, "intent": "danger_observation"},
+        )
     if _nearby_observation_intent(normalized):
         return TurnResponse(
             messages=[{"target": "requester", "content": _nearby_observation_message(snapshot)}],
@@ -830,6 +835,62 @@ def _nearby_observation_intent(message: str) -> bool:
             "what's around",
         )
     )
+
+
+def _danger_observation_intent(message: str) -> bool:
+    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
+        return False
+    if is_body_chop_tree_request(message) or is_body_follow_request(message) or is_body_stop_request(message):
+        return False
+    if any(token in message for token in ("命令", "工具", "调用", "command", "tool")):
+        return False
+    has_local_context = any(
+        token in message
+        for token in (
+            "附近",
+            "周围",
+            "旁边",
+            "身边",
+            "这里",
+            "这附近",
+            "nearby",
+            "around me",
+            "around us",
+            "around here",
+            "here",
+        )
+    )
+    has_explicit_hostile = any(
+        token in message
+        for token in (
+            "有怪物",
+            "有没有怪物",
+            "有敌人",
+            "有没有敌人",
+            "怪物吗",
+            "敌对生物",
+            "any monsters",
+            "monsters nearby",
+            "hostile nearby",
+            "nearby hostile",
+        )
+    )
+    has_danger_signal = any(
+        token in message
+        for token in (
+            "安全",
+            "危险",
+            "怪物",
+            "敌人",
+            "敌对生物",
+            "safe",
+            "danger",
+            "monster",
+            "hostile",
+            "enemy",
+        )
+    )
+    return has_explicit_hostile or (has_local_context and has_danger_signal)
 
 
 def _body_observation_intent(message: str) -> bool:
@@ -960,6 +1021,16 @@ def _nearby_observation_message(snapshot: dict[str, Any]) -> str:
     return "；".join(parts) + "。"
 
 
+def _danger_observation_message(snapshot: dict[str, Any]) -> str:
+    entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    hostile_lines = _hostile_entity_lines(entities)
+    if hostile_lines:
+        return "附近危险：发现敌对生物 " + "，".join(hostile_lines) + "。"
+    if entities:
+        return "附近没有记录到敌对生物。"
+    return "我还没有拿到附近实体快照。"
+
+
 def _item_phrase(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
@@ -989,6 +1060,24 @@ def _nearby_entity_lines(entities: list[Any]) -> list[str]:
     lines: list[str] = []
     for entity in entities:
         if not isinstance(entity, dict):
+            continue
+        name = str(entity.get("name") or "").strip() or _id_tail(entity.get("type"))
+        if not name:
+            continue
+        distance = _number_phrase(entity.get("distance"))
+        if distance:
+            lines.append(f"{name}({distance}格)")
+        else:
+            lines.append(name)
+        if len(lines) >= 5:
+            break
+    return lines
+
+
+def _hostile_entity_lines(entities: list[Any]) -> list[str]:
+    lines: list[str] = []
+    for entity in entities:
+        if not isinstance(entity, dict) or entity.get("category") != "hostile":
             continue
         name = str(entity.get("name") or "").strip() or _id_tail(entity.get("type"))
         if not name:

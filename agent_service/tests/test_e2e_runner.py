@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import urllib.request
 
 import pytest
@@ -18,6 +19,7 @@ from mina_agent.e2e.runner import (
     main,
     parse_args,
     require_live_deepseek_env,
+    resolve_sidecar_port,
     run_summary_payload,
     scenario_artifact_payload,
     select_scenarios,
@@ -27,6 +29,19 @@ from mina_agent.e2e.runner import (
     write_run_manifest,
 )
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
+
+
+def test_parse_args_defaults_to_ephemeral_sidecar_port() -> None:
+    assert parse_args([]).port == 0
+
+
+def test_resolve_sidecar_port_rejects_occupied_port() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = int(sock.getsockname()[1])
+
+        with pytest.raises(SystemExit):
+            resolve_sidecar_port(port)
 
 
 def test_live_suite_is_declarative_and_traceable() -> None:
@@ -132,6 +147,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert any(step.request_id == "companion-nearby-hostile-cooldown" for step in hostile_companion.steps)
     assert hostile_companion.expected_model is not None
     assert hostile_companion.expected_model.count == 0
+    danger_observation = SCENARIOS["local_danger_observation_no_tools"]
+    assert any(step.value == "nearby_hostile" for step in danger_observation.steps)
+    assert danger_observation.expected_model is not None
+    assert danger_observation.expected_model.count == 0
+    assert "run_read_only_command" in danger_observation.forbidden_actions
 
 
 def test_scenario_manifest_supports_expected_trace_invariants() -> None:

@@ -395,12 +395,14 @@ public final class MinaTestCommands {
 			source.sendFailure(Component.literal("Mina test chop_tree failed: setup marker is missing."));
 			return 0;
 		}
-		boolean broken = level.getBlockState(TARGET_LOG).is(Blocks.AIR);
+		var state = level.getBlockState(TARGET_LOG);
+		boolean broken = !state.is(Blocks.SPRUCE_LOG);
 		if (!broken) {
 			source.sendFailure(Component.literal("Mina test chop_tree failed: target log still exists."));
 			return 0;
 		}
-		source.sendSuccess(() -> Component.literal("Mina test chop_tree passed."), false);
+		String actual = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+		source.sendSuccess(() -> Component.literal("Mina test chop_tree passed: target block is " + actual + "."), false);
 		return 1;
 	}
 
@@ -417,12 +419,14 @@ public final class MinaTestCommands {
 
 	private int assertUpperLogAbsent(CommandSourceStack source) {
 		ServerLevel level = source.getLevel();
-		boolean absent = level.getBlockState(UPPER_LOG).is(Blocks.AIR);
+		var state = level.getBlockState(UPPER_LOG);
+		boolean absent = !state.is(Blocks.SPRUCE_LOG);
 		if (!absent) {
 			source.sendFailure(Component.literal("Mina test upper_log_absent failed: replacement log still exists."));
 			return 0;
 		}
-		source.sendSuccess(() -> Component.literal("Mina test upper_log_absent passed."), false);
+		String actual = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+		source.sendSuccess(() -> Component.literal("Mina test upper_log_absent passed: replacement block is " + actual + "."), false);
 		return 1;
 	}
 

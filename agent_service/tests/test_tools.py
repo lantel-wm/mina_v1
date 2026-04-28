@@ -299,6 +299,36 @@ def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> 
     assert "当前没有正在执行的身体任务" in stopped.content
 
 
+def test_chop_tree_look_targets_exposed_side_face(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+
+    look = moved.actions[0]
+    assert look["name"] == "body_look_at_position"
+    assert look["args"] == {"x": 2.5, "y": 80.65, "z": 0.02}
+    assert look["monitor"]["type"] == "body_targeted_block"
+    assert look["monitor"]["y"] == 80
+
+
 def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()
@@ -377,6 +407,7 @@ def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) ->
     upper_look = continued.actions[1]
     assert upper_look["name"] == "body_look_at_position"
     assert upper_look["step_id"] == "look:1.0"
+    assert upper_look["args"] == {"x": 2.5, "y": 81.65, "z": 0.02}
     assert upper_look["monitor"]["y"] == 81
     status = runner.run("task_status", {"task_id": task_id}, turn)
     assert '"target_ordinal": 1' in status.content

@@ -7,6 +7,7 @@ import json
 import os
 import queue
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -56,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(scenario_listing_payload(args.suite, selected), ensure_ascii=False, indent=2))
         return 0
     live_model = require_live_deepseek_env()
+    args.port = resolve_sidecar_port(args.port)
 
     run_id = time.strftime("%Y%m%d-%H%M%S")
     artifact_dir = RUNS_DIR / run_id
@@ -86,7 +88,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--suite", default="live", choices=sorted(SUITES))
     parser.add_argument("--scenario", action="append")
     parser.add_argument("--manifest", action="append", default=[], help="Load additional JSON scenario manifests.")
-    parser.add_argument("--port", type=int, default=18911)
+    parser.add_argument("--port", type=int, default=0, help="Sidecar port; 0 selects a free local port.")
     parser.add_argument("--server-port", type=int, default=25566)
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--skip-build", action="store_true")
@@ -990,6 +992,26 @@ def download(url: str, target: Path) -> None:
 def run_checked(cmd: list[str], cwd: Path) -> None:
     env = {**os.environ, "GRADLE_USER_HOME": str(ROOT / ".gradle")}
     subprocess.run(cmd, cwd=cwd, env=env, check=True)
+
+
+def resolve_sidecar_port(port: int) -> int:
+    if port == 0:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+    if is_port_available(port):
+        return port
+    raise SystemExit(f"Mina E2E sidecar port {port} is already in use; stop the existing service or pass --port 0.")
+
+
+def is_port_available(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
 
 
 def git_metadata(cwd: Path) -> dict[str, Any]:
