@@ -40,6 +40,10 @@ class BodySubagent:
             return self._status(turn)
         if is_body_instructional_request(normalized):
             return None
+        if _negated_stop_intent(normalized):
+            current = self._continue_current_task(turn)
+            if current is not None:
+                return current
         if _stop_intent(normalized):
             return self._tool_response(
                 "stop_body_task",
@@ -108,6 +112,18 @@ class BodySubagent:
         )
         return BodySubagentResult(response=response, tool_name=name, args=args, tool_result=result)
 
+    def _continue_current_task(self, turn: dict[str, Any]) -> BodySubagentResult | None:
+        status = self.tools.skills.task_status(None, turn)
+        if status.get("ok") is False:
+            return None
+        result = ToolResult(content=json.dumps(status, ensure_ascii=False))
+        content = f"好的，我会继续当前身体任务：{status.get('type')}。"
+        response = TurnResponse(
+            messages=[{"target": "requester", "content": content}],
+            debug={"body_subagent": True, "intent": "continue_body_task", "task_status": status},
+        )
+        return BodySubagentResult(response=response, tool_name="task_status", args={}, tool_result=result)
+
 
 def _result_actions(result: ToolResult) -> list[dict[str, Any]]:
     actions = []
@@ -169,6 +185,8 @@ def _chop_tree_intent(message: str) -> bool:
 
 
 def is_body_stop_request(message: str) -> bool:
+    if _negated_stop_intent(message):
+        return False
     stripped = message.strip(" \t\r\n，,。.!！?？")
     if stripped in {"停"}:
         return True
@@ -345,6 +363,34 @@ def is_body_negative_stop_request(message: str) -> bool:
             "stop harvesting wood",
             "don't control body",
             "do not control body",
+        )
+    )
+
+
+def _negated_stop_intent(message: str) -> bool:
+    return _contains_chinese_negated_stop(message) or _contains_english_negated_stop(message)
+
+
+def _contains_chinese_negated_stop(message: str) -> bool:
+    stop_terms = ("停止", "停下", "停掉", "停", "暂停", "取消", "终止", "中止", "结束")
+    for match in re.finditer(r"别再|不要再|不用再|不必再|别|不要|不用|不必", message):
+        window = message[match.start():match.start() + 14]
+        if any(term in window for term in stop_terms):
+            return True
+    return False
+
+
+def _contains_english_negated_stop(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "don't stop",
+            "do not stop",
+            "dont stop",
+            "never stop",
+            "don't cancel",
+            "do not cancel",
+            "dont cancel",
         )
     )
 

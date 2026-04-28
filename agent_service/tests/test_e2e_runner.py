@@ -92,6 +92,13 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert any(step.value == "别再跟着我" for step in continued_negative_stop.steps)
     assert continued_negative_stop.expected_model is not None
     assert continued_negative_stop.expected_model.count == 0
+    negated_stop = SCENARIOS["body_negated_stop_keeps_follow_router"]
+    assert any(expected.name == "task_status" and expected.status == "ok" for expected in negated_stop.expected_tools)
+    assert any(tool.name == "stop_body_task" for tool in negated_stop.forbidden_tools)
+    assert "body_stop" in negated_stop.forbidden_actions
+    assert any(step.value == "不要停止跟随我" for step in negated_stop.steps)
+    assert negated_stop.expected_model is not None
+    assert negated_stop.expected_model.count == 0
     plain_lookup = SCENARIOS["knowledge_plain_lookup_search_router"]
     assert any(expected.name == "web_search" and expected.status == "ok" for expected in plain_lookup.expected_tools)
     assert any(step.value.startswith("帮我查一下 Minecraft") for step in plain_lookup.steps)
