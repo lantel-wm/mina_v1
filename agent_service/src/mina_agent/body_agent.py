@@ -169,8 +169,26 @@ def _chop_tree_intent(message: str) -> bool:
 
 
 def is_body_stop_request(message: str) -> bool:
+    stripped = message.strip(" \t\r\n，,。.!！?？")
+    if stripped in {"停"}:
+        return True
     return any(
-        token in message for token in ("停止", "停下", "停一下", "暂停", "取消", "stop", "cancel")
+        token in message
+        for token in (
+            "停止",
+            "停下",
+            "停一下",
+            "停掉",
+            "暂停",
+            "取消",
+            "终止",
+            "中止",
+            "结束任务",
+            "结束跟随",
+            "别动",
+            "stop",
+            "cancel",
+        )
     ) or is_body_negative_stop_request(message)
 
 
@@ -183,12 +201,22 @@ def is_body_follow_request(message: str) -> bool:
             "跟随我",
             "跟着我",
             "跟我",
+            "跟紧我",
+            "跟上我",
+            "保持跟随",
+            "一直跟随",
+            "一直跟着我",
+            "贴着我",
             "过来",
             "来我这",
             "来我这边",
             "到我这",
             "follow me",
             "follow player",
+            "follow closely",
+            "keep following me",
+            "stay with me",
+            "stick with me",
             "come here",
             "come to me",
         )

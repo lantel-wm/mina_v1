@@ -75,6 +75,13 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert "body_stop" in stop_denied.forbidden_actions
     assert stop_denied.expected_model is not None
     assert stop_denied.expected_model.count == 0
+    colloquial_follow = SCENARIOS["body_colloquial_follow_and_terse_stop_router"]
+    assert any(expected.name == "start_body_task" and expected.status == "ok" for expected in colloquial_follow.expected_tools)
+    assert any(expected.name == "stop_body_task" and expected.status == "ok" for expected in colloquial_follow.expected_tools)
+    assert any(step.value == "跟紧我" for step in colloquial_follow.steps)
+    assert any(step.value == "停" for step in colloquial_follow.steps)
+    assert colloquial_follow.expected_model is not None
+    assert colloquial_follow.expected_model.count == 0
     negative_stop = SCENARIOS["body_negative_follow_stop_router"]
     assert any(expected.name == "stop_body_task" and expected.status == "ok" for expected in negative_stop.expected_tools)
     assert any(action.name == "body_stop" for action in negative_stop.expected_actions)

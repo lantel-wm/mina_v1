@@ -1100,6 +1100,33 @@ def test_harness_body_subagent_handles_configured_follow_without_model_call(tmp_
     assert [call["tool_name"] for call in calls] == ["start_body_task"]
 
 
+def test_harness_body_subagent_handles_colloquial_follow_and_terse_stop_without_model_call(tmp_path) -> None:
+    for index, message in enumerate(("跟紧我", "跟上我", "保持跟随", "stay with me", "stick with me")):
+        memory = MemoryStore(tmp_path / f"mina-colloquial-follow-{index}.sqlite3")
+        tools = ToolRunner(memory, FakeSearch())
+        deepseek = FailIfCalledDeepSeek()
+        harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / f"mina-colloquial-follow-{index}.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+        base_turn = {
+            "trigger": "command",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+
+        start = harness.run_turn({"request_id": f"req-colloquial-follow-start-{index}", "message": message, **base_turn})
+        stop = harness.run_turn({"request_id": f"req-colloquial-follow-stop-{index}", "message": "停", **base_turn})
+
+        assert deepseek.calls == 0
+        assert "我开始跟随你" in start["messages"][0]["content"]
+        assert start["actions"][0]["name"] == "body_move_to_requester"
+        assert "我已经停止当前身体任务" in stop["messages"][0]["content"]
+        assert stop["actions"][0]["name"] == "body_stop"
+        start_calls = memory.recent_tool_calls(request_id=f"req-colloquial-follow-start-{index}", limit=10)
+        stop_calls = memory.recent_tool_calls(request_id=f"req-colloquial-follow-stop-{index}", limit=10)
+        assert [call["tool_name"] for call in start_calls] == ["start_body_task"]
+        assert [call["tool_name"] for call in stop_calls] == ["stop_body_task"]
+
+
 def test_harness_body_subagent_treats_negative_follow_as_stop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

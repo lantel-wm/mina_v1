@@ -75,6 +75,35 @@ SCENARIO_DATA = [
         "rubric": "Follow must spawn the optional PuppetPlayers body when it is absent, then continue the same high-level task.",
     },
     {
+        "name": "body_colloquial_follow_and_terse_stop_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-colloquial-follow-start",
+                "value": "跟紧我",
+                "wait_for": ["我开始跟随你"],
+            },
+            {
+                "kind": "request",
+                "request_id": "body-colloquial-follow-stop",
+                "value": "停",
+                "wait_for": ["我已经停止当前身体任务"],
+            },
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "follow_player"'},
+            {"name": "stop_body_task", "status": "ok"},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_requester"},
+            {"name": "body_stop"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Colloquial follow phrasing such as '跟紧我' and terse stop phrasing such as '停' must stay inside the deterministic body router.",
+    },
+    {
         "name": "body_stop_router",
         "fixture": "follow_player",
         "tags": ["live", "core", "body", "router"],
