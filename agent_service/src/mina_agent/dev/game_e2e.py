@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument(
         "--scenario",
         default="chop_tree",
-        choices=["chop_tree", "follow_player", "read_only_command", "stop_follow", "replace_follow_with_chop"],
+        choices=["chop_tree", "follow_player", "read_only_command", "knowledge_query", "stop_follow", "replace_follow_with_chop"],
     )
     parser.add_argument("--sidecar", default="scripted", choices=["scripted"])
     parser.add_argument("--port", type=int, default=18911)
@@ -45,7 +45,7 @@ def main() -> int:
         output = OutputReader(server)
         output.start()
         output.wait_for("Done", timeout=args.timeout)
-        setup_scenario = "chop_tree" if args.scenario == "replace_follow_with_chop" else "follow_player" if args.scenario in {"read_only_command", "stop_follow"} else args.scenario
+        setup_scenario = "chop_tree" if args.scenario == "replace_follow_with_chop" else "follow_player" if args.scenario in {"read_only_command", "knowledge_query", "stop_follow"} else args.scenario
         send(server, f"mina-test setup {setup_scenario}")
         output.wait_for(f"Mina test {setup_scenario} setup complete", timeout=30)
         poll_command(
@@ -62,6 +62,8 @@ def main() -> int:
             run_follow_player(server, output, args.timeout)
         elif args.scenario == "read_only_command":
             run_read_only_command(server, output)
+        elif args.scenario == "knowledge_query":
+            run_knowledge_query(server, output)
         elif args.scenario == "stop_follow":
             run_stop_follow(server, output, args.timeout)
         elif args.scenario == "replace_follow_with_chop":
@@ -286,6 +288,12 @@ def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader") -
     send(proc, "mina-test request 查询时间")
     output.wait_for("我来查询当前游戏时间", timeout=30)
     output.wait_for("The time is", timeout=30)
+
+
+def run_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+    send(proc, "mina-test request 查资料 Minecraft Wiki")
+    output.wait_for("搜索结果：Minecraft Wiki", timeout=30)
+    output.wait_for("联网知识查询链路可用", timeout=30)
 
 
 def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:

@@ -36,6 +36,16 @@ def turn(payload: dict[str, Any]) -> dict[str, Any]:
     if "停止" in message or "stop" in message or "取消" in message:
         response = skills.stop_task(None, payload)
         return response.to_dict()
+    if "查资料" in message or "知识" in message or "wiki" in message:
+        return {
+            "messages": [
+                {
+                    "target": "requester",
+                    "content": "搜索结果：Minecraft Wiki 提供方块、物品和机制资料。联网知识查询链路可用。",
+                }
+            ],
+            "actions": [],
+        }
     if "时间" in message or "time query" in message:
         return {
             "messages": [{"target": "requester", "content": "我来查询当前游戏时间。"}],

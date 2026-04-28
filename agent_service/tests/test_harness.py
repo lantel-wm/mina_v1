@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
+
+from mina_agent.config import Settings
+from mina_agent.deepseek import DeepSeekResponse
+from mina_agent.harness import AgentHarness
 from mina_agent.harness import _parse_args
+from mina_agent.memory import MemoryStore
+from mina_agent.searxng import SearxngClient
+from mina_agent.tools import ToolRunner
 
 
 def test_parse_args_accepts_deepseek_json_string() -> None:
@@ -17,3 +25,73 @@ def test_parse_args_rejects_non_object_json() -> None:
 
 def test_parse_args_rejects_invalid_json() -> None:
     assert _parse_args("{bad") == {}
+
+
+class FakeSearch(SearxngClient):
+    def __init__(self) -> None:
+        pass
+
+    def search(self, query: str, max_results: int = 5):
+        return [{"title": "Minecraft Wiki", "url": "https://minecraft.wiki/", "content": f"Result for {query}"}]
+
+
+class ToolCallingDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.tool_messages: list[dict[str, Any]] = []
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        self.tool_messages = [message for message in messages if message.get("role") == "tool"]
+        if self.calls == 1:
+            return DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-search",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query": "minecraft diamond ore", "max_results": 3}',
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 1},
+                raw={},
+            )
+        assert self.tool_messages
+        assert "Minecraft Wiki" in self.tool_messages[-1]["content"]
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": "我查到了 Minecraft Wiki 的相关结果。"},
+            finish_reason="stop",
+            usage={"completion_tokens": 1},
+            raw={},
+        )
+
+
+def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = ToolCallingDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-1",
+            "trigger": "command",
+            "message": "帮我查一下 diamond ore",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    assert response["messages"][0]["content"] == "我查到了 Minecraft Wiki 的相关结果。"
+    assert deepseek.calls == 2
