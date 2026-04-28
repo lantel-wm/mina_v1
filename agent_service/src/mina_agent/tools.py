@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Any, Callable
 
@@ -49,6 +50,28 @@ READ_ONLY_COMMAND_PREFIXES = {
     "weather query",
     "list",
     "locate structure",
+}
+
+MINECRAFT_WRITE_COMMANDS = {
+    "setblock",
+    "fill",
+    "tp",
+    "teleport",
+    "gamemode",
+    "give",
+    "summon",
+    "kill",
+    "op",
+    "deop",
+    "ban",
+    "ban-ip",
+    "pardon",
+    "pardon-ip",
+    "whitelist",
+    "stop",
+    "save-all",
+    "save-off",
+    "save-on",
 }
 
 
@@ -317,9 +340,20 @@ def _player_id(turn: dict[str, Any]) -> str:
 
 
 def _looks_like_minecraft_write(tool: str, arguments: dict[str, Any]) -> bool:
-    haystack = (tool + " " + json.dumps(arguments, ensure_ascii=False)).lower()
-    banned = ["setblock", "fill", "tp ", "teleport", "gamemode", "give ", "summon", "kill "]
-    return any(token in haystack for token in banned)
+    haystack = tool + " " + json.dumps(arguments, ensure_ascii=False)
+    for token in _command_tokens(haystack):
+        command = token.split(":")[-1]
+        if command in MINECRAFT_WRITE_COMMANDS:
+            return True
+    return False
+
+
+def _command_tokens(value: str) -> list[str]:
+    return [
+        token
+        for token in re.split(r"[^a-z0-9_:\-]+", value.lower())
+        if token
+    ]
 
 
 def _strip_slash(command: str) -> str:

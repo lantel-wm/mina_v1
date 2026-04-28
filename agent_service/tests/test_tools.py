@@ -442,3 +442,17 @@ def test_mcp_call_blocks_minecraft_write_operations_before_transport(tmp_path) -
     result = runner.run("mcp_call", {"server": "local", "tool": "setblock", "arguments": {"x": 0}}, {})
 
     assert "Minecraft write operations" in result.content
+
+
+def test_mcp_call_blocks_short_and_namespaced_minecraft_write_commands(tmp_path) -> None:
+    config = tmp_path / "mcp.json"
+    config.write_text('{"servers": {"local": {"transport": "http", "url": "http://127.0.0.1:1"}}}', encoding="utf-8")
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng(), McpRegistry(config))
+
+    exact = runner.run("mcp_call", {"server": "local", "tool": "tp", "arguments": {"target": "mina"}}, {})
+    namespaced = runner.run("mcp_call", {"server": "local", "tool": "minecraft:fill", "arguments": {}}, {})
+    embedded = runner.run("mcp_call", {"server": "local", "tool": "admin", "arguments": {"command": "kill @e[type=item]"}}, {})
+
+    assert "Minecraft write operations" in exact.content
+    assert "Minecraft write operations" in namespaced.content
+    assert "Minecraft write operations" in embedded.content
