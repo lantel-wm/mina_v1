@@ -50,6 +50,23 @@ public final class MinaActionMonitor {
 		);
 	}
 
+	public int cancelTask(String taskId, String reason) {
+		if (taskId == null || taskId.isBlank()) {
+			return 0;
+		}
+		int cancelled = 0;
+		for (ActiveMonitor monitor : active) {
+			if (taskId.equals(string(monitor.action, "task_id"))) {
+				active.remove(monitor);
+				cancelled++;
+			}
+		}
+		if (cancelled > 0) {
+			MinaMod.LOGGER.info("mina monitor cancelled taskId={} count={} reason={}", taskId, cancelled, reason);
+		}
+		return cancelled;
+	}
+
 	public void onEndServerTick(MinecraftServer server) {
 		ticks++;
 		if (controller == null || active.isEmpty()) {

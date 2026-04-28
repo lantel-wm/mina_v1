@@ -81,6 +81,7 @@ public final class MinaTurnController {
 		}
 		JsonArray actions = response.getAsJsonArray("actions");
 		JsonArray results = actionExecutor.executeResponse(server, requester, config, response);
+		cancelMonitorsForSuccessfulStops(actions, results);
 		registerMonitors(server, requester, requestId, actions, results);
 		if (results.size() > 0) {
 			reportActionResults(server, requester, requestId, results);
@@ -165,6 +166,25 @@ public final class MinaTurnController {
 		}
 	}
 
+	private void cancelMonitorsForSuccessfulStops(JsonArray actions, JsonArray results) {
+		if (actions == null || results == null) {
+			return;
+		}
+		int limit = Math.min(actions.size(), results.size());
+		for (int index = 0; index < limit; index++) {
+			JsonElement actionElement = actions.get(index);
+			JsonElement resultElement = results.get(index);
+			if (!actionElement.isJsonObject() || !resultElement.isJsonObject()) {
+				continue;
+			}
+			JsonObject action = actionElement.getAsJsonObject();
+			JsonObject result = resultElement.getAsJsonObject();
+			if ("body_stop".equals(string(action, "name")) && bool(result, "command_success", false)) {
+				actionMonitor.cancelTask(string(action, "task_id"), string(action, "step_id"));
+			}
+		}
+	}
+
 	private static boolean hasMessagesOrActions(JsonObject response) {
 		if (response == null) {
 			return false;
@@ -179,6 +199,13 @@ public final class MinaTurnController {
 			return "";
 		}
 		return object.get(key).getAsString();
+	}
+
+	private static boolean bool(JsonObject object, String key, boolean fallback) {
+		if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
+			return fallback;
+		}
+		return object.get(key).getAsBoolean();
 	}
 
 	private static String rootMessage(Throwable throwable) {

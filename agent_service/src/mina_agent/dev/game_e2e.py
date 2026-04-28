@@ -491,6 +491,7 @@ def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout
     send(proc, "mina-test request 停止跟随")
     output.wait_for("我已经停止当前身体任务", timeout=30)
     output.wait_for("mina action start name=body_stop", timeout=30)
+    output.wait_for("mina monitor cancelled", timeout=30)
     send(proc, "mina-test move_requester_far")
     output.wait_for("Mina test requester moved far", timeout=10)
     time.sleep(min(6.0, max(1.0, timeout / 20)))
