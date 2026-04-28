@@ -143,6 +143,26 @@ class AgentHarness:
                         {"content": result.content, "actions": result_actions},
                         "ok" if result_actions or "error" not in result.content else "error",
                     )
+                    if result_actions:
+                        response_messages = _tool_payload_messages(result.content)
+                        if not response_messages:
+                            response_messages = [{"target": "requester", "content": _action_ack(name)}]
+                        for message_item in response_messages:
+                            content = str(message_item.get("content") or "").strip()
+                            if content:
+                                self.memory.add_conversation(request_id, player_id, "assistant", content)
+                        self._debug(
+                            "turn action_barrier request_id=%s subturn=%s name=%s actions=%s",
+                            request_id,
+                            subturn,
+                            name,
+                            len(actions),
+                        )
+                        return TurnResponse(
+                            messages=response_messages,
+                            actions=actions,
+                            debug={"usage": usage, "tool_subturns": subturn, "action_barrier": True},
+                        ).to_dict()
                     messages.append(
                         {
                             "role": "tool",
@@ -342,6 +362,24 @@ def _json_object(content: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _tool_payload_messages(content: str) -> list[dict[str, Any]]:
+    payload = _json_object(content)
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return []
+    return [message for message in messages if isinstance(message, dict)]
+
+
+def _action_ack(tool_name: str) -> str:
+    if tool_name == "run_read_only_command":
+        return "我会执行这个只读查询。"
+    if tool_name == "start_body_task":
+        return "我开始执行，会根据真实游戏反馈继续调整。"
+    if tool_name == "stop_body_task":
+        return "我已经停止当前身体任务。"
+    return "我开始执行。"
 
 
 def _contains_any(value: str, needles: set[str]) -> bool:

@@ -34,6 +34,7 @@ def main() -> int:
             "stop_follow",
             "replace_follow_with_chop",
             "body_unavailable",
+            "model_action_barrier",
             "offline_body_unavailable",
             "offline_knowledge_query",
             "offline_read_only_command",
@@ -45,6 +46,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=18911)
     parser.add_argument("--server-port", type=int, default=25566)
     parser.add_argument("--search-port", type=int, default=18888)
+    parser.add_argument("--deepseek-port", type=int, default=18889)
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
@@ -60,18 +62,23 @@ def main() -> int:
         "offline_chop_tree",
         "offline_body_unavailable",
     }
+    service_scenarios = {*offline_service_scenarios, "model_action_barrier"}
     fake_search = start_fake_search(args.search_port) if args.scenario == "offline_knowledge_query" else None
-    sidecar_mode = "service" if args.scenario in offline_service_scenarios else args.sidecar
+    fake_deepseek = start_fake_deepseek(args.deepseek_port) if args.scenario == "model_action_barrier" else None
+    sidecar_mode = "service" if args.scenario in service_scenarios else args.sidecar
     sidecar = start_sidecar(
         args.port,
         sidecar_mode,
         force_offline=args.scenario in offline_service_scenarios,
         searxng_url=f"http://127.0.0.1:{args.search_port}" if fake_search is not None else None,
+        deepseek_url=f"http://127.0.0.1:{args.deepseek_port}" if fake_deepseek is not None else None,
     )
     server = None
     try:
         if fake_search is not None:
             wait_http(f"http://127.0.0.1:{args.search_port}/healthz", timeout=20, proc=fake_search)
+        if fake_deepseek is not None:
+            wait_http(f"http://127.0.0.1:{args.deepseek_port}/healthz", timeout=20, proc=fake_deepseek)
         wait_http(f"http://127.0.0.1:{args.port}/healthz", timeout=20, proc=sidecar)
         server = start_server()
         output = OutputReader(server)
@@ -87,6 +94,7 @@ def main() -> int:
                 "task_status",
                 "stop_follow",
                 "body_unavailable",
+                "model_action_barrier",
                 "offline_body_unavailable",
                 "offline_follow",
                 "offline_read_only_command",
@@ -122,6 +130,8 @@ def main() -> int:
             run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "body_unavailable":
             run_body_unavailable(server, output)
+        elif args.scenario == "model_action_barrier":
+            run_model_action_barrier(server, output, args.timeout, args.deepseek_port)
         elif args.scenario == "offline_body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "offline_knowledge_query":
@@ -140,6 +150,8 @@ def main() -> int:
         stop_process(sidecar)
         if fake_search is not None:
             stop_process(fake_search)
+        if fake_deepseek is not None:
+            stop_process(fake_deepseek)
 
 
 def prepare_runtime(port: int, server_port: int, enable_body: bool = True) -> None:
@@ -232,7 +244,13 @@ def download(url: str, target: Path) -> None:
     tmp.replace(target)
 
 
-def start_sidecar(port: int, mode: str, force_offline: bool = False, searxng_url: str | None = None) -> subprocess.Popen[str]:
+def start_sidecar(
+    port: int,
+    mode: str,
+    force_offline: bool = False,
+    searxng_url: str | None = None,
+    deepseek_url: str | None = None,
+) -> subprocess.Popen[str]:
     pythonpath = str(ROOT / "agent_service" / "src")
     env = {
         **os.environ,
@@ -244,9 +262,31 @@ def start_sidecar(port: int, mode: str, force_offline: bool = False, searxng_url
         env["MINA_API_KEY"] = ""
     if searxng_url:
         env["MINA_SEARXNG_URL"] = searxng_url
+    if deepseek_url:
+        env["MINA_BASE_URL"] = deepseek_url
+        env["MINA_API_KEY"] = "fake-deepseek-key"
+        env["MINA_MODEL"] = "mina-fake-deepseek"
+        env["MINA_THINKING"] = "disabled"
     module = "mina_agent.dev.scripted_sidecar:app" if mode == "scripted" else "mina_agent.app:app"
     return subprocess.Popen(
         [sys.executable, "-m", "uvicorn", module, "--host", "127.0.0.1", "--port", str(port)],
+        cwd=ROOT,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+
+def start_fake_deepseek(port: int) -> subprocess.Popen[str]:
+    pythonpath = str(ROOT / "agent_service" / "src")
+    env = {
+        **os.environ,
+        "PYTHONPATH": pythonpath + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    }
+    return subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "mina_agent.dev.fake_deepseek:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=ROOT,
         env=env,
         stdin=subprocess.DEVNULL,
@@ -455,6 +495,23 @@ def run_body_unavailable(proc: subprocess.Popen[str], output: "OutputReader") ->
         raise TimeoutError("body unavailable failure message")
 
 
+def run_model_action_barrier(proc: subprocess.Popen[str], output: "OutputReader", timeout: float, deepseek_port: int) -> None:
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    poll_command(
+        proc,
+        output,
+        "mina-test assert follow_player",
+        success="Mina test follow_player passed",
+        pending=["Mina test follow_player failed"],
+        timeout=timeout,
+        interval=2.0,
+    )
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 1:
+        raise AssertionError(f"fake DeepSeek should have one call before Fabric dispatch, got {calls!r}")
+
+
 def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:
     if proc.poll() is not None:
         return
@@ -482,6 +539,12 @@ def write_trace_summary(port: int) -> None:
     trace.parent.mkdir(parents=True, exist_ok=True)
     trace.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     write_trace_jsonl(port, payload)
+
+
+def read_json(url: str, timeout: float) -> dict[str, Any]:
+    with urlopen_no_proxy(url, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return payload if isinstance(payload, dict) else {}
 
 
 def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:

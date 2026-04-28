@@ -97,6 +97,38 @@ class ContextInspectingDeepSeek:
         )
 
 
+class ActionDispatchDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        if self.calls > 1:
+            raise AssertionError("harness should dispatch Fabric actions before another model subturn")
+        return DeepSeekResponse(
+            message={
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-follow",
+                        "type": "function",
+                        "function": {
+                            "name": "start_body_task",
+                            "arguments": '{"task_type": "follow_player", "target_hint": "me"}',
+                        },
+                    }
+                ],
+            },
+            finish_reason="tool_calls",
+            usage={"prompt_tokens": 1},
+            raw={},
+        )
+
+
 class UnconfiguredDeepSeek:
     def configured(self) -> bool:
         return False
@@ -121,6 +153,29 @@ def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
 
     assert response["messages"][0]["content"] == "我查到了 Minecraft Wiki 的相关结果。"
     assert deepseek.calls == 2
+
+
+def test_harness_dispatches_fabric_action_before_next_model_subturn(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = ActionDispatchDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-action-barrier",
+            "trigger": "command",
+            "message": "跟随我",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert deepseek.calls == 1
+    assert response["actions"][0]["name"] == "body_move_to_requester"
+    assert "我开始跟随你" in response["messages"][0]["content"]
+    assert response["debug"]["action_barrier"] is True
 
 
 def test_harness_injects_current_task_into_context(tmp_path) -> None:

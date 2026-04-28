@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -28,6 +29,7 @@ class DeepSeekResponse:
 class DeepSeekClient:
     def __init__(self, settings: Settings):
         self.settings = settings
+        self._opener = _build_opener(settings.base_url)
 
     def configured(self) -> bool:
         return self.settings.deepseek_configured
@@ -84,7 +86,7 @@ class DeepSeekClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.settings.request_timeout_seconds) as response:
+            with self._opener.open(request, timeout=self.settings.request_timeout_seconds) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
@@ -102,3 +104,14 @@ class DeepSeekClient:
             usage=payload.get("usage") or {},
             raw=payload,
         )
+
+
+def _build_opener(base_url: str):
+    if _is_loopback(base_url):
+        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener()
+
+
+def _is_loopback(base_url: str) -> bool:
+    host = urllib.parse.urlparse(base_url).hostname or ""
+    return host == "localhost" or host == "::1" or host.startswith("127.")
