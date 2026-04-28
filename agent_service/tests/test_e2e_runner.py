@@ -18,6 +18,7 @@ from mina_agent.e2e.runner import (
     require_live_deepseek_env,
     scenario_artifact_payload,
     select_scenarios,
+    write_run_manifest,
 )
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
 
@@ -388,6 +389,48 @@ def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
     assert payload["tags"] == ["core", "safety"]
     assert payload["forbidden_actions"] == ["body_attack", "body_chain"]
     json.dumps(payload)
+
+
+def test_write_run_manifest_records_selected_scenarios_and_runner_options(tmp_path) -> None:
+    args = parse_args(
+        [
+            "--suite",
+            "live",
+            "--port",
+            "19001",
+            "--server-port",
+            "25570",
+            "--timeout",
+            "12",
+            "--skip-build",
+            "--disable-body",
+            "--searxng-url",
+            "http://127.0.0.1:8888",
+        ]
+    )
+    scenario = scenario_from_dict(
+        {
+            "name": "manifest_case",
+            "fixture": "follow_player",
+            "tags": ["core"],
+            "steps": [{"kind": "request", "request_id": "manifest-case", "value": "状态"}],
+            "rubric": "manifest should preserve selected scenario config",
+        }
+    )
+
+    write_run_manifest(tmp_path, args, [scenario], {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"})
+
+    payload = json.loads((tmp_path / "run_manifest.json").read_text(encoding="utf-8"))
+    assert payload["suite"] == "live"
+    assert payload["scenario_names"] == ["manifest_case"]
+    assert payload["runner"]["port"] == 19001
+    assert payload["runner"]["server_port"] == 25570
+    assert payload["runner"]["timeout_seconds"] == 12
+    assert payload["runner"]["skip_build"] is True
+    assert payload["runner"]["disable_body"] is True
+    assert payload["runner"]["external_searxng"] is True
+    assert payload["deepseek"]["model"] == "deepseek-v4-flash"
+    assert payload["scenarios"][0]["rubric"] == "manifest should preserve selected scenario config"
 
 
 def test_aggregate_run_trace_jsonl_preserves_scenario_and_time_order(tmp_path) -> None:

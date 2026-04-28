@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = time.strftime("%Y%m%d-%H%M%S")
     artifact_dir = RUNS_DIR / run_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
+    write_run_manifest(artifact_dir, args, selected, live_model)
 
     prepare_runtime(args.port, args.server_port, enable_body=not args.disable_body)
     if not args.skip_build:
@@ -992,6 +993,24 @@ def scenario_artifact_payload(scenario: Scenario) -> dict[str, Any]:
     payload["tags"] = sorted(scenario.tags)
     payload["forbidden_actions"] = sorted(scenario.forbidden_actions)
     return payload
+
+
+def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:
+    payload = {
+        "suite": args.suite,
+        "scenario_names": [scenario.name for scenario in scenarios],
+        "runner": {
+            "port": args.port,
+            "server_port": args.server_port,
+            "timeout_seconds": args.timeout,
+            "skip_build": bool(args.skip_build),
+            "disable_body": bool(args.disable_body),
+            "external_searxng": bool(args.searxng_url),
+        },
+        "deepseek": live_model,
+        "scenarios": [scenario_artifact_payload(scenario) for scenario in scenarios],
+    }
+    (artifact_dir / "run_manifest.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def aggregate_run_trace_jsonl(artifact_dir: Path, scenario_names: list[str]) -> None:
