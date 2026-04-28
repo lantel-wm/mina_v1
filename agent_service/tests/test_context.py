@@ -26,6 +26,28 @@ def test_context_includes_relevant_player_memory(tmp_path) -> None:
     assert "secret desert base" not in context
 
 
+def test_context_omits_recent_memory_content_for_recall_requests(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("old-1", "player-1", "user", "记住 RecallCode=Emerald-2718")
+    memory.add_event("player-1", "player_fact", {"content": "RecallCode=Emerald-2718"}, importance=4)
+
+    messages = build_messages(
+        {
+            "request_id": "req-1",
+            "trigger": "command",
+            "message": "你还记得 RecallCode 吗？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "snapshot": {},
+        },
+        memory,
+    )
+    context = "\n".join(str(message.get("content") or "") for message in messages)
+
+    assert "memory_search" in context
+    assert "Recent conversation memory is intentionally omitted" in context
+    assert "Emerald-2718" not in context
+
+
 def test_context_includes_skill_reflection_for_chinese_body_intent(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_skill_reflection("chop_tree", "When chopping, move to the approach point before attacking.", {"task_id": "task-1"})

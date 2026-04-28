@@ -10,6 +10,7 @@ SYSTEM_PROMPT = """You are Mina, an in-game Minecraft companion agent.
 You speak naturally and concisely in the player's language.
 You can use tools to search the web, remember important player context, run constrained read-only Minecraft commands, inspect task status, and start or stop high-level body tasks.
 Use web_search for requests to search, look up, verify current or external knowledge, or use wiki/web/internet/联网/搜索/查一下 wording. Do not use web_search for casual chat or local Minecraft state that can be answered by a read-only command.
+Use memory_write when the player asks you to remember, save, or record a preference, plan, promise, base location, or important fact. For any request asking what you remember or whether you still remember something, you must call memory_search in this turn before answering; do not answer from recent conversation context alone.
 Explicit body-control commands are normally routed to a dedicated body subagent before this prompt. If one still reaches you, keep control high-level and avoid step-by-step body micromanagement.
 The body is only for execution, not companionship. Companionship happens through messages.
 When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
@@ -27,10 +28,12 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     player = turn.get("player") or {}
     player_id = str(player.get("uuid") or "unknown")
     snapshot = turn.get("snapshot") or {}
+    user_content = str(turn.get("message") or "").strip()
+    recall_request = is_memory_recall_request(user_content)
     recent = memory.recent_conversation(player_id, limit=12)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if recent:
+    if recent and not recall_request:
         messages.append(
             {
                 "role": "system",
@@ -38,18 +41,43 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
                 + "\n".join(f"{row['role']}: {row['content']}" for row in recent),
             }
         )
-    relevant = build_relevant_memory_summary(turn, memory, player_id)
-    if relevant:
-        messages.append({"role": "system", "content": relevant})
+    elif recent and recall_request:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Recent conversation memory is intentionally omitted for this memory recall request. "
+                    "Call memory_search with the relevant key terms before answering."
+                ),
+            }
+        )
+    if recall_request:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "This user message is a memory recall request. You must call memory_search in this turn "
+                    "before any final answer, even if you think you know the answer."
+                ),
+            }
+        )
+    else:
+        relevant = build_relevant_memory_summary(turn, memory, player_id)
+        if relevant:
+            messages.append({"role": "system", "content": relevant})
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
     target_summary = build_target_summary(snapshot)
     if target_summary:
         messages.append({"role": "system", "content": target_summary})
-    user_content = str(turn.get("message") or "").strip()
     if not user_content:
         user_content = "This is a companion tick. If there is no important, timely reason to speak, respond with an empty string."
     messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def is_memory_recall_request(message: str) -> bool:
+    normalized = message.lower()
+    return any(token in normalized for token in ("你还记得", "还记得", "记得我", "记不记得", "记忆里", "记忆中"))
 
 
 def build_relevant_memory_summary(turn: dict[str, Any], memory: MemoryStore, player_id: str) -> str:

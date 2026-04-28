@@ -283,6 +283,54 @@ class DirectAnswerDeepSeek:
         )
 
 
+class RecallRepairDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.tool_messages: list[dict[str, Any]] = []
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        self.tool_messages = [message for message in messages if message.get("role") == "tool"]
+        if self.calls == 1:
+            return DeepSeekResponse(
+                message={"role": "assistant", "content": "记得，RecallCode 是 Emerald-2718。"},
+                finish_reason="stop",
+                usage={"completion_tokens": 1},
+                raw={},
+            )
+        if self.calls == 2:
+            return DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-memory-search",
+                            "type": "function",
+                            "function": {
+                                "name": "memory_search",
+                                "arguments": '{"query": "RecallCode", "limit": 5}',
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 1},
+                raw={},
+            )
+        assert self.tool_messages
+        assert "Emerald-2718" in self.tool_messages[-1]["content"]
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": "记得，RecallCode 是 Emerald-2718。"},
+            finish_reason="stop",
+            usage={"completion_tokens": 1},
+            raw={},
+        )
+
+
 class FailIfCalledDeepSeek:
     def __init__(self) -> None:
         self.calls = 0
@@ -366,6 +414,31 @@ def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     assert deepseek.calls == 2
     calls = memory.recent_tool_calls(request_id="req-1", limit=10)
     assert [call["tool_name"] for call in calls] == ["web_search"]
+    assert calls[0]["status"] == "ok"
+
+
+def test_harness_repairs_memory_recall_without_search(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_event("player-1", "player_fact", {"content": "RecallCode=Emerald-2718"}, importance=4)
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = RecallRepairDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-recall-repair",
+            "trigger": "command",
+            "message": "你还记得 RecallCode 吗？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    assert "Emerald-2718" in response["messages"][0]["content"]
+    assert deepseek.calls == 3
+    calls = memory.recent_tool_calls(request_id="req-recall-repair", limit=10)
+    assert [call["tool_name"] for call in calls] == ["memory_search"]
     assert calls[0]["status"] == "ok"
 
 
@@ -916,6 +989,42 @@ def test_harness_offline_fallback_can_return_search_results(tmp_path) -> None:
         assert "Minecraft Wiki" in response["messages"][0]["content"]
         calls = memory.recent_tool_calls(request_id=request_id, limit=10)
         assert [call["tool_name"] for call in calls] == ["web_search"]
+
+
+def test_harness_offline_fallback_can_write_and_search_memory(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": False},
+        "snapshot": {},
+    }
+
+    written = harness.run_turn(
+        {
+            "request_id": "req-offline-memory-write",
+            "message": "记住 MinaOfflineMemoryCode=Emerald-314",
+            **base_turn,
+        }
+    )
+    searched = harness.run_turn(
+        {
+            "request_id": "req-offline-memory-search",
+            "message": "你还记得 MinaOfflineMemoryCode 吗？",
+            **base_turn,
+        }
+    )
+
+    assert "我记住了" in written["messages"][0]["content"]
+    assert "Emerald-314" in searched["messages"][0]["content"]
+    assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-offline-memory-write", limit=10)] == [
+        "memory_write"
+    ]
+    assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-offline-memory-search", limit=10)] == [
+        "memory_search"
+    ]
 
 
 def test_harness_offline_fallback_still_reports_missing_key_for_complex_request(tmp_path) -> None:

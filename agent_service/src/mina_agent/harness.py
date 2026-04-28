@@ -13,7 +13,7 @@ from .body_agent import (
     is_body_stop_request,
 )
 from .config import Settings
-from .context import build_messages
+from .context import build_messages, is_memory_recall_request
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .schemas import TurnResponse
@@ -92,6 +92,8 @@ class AgentHarness:
         actions: list[dict[str, Any]] = []
         usage: dict[str, Any] = {}
         invalid_tool_results = 0
+        requires_memory_search = is_memory_recall_request(message)
+        memory_search_seen = False
         try:
             for subturn in range(1, self.settings.max_tool_turns + 1):
                 self._debug("model call request_id=%s subturn=%s messages=%s", request_id, subturn, len(messages))
@@ -135,6 +137,18 @@ class AgentHarness:
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
                     content = str(assistant_message.get("content") or "").strip()
+                    if content and requires_memory_search and not memory_search_seen:
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "Policy reminder: this is a memory recall request. The direct answer was not sent. "
+                                    "Call memory_search with the relevant key terms before giving a final answer."
+                                ),
+                            }
+                        )
+                        self._debug("turn repair request_id=%s reason=missing_memory_search", request_id)
+                        continue
                     if content:
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
                         self._debug("turn final request_id=%s messages=1 actions=%s", request_id, len(actions))
@@ -164,6 +178,8 @@ class AgentHarness:
                     function = call.get("function") or {}
                     name = str(function.get("name") or "")
                     args = _parse_args(function.get("arguments"))
+                    if name == "memory_search":
+                        memory_search_seen = True
                     self._debug(
                         "tool call request_id=%s subturn=%s tool_call_id=%s name=%s args=%s",
                         request_id,
@@ -286,6 +302,34 @@ class AgentHarness:
                 "我开始砍树，会根据实际执行结果继续调整。",
             )
 
+        if _offline_memory_search_intent(normalized):
+            args = {"query": _offline_memory_query(message), "limit": 5}
+            result = self.tools.run("memory_search", args, turn)
+            self._record_tool_call(turn, "memory_search", args, result, [])
+            payload = _json_object(result.content)
+            lines = []
+            if payload.get("ok") is True:
+                for item in payload.get("results") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    content = str(item.get("content") or "").strip()
+                    if content:
+                        lines.append(_truncate(content, 160))
+            if lines:
+                return TurnResponse(
+                    messages=[{"target": "requester", "content": "我找到了这些相关记忆：\n" + "\n".join(lines)}],
+                    debug={"offline_fallback": True},
+                )
+            return TurnResponse(messages=[{"target": "requester", "content": "我没有找到相关记忆。"}])
+
+        if _offline_memory_write_intent(normalized):
+            return self._offline_tool_response(
+                "memory_write",
+                {"event_type": "player_fact", "content": _offline_memory_content(message), "importance": 3},
+                turn,
+                "我记住了。",
+            )
+
         command = _offline_read_only_command(normalized)
         if command:
             return self._offline_tool_response(
@@ -334,7 +378,7 @@ class AgentHarness:
             error = str(payload.get("error") or "tool unavailable")
             if not messages:
                 messages = [{"target": "requester", "content": f"离线模式无法完成请求：{error}"}]
-        elif not messages and actions:
+        elif not messages:
             messages = [{"target": "requester", "content": fallback_message}]
         self._record_tool_call(turn, name, args, result, actions)
         return TurnResponse(messages=messages, actions=actions, debug={"offline_fallback": True})
@@ -518,6 +562,39 @@ def _offline_stop_intent(message: str) -> bool:
 
 def _offline_chop_tree_intent(message: str) -> bool:
     return is_body_chop_tree_request(message)
+
+
+def _offline_memory_write_intent(message: str) -> bool:
+    return _contains_any(message, {"记住", "帮我记", "保存", "记录"}) and not _offline_memory_search_intent(message)
+
+
+def _offline_memory_search_intent(message: str) -> bool:
+    return is_memory_recall_request(message)
+
+
+def _offline_memory_content(message: str) -> str:
+    content = message.strip()
+    for prefix in ("请", "帮我", "麻烦你"):
+        if content.startswith(prefix):
+            content = content[len(prefix) :].strip()
+    for marker in ("记住", "保存", "记录"):
+        if marker in content:
+            content = content.split(marker, 1)[1].strip(" ：:，,。")
+            break
+    return content or message.strip()
+
+
+def _offline_memory_query(message: str) -> str:
+    query = message.strip()
+    for marker in ("你还记得", "还记得", "记得我", "记不记得"):
+        if marker in query:
+            query = query.split(marker, 1)[1].strip(" ：:，,。?？")
+            break
+    for suffix in ("吗", "么", "呢"):
+        if query.endswith(suffix):
+            query = query[: -len(suffix)].strip(" ：:，,。?？")
+            break
+    return query or message.strip()
 
 
 def _deepseek_error_message(exc: DeepSeekError) -> str:

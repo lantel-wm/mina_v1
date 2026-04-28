@@ -829,6 +829,41 @@ SCENARIO_DATA = [
         "rubric": "Player-scoped memory must persist across requests and be retrieved through memory_search when explicitly requested.",
     },
     {
+        "name": "memory_natural_roundtrip_live_model",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "memory", "model"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "memory-natural-write",
+                "value": "记住这个玩家事实：MinaE2ENaturalMemoryCode=Amethyst-2468。以后我问你时请回答这个值。",
+                "wait_for": ["mina turn response requestId=memory-natural-write"],
+                "timeout": 120,
+            },
+            {
+                "kind": "request",
+                "request_id": "memory-natural-search",
+                "value": "你还记得我的 MinaE2ENaturalMemoryCode 吗？回答时包含 Amethyst-2468。",
+                "wait_for": ["mina turn response requestId=memory-natural-search"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "memory_write", "status": "ok", "args_contains": "MinaE2ENaturalMemoryCode"},
+            {"name": "memory_search", "status": "ok", "args_contains": "MinaE2ENaturalMemoryCode"},
+        ],
+        "forbidden_actions": {
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+            "run_read_only_command",
+        },
+        "expected_model": {"mode": "at_least", "min_count": 2},
+        "expected_response_contains": ["Amethyst-2468"],
+        "rubric": "Natural remember and recall wording must use memory_write and memory_search without naming tools.",
+    },
+    {
         "name": "write_command_rejected",
         "fixture": "chop_tree",
         "tags": ["live", "core", "safety", "model"],
