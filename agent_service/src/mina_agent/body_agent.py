@@ -71,13 +71,17 @@ class BodySubagent:
         return None
 
     def _status(self, turn: dict[str, Any]) -> BodySubagentResult:
+        message = str(turn.get("message") or "").strip().lower()
         args: dict[str, Any] = {}
+        if _recent_task_status_request(message):
+            args["include_recent"] = True
         result = self.tools.run("task_status", args, turn)
         status = _json_object(result.content)
         if status.get("ok") is False:
             content = "当前没有正在执行的身体任务。"
         else:
-            content = f"当前任务：{status.get('type')}，状态：{status.get('status')}，阶段：{status.get('stage')}。"
+            prefix = "当前任务" if status.get("status") == "active" else "最近任务"
+            content = f"{prefix}：{status.get('type')}，状态：{status.get('status')}，阶段：{status.get('stage')}。"
         response = TurnResponse(
             messages=[{"target": "requester", "content": content}],
             debug={"body_subagent": True, "intent": "task_status", "task_status": status},
@@ -189,6 +193,43 @@ def is_body_task_status_request(message: str) -> bool:
     )
 
 
+def _recent_task_status_request(message: str) -> bool:
+    normalized = message.strip().lower()
+    return any(
+        token in normalized
+        for token in (
+            "任务完成",
+            "任务进度",
+            "当前进度",
+            "执行进度",
+            "进度怎么样",
+            "进度如何",
+            "完成了吗",
+            "完成了么",
+            "完成没",
+            "做完",
+            "弄完",
+            "搞完",
+            "砍完",
+            "砍好了",
+            "收集完",
+            "结束了吗",
+            "结束了么",
+            "失败了吗",
+            "失败了么",
+            "还在砍",
+            "还在跟",
+            "task complete",
+            "task finished",
+            "finished",
+            "complete",
+            "done",
+            "still following",
+            "still chopping",
+        )
+    )
+
+
 def _stop_intent(message: str) -> bool:
     return is_body_stop_request(message)
 
@@ -284,13 +325,13 @@ def is_body_chop_tree_request(message: str) -> bool:
 
 def _contains_chinese_tree_action(message: str) -> bool:
     tree_terms = ("树", "木头", "原木", "树干")
-    action_terms = ("砍", "伐", "采", "采集", "收集", "挖", "打", "撸", "弄", "搞")
+    action_terms = ("砍", "伐", "采", "采集", "收集", "获取", "获得", "拿", "挖", "打", "撸", "弄", "搞")
     return any(tree in message for tree in tree_terms) and any(action in message for action in action_terms)
 
 
 def _contains_english_tree_action(message: str) -> bool:
     tree_terms = ("tree", "trees", "log", "logs", "wood")
-    action_terms = ("chop", "cut", "break", "harvest", "collect")
+    action_terms = ("chop", "cut", "break", "harvest", "collect", "gather", "get")
     return any(tree in message for tree in tree_terms) and any(action in message for action in action_terms)
 
 

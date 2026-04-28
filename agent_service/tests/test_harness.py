@@ -1459,7 +1459,20 @@ def test_harness_body_subagent_handles_referential_chop_without_model_call(tmp_p
 
 
 def test_harness_body_subagent_handles_colloquial_chop_without_model_call(tmp_path) -> None:
-    for index, message in enumerate(("帮我挖点木头", "帮我撸树", "帮我收集木头", "帮我弄点木头", "搞点原木", "break some logs")):
+    for index, message in enumerate(
+        (
+            "帮我挖点木头",
+            "帮我撸树",
+            "帮我收集木头",
+            "帮我弄点木头",
+            "帮我拿点木头",
+            "获取一点原木",
+            "搞点原木",
+            "break some logs",
+            "get some wood",
+            "gather logs",
+        )
+    ):
         memory = MemoryStore(tmp_path / f"mina-{index}.sqlite3")
         tools = ToolRunner(memory, FakeSearch())
         deepseek = FailIfCalledDeepSeek()

@@ -213,6 +213,9 @@ def test_start_body_task_fails_gracefully_when_logs_have_no_approach(tmp_path) -
     assert '"error": "no log target with approach position"' in result.content
     assert "没有找到可安全接近的原木" in result.content
     assert '"task not found"' in runner.run("task_status", {}, turn).content
+    latest_status = runner.run("task_status", {"include_recent": True}, turn).content
+    assert '"status": "failed"' in latest_status
+    assert '"last_error": "no log target with approach position"' in latest_status
 
 
 def test_chop_tree_ignores_vertically_unreachable_log_candidates(tmp_path) -> None:
@@ -231,7 +234,7 @@ def test_chop_tree_ignores_vertically_unreachable_log_candidates(tmp_path) -> No
     assert '"y": 80' in status.content
 
 
-def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> None:
+def test_completed_task_is_not_current_but_remains_recent_and_queryable_by_id(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()
 
@@ -292,6 +295,9 @@ def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> 
     )
 
     assert '"task not found"' in runner.run("task_status", {}, turn).content
+    latest_status = runner.run("task_status", {"include_recent": True}, turn).content
+    assert '"status": "completed"' in latest_status
+    assert f'"task_id": "{task_id}"' in latest_status
     assert '"status": "completed"' in runner.run("task_status", {"task_id": task_id}, turn).content
     stopped = runner.run("stop_body_task", {"task_id": task_id}, turn)
     assert stopped.actions == []
@@ -531,6 +537,9 @@ def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) ->
     assert completed.actions[0]["requires_permission"] is False
     assert completed.messages[0]["content"] == "砍树完成。"
     assert '"task not found"' in runner.run("task_status", {}, turn).content
+    latest_status = runner.run("task_status", {"include_recent": True}, turn).content
+    assert '"status": "completed"' in latest_status
+    assert f'"task_id": "{task_id}"' in latest_status
     assert '"status": "completed"' in runner.run("task_status", {"task_id": task_id}, turn).content
 
 

@@ -23,7 +23,9 @@ class SkillRuntime:
         self._lock = threading.RLock()
         self._tasks: dict[str, dict[str, Any]] = {}
         self._active_by_player: dict[str, str] = {}
+        self._latest_by_player: dict[str, str] = {}
         self._active_body_task_id: str | None = None
+        self._latest_body_task_id: str | None = None
 
     def start_task(self, task_type: str, args: dict[str, Any], turn: dict[str, Any]) -> TurnResponse:
         if task_type not in {"chop_tree", "follow_player"}:
@@ -70,7 +72,9 @@ class SkillRuntime:
             }
             self._tasks[task_id] = task
             self._active_by_player[player_id] = task_id
+            self._latest_by_player[player_id] = task_id
             self._active_body_task_id = task_id
+            self._latest_body_task_id = task_id
             self.memory.record_task_event(task_id, "started", {"task_type": task_type, "args": args})
             response = self._advance(task, turn.get("snapshot") or {})
             self._clear_current_if_terminal(task)
@@ -98,9 +102,9 @@ class SkillRuntime:
                 actions=[_action(task, "body_stop", {}, step="stop", monitor=None)],
             )
 
-    def task_status(self, task_id: str | None, turn: dict[str, Any] | None = None) -> dict[str, Any]:
+    def task_status(self, task_id: str | None, turn: dict[str, Any] | None = None, *, include_recent: bool = False) -> dict[str, Any]:
         with self._lock:
-            task = self._find_task(task_id, turn)
+            task = self._find_recent_task(task_id, turn) if include_recent else self._find_task(task_id, turn)
             if task is None:
                 return {"ok": False, "error": "task not found"}
             return _public_task(task)
@@ -172,6 +176,24 @@ class SkillRuntime:
         if self._active_body_task_id:
             task = self._tasks.get(self._active_body_task_id)
             if task is not None and task.get("status") == "active":
+                return task
+        return None
+
+    def _find_recent_task(self, task_id: str | None, turn: dict[str, Any] | None) -> dict[str, Any] | None:
+        task = self._find_task(task_id, turn)
+        if task is not None:
+            return task
+        if turn:
+            player = turn.get("player") or {}
+            player_id = str(player.get("uuid") or player.get("id") or "")
+            latest = self._latest_by_player.get(player_id)
+            if latest:
+                task = self._tasks.get(latest)
+                if task is not None:
+                    return task
+        if self._latest_body_task_id:
+            task = self._tasks.get(self._latest_body_task_id)
+            if task is not None:
                 return task
         return None
 

@@ -400,6 +400,41 @@ SCENARIO_DATA = [
         "rubric": "Natural collect-wood requests must route to the deterministic chop_tree skill without exposing low-level body actions to the model.",
     },
     {
+        "name": "body_get_wood_status_after_completion_router",
+        "fixture": "chop_tree",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-get-wood-chop-router",
+                "value": "帮我拿点木头",
+                "wait_for": ["我开始砍树"],
+            },
+            {"kind": "assert", "value": "chop_tree", "timeout": 180},
+            {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
+            {
+                "kind": "request",
+                "request_id": "body-get-wood-status-after-completion",
+                "value": "砍完了吗？",
+                "wait_for": ["最近任务：chop_tree"],
+            },
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
+            {"name": "task_status", "status": "ok", "result_contains": "completed"},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_position"},
+            {"name": "body_look_at_position"},
+            {"name": "body_attack"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["最近任务：chop_tree", "状态：completed"],
+        "trace_invariants": ["no_body_look_monitor_timeout"],
+        "world_asserts": ["chop_tree", "upper_log_absent"],
+        "rubric": "Get-wood requests should route to chop_tree, and follow-up status questions after completion should report the recent completed task without model calls.",
+    },
+    {
         "name": "body_chop_target_disappears_router",
         "fixture": "chop_tree",
         "tags": ["live", "core", "body", "router"],

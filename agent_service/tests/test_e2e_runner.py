@@ -125,12 +125,20 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         "body_referential_chop_tree_router",
         "body_colloquial_chop_tree_router",
         "body_collect_wood_chop_router",
+        "body_get_wood_status_after_completion_router",
     }:
         assert "no_body_look_monitor_timeout" in SCENARIOS[scenario_name].trace_invariants
     collect_wood = SCENARIOS["body_collect_wood_chop_router"]
     assert any(step.value == "帮我收集木头" for step in collect_wood.steps)
     assert collect_wood.expected_model is not None
     assert collect_wood.expected_model.count == 0
+    get_wood = SCENARIOS["body_get_wood_status_after_completion_router"]
+    assert any(step.value == "帮我拿点木头" for step in get_wood.steps)
+    assert any(step.value == "砍完了吗？" for step in get_wood.steps)
+    assert any(expected.name == "task_status" and expected.status == "ok" for expected in get_wood.expected_tools)
+    assert "最近任务：chop_tree" in get_wood.expected_response_contains
+    assert get_wood.expected_model is not None
+    assert get_wood.expected_model.count == 0
     plain_lookup = SCENARIOS["knowledge_plain_lookup_search_router"]
     assert any(expected.name == "web_search" and expected.status == "ok" for expected in plain_lookup.expected_tools)
     assert any(step.value.startswith("帮我查一下 Minecraft") for step in plain_lookup.steps)

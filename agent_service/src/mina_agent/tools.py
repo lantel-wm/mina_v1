@@ -173,8 +173,17 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "task_status",
-                "description": "Inspect Mina's current high-level body task status. Omit task_id for the current task.",
-                "parameters": _schema({"task_id": {"type": "string"}}, []),
+                "description": (
+                    "Inspect Mina's current high-level body task status. Omit task_id for the current task. "
+                    "Set include_recent only when the player asks whether the last task finished or failed."
+                ),
+                "parameters": _schema(
+                    {
+                        "task_id": {"type": "string"},
+                        "include_recent": {"type": "boolean"},
+                    },
+                    [],
+                ),
             },
         },
         {
@@ -329,7 +338,11 @@ class ToolRunner:
         )
 
     def _task_status(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
-        status = self.skills.task_status(str(args.get("task_id") or "") or None, turn)
+        status = self.skills.task_status(
+            str(args.get("task_id") or "") or None,
+            turn,
+            include_recent=bool(args.get("include_recent")),
+        )
         return ToolResult(content=json.dumps(status, ensure_ascii=False))
 
     def _run_read_only_command(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
