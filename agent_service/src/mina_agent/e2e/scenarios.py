@@ -977,6 +977,36 @@ SCENARIO_DATA = [
         "rubric": "Natural language web lookup requests must use web_search directly even when the player does not name the tool.",
     },
     {
+        "name": "knowledge_seed_map_search_not_world_seed",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "knowledge", "search", "router", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "knowledge-seed-map-search-not-world-seed",
+                "value": "帮我联网查一下 Minecraft seed map Mina E2E seed fixture，回答查到的结果。",
+                "wait_for": ["mina turn response requestId=knowledge-seed-map-search-not-world-seed"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "web_search", "status": "ok", "args_contains": "Minecraft seed map"},
+        ],
+        "forbidden_tools": [
+            {"name": "run_read_only_command", "args_contains": "seed"},
+        ],
+        "forbidden_actions": {
+            "run_read_only_command",
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["Deterministic Mina E2E result for query"],
+        "rubric": "Explicit seed-map knowledge lookups must use web_search and must not be hijacked by the Minecraft world-seed router.",
+    },
+    {
         "name": "knowledge_weather_search_not_world_weather",
         "fixture": "follow_player",
         "tags": ["live", "core", "knowledge", "search", "router", "safety"],

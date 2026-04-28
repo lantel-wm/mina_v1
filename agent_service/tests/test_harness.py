@@ -627,6 +627,34 @@ def test_harness_routes_explicit_weather_web_search_without_world_weather_hijack
     assert "回答查到" not in calls[0]["args_json"]
 
 
+def test_harness_routes_explicit_seed_map_search_without_world_seed_hijack(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-seed-map-web-search",
+            "trigger": "command",
+            "message": "帮我联网查一下 Minecraft seed map Mina E2E seed fixture，回答查到的结果。",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "Result for Minecraft seed map Mina E2E seed fixture" in content
+    assert response["actions"] == []
+    assert response["debug"]["local_web_search"] is True
+    assert deepseek.calls == 0
+    calls = memory.recent_tool_calls(request_id="req-seed-map-web-search", limit=10)
+    assert [call["tool_name"] for call in calls] == ["web_search"]
+    assert "Minecraft seed map" in calls[0]["args_json"]
+    assert "回答查到" not in calls[0]["args_json"]
+
+
 def test_harness_does_not_route_negated_search_request(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, UnsafeSearch())
@@ -1270,6 +1298,61 @@ def test_harness_local_read_only_router_maps_time_variants(tmp_path) -> None:
         calls = memory.recent_tool_calls(request_id=request_id, limit=10)
         assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
     assert deepseek.calls == 0
+
+
+def test_harness_local_read_only_router_maps_seed_queries(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    cases = [
+        ("req-natural-seed-cn", "查询当前世界种子", "seed"),
+        ("req-natural-seed-en-world", "what is the world seed?", "seed"),
+        ("req-natural-seed-en-current", "what's the current seed?", "seed"),
+    ]
+    for request_id, message, command in cases:
+        response = harness.run_turn(
+            {
+                "request_id": request_id,
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": False},
+                "snapshot": {},
+            }
+        )
+
+        assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+        assert response["actions"][0]["name"] == "run_read_only_command"
+        assert response["actions"][0]["args"]["command"] == command
+        assert response["debug"]["command"] == command
+        calls = memory.recent_tool_calls(request_id=request_id, limit=10)
+        assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+    assert deepseek.calls == 0
+
+
+def test_harness_does_not_route_seed_instruction_to_world_seed_command(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DirectAnswerDeepSeek("Seed map 可以用来根据世界种子查看地形和结构分布。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-seed-map-instruction",
+            "trigger": "command",
+            "message": "Minecraft seed map 怎么用？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    assert "Seed map 可以用来" in response["messages"][0]["content"]
+    assert response["actions"] == []
+    assert deepseek.calls == 1
+    assert memory.recent_tool_calls(request_id="req-seed-map-instruction", limit=10) == []
 
 
 def test_harness_local_read_only_router_maps_weather_and_player_list_variants(tmp_path) -> None:

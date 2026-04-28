@@ -833,8 +833,9 @@ def _local_read_only_command(message: str) -> str:
     time_command = _natural_time_command(normalized)
     if time_command:
         return time_command
-    if "种子" in normalized or "seed" in normalized or "world seed" in normalized:
-        return "seed"
+    seed_command = _natural_seed_command(normalized)
+    if seed_command:
+        return seed_command
     weather_command = _natural_weather_command(normalized)
     if weather_command:
         return weather_command
@@ -887,6 +888,85 @@ def _natural_time_command(message: str) -> str:
     ):
         return "time query daytime"
     return ""
+
+
+def _natural_seed_command(message: str) -> str:
+    if _local_web_search_intent(message) or _seed_instructional_request(message):
+        return ""
+    if any(
+        token in message
+        for token in (
+            "世界种子",
+            "当前种子",
+            "当前世界种子",
+            "服务器种子",
+            "这个世界的种子",
+            "这个存档的种子",
+            "本世界种子",
+            "地图种子",
+        )
+    ):
+        return "seed"
+    if not re.search(r"\bseed\b", message):
+        return ""
+    if any(
+        token in message
+        for token in (
+            "world seed",
+            "server seed",
+            "current seed",
+            "level seed",
+            "this world seed",
+            "this world's seed",
+            "seed of this world",
+            "seed for this world",
+            "seed for the world",
+            "what is the seed",
+            "what's the seed",
+            "show seed",
+            "check seed",
+            "query seed",
+        )
+    ):
+        return "seed"
+    return ""
+
+
+def _seed_instructional_request(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "种子地图",
+            "种子查询器",
+            "种子解析",
+            "种子推荐",
+            "好种子",
+            "seed map",
+            "seed finder",
+            "seed viewer",
+            "seed lookup",
+            "seed guide",
+            "best seed",
+            "best seeds",
+            "minecraft seeds",
+            "chunkbase",
+            "怎么",
+            "如何",
+            "怎样",
+            "教程",
+            "攻略",
+            "解释",
+            "介绍",
+            "生成机制",
+            "how to",
+            "guide",
+            "tutorial",
+            "explain",
+            "tell me about",
+            "what is a seed",
+            "what are seeds",
+        )
+    )
 
 
 def _natural_weather_command(message: str) -> str:
