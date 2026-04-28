@@ -34,6 +34,7 @@ def main() -> int:
             "stop_follow",
             "replace_follow_with_chop",
             "body_unavailable",
+            "offline_knowledge_query",
             "offline_read_only_command",
             "offline_follow",
         ],
@@ -41,6 +42,7 @@ def main() -> int:
     parser.add_argument("--sidecar", default="scripted", choices=["scripted", "service"])
     parser.add_argument("--port", type=int, default=18911)
     parser.add_argument("--server-port", type=int, default=25566)
+    parser.add_argument("--search-port", type=int, default=18888)
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
@@ -49,11 +51,19 @@ def main() -> int:
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
-    offline_service_scenarios = {"offline_follow", "offline_read_only_command"}
+    offline_service_scenarios = {"offline_follow", "offline_read_only_command", "offline_knowledge_query"}
+    fake_search = start_fake_search(args.search_port) if args.scenario == "offline_knowledge_query" else None
     sidecar_mode = "service" if args.scenario in offline_service_scenarios else args.sidecar
-    sidecar = start_sidecar(args.port, sidecar_mode, force_offline=args.scenario in offline_service_scenarios)
+    sidecar = start_sidecar(
+        args.port,
+        sidecar_mode,
+        force_offline=args.scenario in offline_service_scenarios,
+        searxng_url=f"http://127.0.0.1:{args.search_port}" if fake_search is not None else None,
+    )
     server = None
     try:
+        if fake_search is not None:
+            wait_http(f"http://127.0.0.1:{args.search_port}/healthz", timeout=20, proc=fake_search)
         wait_http(f"http://127.0.0.1:{args.port}/healthz", timeout=20, proc=sidecar)
         server = start_server()
         output = OutputReader(server)
@@ -71,6 +81,7 @@ def main() -> int:
                 "body_unavailable",
                 "offline_follow",
                 "offline_read_only_command",
+                "offline_knowledge_query",
             }
             else args.scenario
         )
@@ -102,6 +113,8 @@ def main() -> int:
             run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "body_unavailable":
             run_body_unavailable(server, output)
+        elif args.scenario == "offline_knowledge_query":
+            run_knowledge_query(server, output)
         elif args.scenario == "offline_read_only_command":
             run_read_only_command(server, output)
         elif args.scenario == "offline_follow":
@@ -112,6 +125,8 @@ def main() -> int:
         if server is not None:
             stop_process(server, command="stop")
         stop_process(sidecar)
+        if fake_search is not None:
+            stop_process(fake_search)
 
 
 def prepare_runtime(port: int, server_port: int, enable_body: bool = True) -> None:
@@ -204,7 +219,7 @@ def download(url: str, target: Path) -> None:
     tmp.replace(target)
 
 
-def start_sidecar(port: int, mode: str, force_offline: bool = False) -> subprocess.Popen[str]:
+def start_sidecar(port: int, mode: str, force_offline: bool = False, searxng_url: str | None = None) -> subprocess.Popen[str]:
     pythonpath = str(ROOT / "agent_service" / "src")
     env = {
         **os.environ,
@@ -214,9 +229,28 @@ def start_sidecar(port: int, mode: str, force_offline: bool = False) -> subproce
     }
     if force_offline:
         env["MINA_API_KEY"] = ""
+    if searxng_url:
+        env["MINA_SEARXNG_URL"] = searxng_url
     module = "mina_agent.dev.scripted_sidecar:app" if mode == "scripted" else "mina_agent.app:app"
     return subprocess.Popen(
         [sys.executable, "-m", "uvicorn", module, "--host", "127.0.0.1", "--port", str(port)],
+        cwd=ROOT,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+
+def start_fake_search(port: int) -> subprocess.Popen[str]:
+    pythonpath = str(ROOT / "agent_service" / "src")
+    env = {
+        **os.environ,
+        "PYTHONPATH": pythonpath + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    }
+    return subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "mina_agent.dev.fake_searxng:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=ROOT,
         env=env,
         stdin=subprocess.DEVNULL,
@@ -336,8 +370,9 @@ def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader") -
 
 def run_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader") -> None:
     send(proc, "mina-test request 查资料 Minecraft Wiki")
-    output.wait_for("搜索结果：Minecraft Wiki", timeout=30)
-    output.wait_for("联网知识查询链路可用", timeout=30)
+    found = output.wait_for_any(["搜索结果：Minecraft Wiki", "联网知识查询链路可用"], timeout=30)
+    if not found:
+        raise TimeoutError("knowledge query result")
 
 
 def run_banned_command(proc: subprocess.Popen[str], output: "OutputReader") -> None:
