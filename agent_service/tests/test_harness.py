@@ -211,6 +211,19 @@ class MultiActionDispatchDeepSeek:
         )
 
 
+class EmptyDeepSeek:
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": ""},
+            finish_reason="stop",
+            usage={"completion_tokens": 0},
+            raw={},
+        )
+
+
 class UnconfiguredDeepSeek:
     def configured(self) -> bool:
         return False
@@ -308,6 +321,30 @@ def test_harness_action_barrier_ignores_later_action_tool_calls(tmp_path) -> Non
     assert "chop_tree" not in calls[0]["args_json"]
     tasks = tools.skills.list_tasks()
     assert [task["type"] for task in tasks] == ["follow_player"]
+
+
+def test_harness_returns_visible_fallback_for_empty_model_response(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, EmptyDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-empty-model",
+            "trigger": "command",
+            "message": "你能做什么",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    assert response["messages"][0]["content"] == "我没有生成可执行回应，请换个说法或补充目标。"
+    assert response["actions"] == []
+    assert response["debug"]["empty_model_fallback"] is True
+    recent = memory.recent_conversation("player-1", limit=4)
+    assert recent[-1]["role"] == "assistant"
+    assert "补充目标" in recent[-1]["content"]
 
 
 def test_harness_injects_current_task_into_context(tmp_path) -> None:

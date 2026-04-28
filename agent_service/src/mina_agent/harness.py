@@ -101,8 +101,13 @@ class AgentHarness:
                             actions=actions,
                             debug={"usage": usage, "tool_subturns": subturn},
                         ).to_dict()
-                    self._debug("turn final request_id=%s messages=0 actions=0", request_id)
-                    return TurnResponse(debug={"usage": usage, "tool_subturns": subturn}).to_dict()
+                    content = "我没有生成可执行回应，请换个说法或补充目标。"
+                    self.memory.add_conversation(request_id, player_id, "assistant", content)
+                    self._debug("turn final request_id=%s messages=1 actions=0 content=empty_model_fallback", request_id)
+                    return TurnResponse(
+                        messages=[{"target": "requester", "content": content}],
+                        debug={"usage": usage, "tool_subturns": subturn, "empty_model_fallback": True},
+                    ).to_dict()
 
                 for call in tool_calls:
                     function = call.get("function") or {}
