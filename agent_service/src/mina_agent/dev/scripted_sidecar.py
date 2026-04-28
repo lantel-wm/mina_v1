@@ -85,10 +85,10 @@ def turn(payload: dict[str, Any]) -> dict[str, Any]:
                 }
             ],
         }
-    if "跟随" in message or "follow" in message:
+    if "跟随" in message or "follow me" in message or "follow player" in message:
         response = skills.start_task("follow_player", {"task_type": "follow_player", "target_hint": message}, payload)
         return response.to_dict()
-    if "砍树" in message or "chop" in message or "tree" in message:
+    if "砍树" in message or "砍木头" in message or "伐木" in message or "chop tree" in message or "cut down tree" in message:
         response = skills.start_task("chop_tree", {"task_type": "chop_tree", "target_hint": message}, payload)
         return response.to_dict()
     return {"messages": [{"target": "requester", "content": "scripted sidecar only handles chop_tree and follow_player."}], "actions": []}

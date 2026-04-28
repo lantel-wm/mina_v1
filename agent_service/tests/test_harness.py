@@ -231,3 +231,62 @@ def test_harness_offline_fallback_still_reports_missing_key_for_complex_request(
     )
 
     assert "MINA_API_KEY is not configured" in response["messages"][0]["content"]
+
+
+def test_harness_offline_fallback_does_not_chop_for_tree_planning_request(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-tree-plan",
+            "trigger": "command",
+            "message": "help me plan a tree farm",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert "MINA_API_KEY is not configured" in response["messages"][0]["content"]
+    assert response.get("actions", []) == []
+
+
+def test_harness_offline_fallback_still_chops_for_explicit_tree_action(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-chop",
+            "trigger": "command",
+            "message": "chop tree",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "body_state": {"online": True},
+                "nearby_blocks": {
+                    "requester": [
+                        {
+                            "block": "minecraft:oak_log",
+                            "category": "log",
+                            "x": 2,
+                            "y": 80,
+                            "z": 0,
+                            "center_x": 2.5,
+                            "center_y": 80.5,
+                            "center_z": 0.5,
+                            "distance": 3.0,
+                            "approach_x": 2.5,
+                            "approach_y": 80,
+                            "approach_z": -0.5,
+                        }
+                    ]
+                },
+            },
+        }
+    )
+
+    assert response["actions"][0]["name"] == "body_move_to_position"

@@ -193,7 +193,7 @@ class AgentHarness:
             response.debug["offline_fallback"] = True
             return response
 
-        if _contains_any(normalized, {"跟随", "follow"}):
+        if _offline_follow_intent(normalized):
             return self._offline_tool_response(
                 "start_body_task",
                 {"task_type": "follow_player", "target_hint": message},
@@ -201,7 +201,7 @@ class AgentHarness:
                 "我开始跟随你，会根据距离变化继续调整。",
             )
 
-        if _contains_any(normalized, {"砍树", "chop", "tree"}):
+        if _offline_chop_tree_intent(normalized):
             return self._offline_tool_response(
                 "start_body_task",
                 {"task_type": "chop_tree", "target_hint": message},
@@ -357,6 +357,27 @@ def _offline_read_only_command(message: str) -> str:
     if "在线" in message or "玩家列表" in message or message == "list" or "player list" in message:
         return "list"
     return ""
+
+
+def _offline_follow_intent(message: str) -> bool:
+    return _contains_any(message, {"跟随我", "跟着我", "follow me", "follow player"})
+
+
+def _offline_chop_tree_intent(message: str) -> bool:
+    return _contains_any(
+        message,
+        {
+            "砍树",
+            "砍木头",
+            "伐木",
+            "chop tree",
+            "chop a tree",
+            "cut tree",
+            "cut down tree",
+            "cut down a tree",
+            "chop wood",
+        },
+    )
 
 
 def _deepseek_error_message(exc: DeepSeekError) -> str:
