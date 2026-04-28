@@ -1140,6 +1140,61 @@ def test_harness_local_read_only_router_accepts_literal_allowed_commands(tmp_pat
     assert deepseek.calls == 0
 
 
+def test_harness_local_read_only_router_maps_natural_structure_queries(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    cases = [
+        ("req-natural-locate-village", "查询最近村庄位置", "locate structure #minecraft:village"),
+        ("req-natural-locate-village-en", "where is the nearest village?", "locate structure #minecraft:village"),
+        ("req-natural-locate-ancient-city", "找最近远古城市坐标", "locate structure minecraft:ancient_city"),
+    ]
+    for request_id, message, command in cases:
+        response = harness.run_turn(
+            {
+                "request_id": request_id,
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": False},
+                "snapshot": {},
+            }
+        )
+
+        assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+        assert response["actions"][0]["name"] == "run_read_only_command"
+        assert response["actions"][0]["args"]["command"] == command
+        assert response["debug"]["command"] == command
+        calls = memory.recent_tool_calls(request_id=request_id, limit=10)
+        assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+    assert deepseek.calls == 0
+
+
+def test_harness_local_read_only_router_leaves_structure_tutorial_to_model(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DirectAnswerDeepSeek("村庄通常会生成在平原、沙漠、热带草原、针叶林和雪原等群系。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-village-tutorial",
+            "trigger": "command",
+            "message": "村庄怎么找？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    assert deepseek.calls == 1
+    assert response["actions"] == []
+    assert "村庄" in response["messages"][0]["content"]
+    assert memory.recent_tool_calls(request_id="req-village-tutorial", limit=10) == []
+
+
 def test_harness_local_read_only_router_rejects_invalid_literal_command(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

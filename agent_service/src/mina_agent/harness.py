@@ -797,6 +797,11 @@ def _local_read_only_command(message: str) -> str:
     literal = _literal_read_only_command(normalized)
     if literal:
         return literal
+    if "locate structure" in normalized:
+        return ""
+    locate = _natural_locate_command(normalized)
+    if locate:
+        return locate
     if "时间" in normalized or "几点" in normalized or "game time" in normalized or "server time" in normalized:
         return "time query daytime"
     if "种子" in normalized or "seed" in normalized or "world seed" in normalized:
@@ -814,6 +819,70 @@ def _local_read_only_command(message: str) -> str:
     ):
         return "list"
     return ""
+
+
+_NATURAL_LOCATE_TARGETS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("下界要塞", "地狱堡垒", "nether fortress"), "minecraft:fortress"),
+    (("远古城市", "古城", "ancient city"), "minecraft:ancient_city"),
+    (("废弃矿井", "矿井", "mineshaft"), "minecraft:mineshaft"),
+    (("沉船", "shipwreck"), "minecraft:shipwreck"),
+    (("沙漠神殿", "沙漠金字塔", "desert pyramid"), "minecraft:desert_pyramid"),
+    (("村庄", "village"), "#minecraft:village"),
+    (("要塞", "stronghold"), "minecraft:stronghold"),
+)
+
+
+def _natural_locate_command(message: str) -> str:
+    if _natural_locate_instructional(message):
+        return ""
+    has_location_intent = any(
+        token in message
+        for token in (
+            "最近",
+            "附近",
+            "在哪",
+            "位置",
+            "坐标",
+            "定位",
+            "找",
+            "寻找",
+            "查找",
+            "查询",
+            "locate",
+            "nearest",
+            "where is",
+            "where's",
+            "find",
+        )
+    )
+    if not has_location_intent:
+        return ""
+    for aliases, target in _NATURAL_LOCATE_TARGETS:
+        if any(alias in message for alias in aliases):
+            return f"locate structure {target}"
+    return ""
+
+
+def _natural_locate_instructional(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "怎么",
+            "如何",
+            "怎样",
+            "教程",
+            "攻略",
+            "解释",
+            "介绍",
+            "生成机制",
+            "how to",
+            "guide",
+            "tutorial",
+            "explain",
+            "tell me about",
+            "what is",
+        )
+    )
 
 
 def _literal_read_only_command(message: str) -> str:

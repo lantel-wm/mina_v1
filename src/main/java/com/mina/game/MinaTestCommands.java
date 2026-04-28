@@ -24,7 +24,7 @@ public final class MinaTestCommands {
 	private static final int TREE_X = 2;
 	private static final int TREE_Y = 80;
 	private static final int TREE_Z = 0;
-	private static final int FIXTURE_RADIUS = 14;
+	private static final int FIXTURE_RADIUS = 20;
 	private static final int FIXTURE_CLEAR_DOWN = 4;
 	private static final int FIXTURE_CLEAR_UP = 12;
 	private static final BlockPos TARGET_LOG = new BlockPos(TREE_X, TREE_Y, TREE_Z);
@@ -478,8 +478,10 @@ public final class MinaTestCommands {
 	}
 
 	private static void prepareChopTreeWorld(ServerLevel level) {
-		for (int chunkX = -1; chunkX <= 0; chunkX++) {
-			for (int chunkZ = -1; chunkZ <= 0; chunkZ++) {
+		int minChunk = Math.floorDiv(-FIXTURE_RADIUS, 16);
+		int maxChunk = Math.floorDiv(FIXTURE_RADIUS, 16);
+		for (int chunkX = minChunk; chunkX <= maxChunk; chunkX++) {
+			for (int chunkZ = minChunk; chunkZ <= maxChunk; chunkZ++) {
 				level.setChunkForced(chunkX, chunkZ, true);
 				level.getChunk(chunkX, chunkZ);
 			}
