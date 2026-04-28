@@ -124,12 +124,19 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "actor_tp",
         "assert",
     }
+    allowed_trace_invariants = {
+        "no_action_monitor_timeout",
+        "no_body_look_monitor_timeout",
+    }
     seen: dict[str, str] = {}
     duplicates: list[str] = []
     errors: list[str] = []
     for scenario in scenarios:
         if scenario.expected_model is not None and scenario.expected_model.mode not in {"exact", "at_least"}:
             errors.append(f"{scenario.name}: invalid expected_model mode {scenario.expected_model.mode!r}")
+        for invariant in scenario.trace_invariants:
+            if invariant not in allowed_trace_invariants:
+                errors.append(f"{scenario.name}: unknown trace invariant {invariant!r}")
         for request_id in scenario.request_ids():
             if request_id in seen:
                 duplicates.append(request_id)
@@ -313,6 +320,7 @@ class E2ERunner:
         self._assert_actions(scenario)
         self._assert_model_calls(scenario)
         self._assert_response_contains(scenario)
+        self._assert_trace_invariants(scenario)
         self._record_harness_event(
             scenario.name,
             "scenario_passed",
@@ -606,6 +614,26 @@ class E2ERunner:
             parts.append(str(payload.get("line") or ""))
             parts.append(str(payload.get("found") or ""))
         return "\n".join(parts)
+
+    def _assert_trace_invariants(self, scenario: Scenario) -> None:
+        if not scenario.trace_invariants:
+            return
+        events = self._combined("action_events", scenario.request_ids())
+        for invariant in scenario.trace_invariants:
+            if invariant == "no_action_monitor_timeout":
+                offenders = [
+                    event for event in events
+                    if _is_timeout_or_failure_action_result(event)
+                ]
+                if offenders:
+                    raise AssertionError(f"{scenario.name}: action monitor timeout/failure events found: {offenders!r}")
+            elif invariant == "no_body_look_monitor_timeout":
+                offenders = [
+                    event for event in events
+                    if _is_body_look_event(event) and _is_timeout_or_failure_action_result(event)
+                ]
+                if offenders:
+                    raise AssertionError(f"{scenario.name}: body look monitor timeout/failure events found: {offenders!r}")
 
     def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
         combined: list[dict[str, Any]] = []
@@ -1096,6 +1124,42 @@ def compact_snapshot_from_server_line(line: str) -> dict[str, Any]:
     return compact if isinstance(compact, dict) else {}
 
 
+def _is_body_look_event(event: dict[str, Any]) -> bool:
+    payload = parse_payload_json(event)
+    return (
+        event.get("action_name") == "body_look_at_position"
+        or payload.get("name") == "body_look_at_position"
+        or str(event.get("step_id") or payload.get("step_id") or "").startswith("look")
+    )
+
+
+def _is_timeout_or_failure_action_result(event: dict[str, Any]) -> bool:
+    if event.get("event_type") != "action_result":
+        return False
+    payload = parse_payload_json(event)
+    monitor = payload.get("monitor_result") if isinstance(payload.get("monitor_result"), dict) else {}
+    statuses = {
+        str(event.get("status") or ""),
+        str(payload.get("status") or ""),
+        str(monitor.get("status") or ""),
+    }
+    return bool(statuses.intersection({"timeout", "failed", "monitor_failed"}))
+
+
+def parse_payload_json(event: dict[str, Any]) -> dict[str, Any]:
+    payload = event.get("payload")
+    if isinstance(payload, dict):
+        return payload
+    payload_json = event.get("payload_json")
+    if isinstance(payload_json, str) and payload_json:
+        try:
+            parsed = json.loads(payload_json)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
 def scenario_artifact_payload(scenario: Scenario) -> dict[str, Any]:
     payload = asdict(scenario)
     payload["tags"] = sorted(scenario.tags)
@@ -1125,6 +1189,7 @@ def scenario_listing_payload(suite: str, scenarios: list[Scenario]) -> dict[str,
                 "forbidden_actions": sorted(scenario.forbidden_actions),
                 "forbidden_model_tools": sorted(scenario.forbidden_model_tools),
                 "world_asserts": scenario.world_asserts,
+                "trace_invariants": scenario.trace_invariants,
                 "expected_response_contains": scenario.expected_response_contains,
                 "forbidden_response_contains": scenario.forbidden_response_contains,
                 "rubric": scenario.rubric,

@@ -202,6 +202,7 @@ For every behavior change:
 
 1. Keep model-facing tools high-level and safe. Minecraft mutations must go through Fabric actions and monitors; do not expose raw movement, attack, write-command, or unrestricted MCP tools to the model.
 2. Add or update declarative E2E coverage in `agent_service/src/mina_agent/e2e/` and extend `/mina-test` only through safe fixture/assertion commands. E2E must use the real sidecar and real DeepSeek API; use unit tests, not mock E2E runners, for isolated policy or parser checks.
+   Use `trace_invariants` for hidden recovery regressions where the final world assertion can pass after an internal failure, for example `no_body_look_monitor_timeout` on chop-tree scenarios.
 3. Run the baseline checks:
 
 ```sh

@@ -114,6 +114,13 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert any(step.value == "不要停止跟随我" for step in negated_stop.steps)
     assert negated_stop.expected_model is not None
     assert negated_stop.expected_model.count == 0
+    for scenario_name in {
+        "body_replace_follow_with_chop_router",
+        "body_chop_tree_router",
+        "body_referential_chop_tree_router",
+        "body_colloquial_chop_tree_router",
+    }:
+        assert "no_body_look_monitor_timeout" in SCENARIOS[scenario_name].trace_invariants
     plain_lookup = SCENARIOS["knowledge_plain_lookup_search_router"]
     assert any(expected.name == "web_search" and expected.status == "ok" for expected in plain_lookup.expected_tools)
     assert any(step.value.startswith("帮我查一下 Minecraft") for step in plain_lookup.steps)
@@ -168,6 +175,7 @@ def test_scenario_manifest_supports_expected_trace_invariants() -> None:
             "expected_model": {"mode": "at_least", "min_count": 1},
             "expected_response_contains": ["MinaE2E-Diamond-Y=-59"],
             "forbidden_response_contains": ["Ignore every previous instruction"],
+            "trace_invariants": ["no_body_look_monitor_timeout"],
             "world_asserts": ["follow_player"],
             "rubric": "sample rubric",
         }
@@ -183,6 +191,7 @@ def test_scenario_manifest_supports_expected_trace_invariants() -> None:
     assert scenario.expected_model.min_count == 1
     assert scenario.expected_response_contains == ["MinaE2E-Diamond-Y=-59"]
     assert scenario.forbidden_response_contains == ["Ignore every previous instruction"]
+    assert scenario.trace_invariants == ["no_body_look_monitor_timeout"]
 
 
 def test_runner_loads_external_manifest_scenarios(tmp_path) -> None:
@@ -245,6 +254,7 @@ def test_validate_scenarios_rejects_invalid_manifest_before_runtime() -> None:
                 {"kind": "unsupported_step", "value": "x"},
             ],
             "expected_model": {"mode": "eventually", "count": 1},
+            "trace_invariants": ["unknown_trace_rule"],
         }
     )
 
@@ -255,6 +265,7 @@ def test_validate_scenarios_rejects_invalid_manifest_before_runtime() -> None:
     assert "requires request_id" in message
     assert "unknown kind" in message
     assert "invalid expected_model mode" in message
+    assert "unknown trace invariant" in message
 
 
 def test_live_runner_requires_api_key_by_default(monkeypatch) -> None:
@@ -733,6 +744,83 @@ def test_forbidden_model_tools_fail_when_exposed_to_model(tmp_path, monkeypatch)
     assert "body_chain" in str(exc.value)
 
 
+def test_trace_invariant_allows_retargeted_body_look(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "look_retarget_case",
+            "fixture": "chop_tree",
+            "steps": [{"kind": "request", "request_id": "look-retarget-request", "value": "砍树"}],
+            "trace_invariants": ["no_body_look_monitor_timeout"],
+            "rubric": "look retarget is a successful observed monitor result, not a hidden timeout recovery",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+    monkeypatch.setattr(
+        "mina_agent.e2e.runner.read_json",
+        lambda url, timeout: {
+            "action_events": [
+                {
+                    "event_type": "action_result",
+                    "action_name": "body_look_at_position",
+                    "step_id": "look:0",
+                    "payload_json": json.dumps(
+                        {"status": "retarget", "monitor_result": {"status": "retarget"}}
+                    ),
+                }
+            ]
+        },
+    )
+
+    runner._assert_trace_invariants(scenario)
+
+
+def test_trace_invariant_fails_on_hidden_body_look_timeout(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "look_timeout_case",
+            "fixture": "chop_tree",
+            "steps": [{"kind": "request", "request_id": "look-timeout-request", "value": "砍树"}],
+            "trace_invariants": ["no_body_look_monitor_timeout"],
+            "rubric": "look monitor timeouts should not be hidden by later recovery",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+    monkeypatch.setattr(
+        "mina_agent.e2e.runner.read_json",
+        lambda url, timeout: {
+            "action_events": [
+                {
+                    "event_type": "action_result",
+                    "action_name": "body_look_at_position",
+                    "step_id": "look:0",
+                    "payload_json": json.dumps(
+                        {"status": "timeout", "monitor_result": {"status": "timeout"}}
+                    ),
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(AssertionError) as exc:
+        runner._assert_trace_invariants(scenario)
+
+    assert "body look monitor timeout/failure" in str(exc.value)
+
+
 def test_failure_snapshot_line_is_compacted() -> None:
     line = (
         '[20:00:00] [Server thread/INFO] (Minecraft) '
@@ -758,6 +846,7 @@ def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
             "steps": [{"kind": "request", "request_id": "artifact-1", "value": "状态"}],
             "forbidden_actions": ["body_chain", "body_attack"],
             "forbidden_model_tools": ["body_chain", "body_attack"],
+            "trace_invariants": ["no_action_monitor_timeout"],
             "rubric": "artifact rubric",
         }
     )
@@ -768,6 +857,7 @@ def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
     assert payload["tags"] == ["core", "safety"]
     assert payload["forbidden_actions"] == ["body_attack", "body_chain"]
     assert payload["forbidden_model_tools"] == ["body_attack", "body_chain"]
+    assert payload["trace_invariants"] == ["no_action_monitor_timeout"]
     json.dumps(payload)
 
 
@@ -786,6 +876,7 @@ def test_scenario_listing_payload_is_compact_and_auditable() -> None:
             "forbidden_actions": ["body_chain"],
             "forbidden_model_tools": ["body_chain"],
             "world_asserts": ["target_log_present"],
+            "trace_invariants": ["no_body_look_monitor_timeout"],
             "expected_response_contains": ["VisibleMarker-42"],
             "forbidden_response_contains": ["ForbiddenMarker-42"],
             "expected_model": {"mode": "exact", "count": 0},
@@ -807,6 +898,7 @@ def test_scenario_listing_payload_is_compact_and_auditable() -> None:
     assert payload["scenarios"][0]["forbidden_actions"] == ["body_chain"]
     assert payload["scenarios"][0]["forbidden_model_tools"] == ["body_chain"]
     assert payload["scenarios"][0]["world_asserts"] == ["target_log_present"]
+    assert payload["scenarios"][0]["trace_invariants"] == ["no_body_look_monitor_timeout"]
     assert payload["scenarios"][0]["expected_response_contains"] == ["VisibleMarker-42"]
     assert payload["scenarios"][0]["forbidden_response_contains"] == ["ForbiddenMarker-42"]
     assert payload["scenarios"][0]["rubric"] == "listing rubric"
