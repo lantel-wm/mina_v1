@@ -245,7 +245,7 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "body_stop", "step_id": "stop:replaced"},
             {"name": "body_move_to_position"},
-            {"name": "body_chain"},
+            {"name": "body_attack"},
         ],
         "expected_model": {"mode": "exact", "count": 0},
         "world_asserts": ["chop_tree"],
@@ -271,7 +271,7 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "body_move_to_position"},
             {"name": "body_look_at_position"},
-            {"name": "body_chain"},
+            {"name": "body_attack"},
         ],
         "expected_model": {"mode": "exact", "count": 0},
         "world_asserts": ["chop_tree", "upper_log_absent"],
@@ -297,7 +297,7 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "body_move_to_position"},
             {"name": "body_look_at_position"},
-            {"name": "body_chain"},
+            {"name": "body_attack"},
         ],
         "expected_model": {"mode": "exact", "count": 0},
         "world_asserts": ["chop_tree", "upper_log_absent"],
@@ -323,7 +323,7 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "body_move_to_position"},
             {"name": "body_look_at_position"},
-            {"name": "body_chain"},
+            {"name": "body_attack"},
         ],
         "expected_model": {"mode": "exact", "count": 0},
         "world_asserts": ["chop_tree", "upper_log_absent"],
@@ -350,7 +350,7 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "body_move_to_position"},
             {"name": "body_look_at_position"},
-            {"name": "body_chain"},
+            {"name": "body_attack"},
         ],
         "expected_model": {"mode": "exact", "count": 0},
         "world_asserts": ["upper_log_absent"],

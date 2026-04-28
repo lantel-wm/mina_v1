@@ -224,7 +224,10 @@ class SkillRuntime:
                 current_target = self._current_or_replacement_target(task, snapshot, task.get("target") or {})
                 if isinstance(current_target, TurnResponse):
                     return current_target
-            return self._recover_or_fail(task, monitor.get("reason") or result.get("error") or "monitor failed")
+            recovered = self._recover_or_fail(task, monitor.get("reason") or result.get("error") or "monitor failed")
+            if task.get("type") == "chop_tree" and step_id.startswith("attack"):
+                return _prepend_action(recovered, _attack_release_action(task, step_id))
+            return recovered
         if task.get("type") == "follow_player":
             return self._handle_follow_result(task, result, status, monitor_status)
         if monitor_status != "success" and status not in {"completed", "success"}:
@@ -255,7 +258,8 @@ class SkillRuntime:
                     "target_completed_continue",
                     {"old_target": previous_target, "next_target": next_target},
                 )
-                return self._advance(task, snapshot)
+                advanced = self._advance(task, snapshot)
+                return _prepend_action(advanced, _attack_release_action(task, step_id))
             task["status"] = "completed"
             task["stage"] = "done"
             task["updated_at"] = time.time()
@@ -268,6 +272,7 @@ class SkillRuntime:
             )
             return TurnResponse(
                 messages=[{"target": "requester", "content": "砍树完成。"}],
+                actions=[_attack_release_action(task, step_id)],
                 debug={"task_status": _public_task(task)},
             )
         return self._advance(task, snapshot)
@@ -394,17 +399,9 @@ class SkillRuntime:
             task["target"] = target
             action = _action(
                 task,
-                "body_chain",
+                "body_attack",
                 {
-                    "clear": True,
-                    "loop": False,
-                    "restart": True,
-                    "actions": [
-                        {"type": "delay", "seconds": 0.2},
-                        {"type": "attack", "mode": "hold"},
-                        {"type": "delay", "seconds": 7.0},
-                        {"type": "attack", "mode": "release"},
-                    ],
+                    "mode": "hold",
                 },
                 step=f"attack:{step_suffix}",
                 monitor={
@@ -564,6 +561,18 @@ def _action(
     if expected_effect:
         action["expected_effect"] = expected_effect
     return action
+
+
+def _attack_release_action(task: dict[str, Any], attack_step_id: str) -> dict[str, Any]:
+    suffix = attack_step_id.split(":", 1)[1] if ":" in attack_step_id else _step_suffix(task)
+    action = _action(task, "body_attack", {"mode": "release"}, step=f"attack_release:{suffix}", monitor=None)
+    action["requires_permission"] = False
+    return action
+
+
+def _prepend_action(response: TurnResponse, action: dict[str, Any]) -> TurnResponse:
+    response.actions = [action] + response.actions
+    return response
 
 
 def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:

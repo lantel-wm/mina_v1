@@ -222,36 +222,36 @@ public final class MinaActionExecutor {
 		boolean sprint = bool(args, "sprint", true);
 		boolean jump = bool(args, "jump", true);
 		if ("requester".equals(targetType)) {
-			puppetAction(server, requester, config, "minecraft:move_to entity " + requesterSelector(requester) + " " + sprint + " " + jump);
+			freshMoveAction(server, requester, config, "minecraft:move_to entity " + requesterSelector(requester) + " " + sprint + " " + jump);
 			return;
 		}
 		if ("entity".equals(targetType)) {
 			String selector = selector(args);
-			puppetAction(server, requester, config, "minecraft:move_to entity " + selector + " " + sprint + " " + jump);
+			freshMoveAction(server, requester, config, "minecraft:move_to entity " + selector + " " + sprint + " " + jump);
 			return;
 		}
 		if (!hasPosition(args)) {
 			throw new IllegalArgumentException("body_move_to requires target_type=requester, target_type=entity with entity_selector, or target_type=position with x/y/z");
 		}
-		puppetAction(server, requester, config, "minecraft:move_to position " + position(args) + " " + sprint + " " + jump);
+		freshMoveAction(server, requester, config, "minecraft:move_to position " + position(args) + " " + sprint + " " + jump);
 	}
 
 	private void bodyMoveToPosition(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject args) {
 		boolean sprint = bool(args, "sprint", true);
 		boolean jump = bool(args, "jump", true);
-		puppetAction(server, requester, config, "minecraft:move_to position " + position(args) + " " + sprint + " " + jump);
+		freshMoveAction(server, requester, config, "minecraft:move_to position " + position(args) + " " + sprint + " " + jump);
 	}
 
 	private void bodyMoveToEntity(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject args) {
 		boolean sprint = bool(args, "sprint", true);
 		boolean jump = bool(args, "jump", true);
-		puppetAction(server, requester, config, "minecraft:move_to entity " + selector(args) + " " + sprint + " " + jump);
+		freshMoveAction(server, requester, config, "minecraft:move_to entity " + selector(args) + " " + sprint + " " + jump);
 	}
 
 	private void bodyMoveToRequester(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject args) {
 		boolean sprint = bool(args, "sprint", true);
 		boolean jump = bool(args, "jump", true);
-		puppetAction(server, requester, config, "minecraft:move_to entity " + requesterSelector(requester) + " " + sprint + " " + jump);
+		freshMoveAction(server, requester, config, "minecraft:move_to entity " + requesterSelector(requester) + " " + sprint + " " + jump);
 	}
 
 	private void bodyLookAt(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject args) {
@@ -351,6 +351,12 @@ public final class MinaActionExecutor {
 
 	private void puppetAction(MinecraftServer server, ServerPlayer requester, MinaConfig config, String action) {
 		requireBodyAvailable(config);
+		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run " + action);
+	}
+
+	private void freshMoveAction(MinecraftServer server, ServerPlayer requester, MinaConfig config, String action) {
+		requireBodyAvailable(config);
+		clearBodyControls(server, requester, config);
 		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run " + action);
 	}
 
