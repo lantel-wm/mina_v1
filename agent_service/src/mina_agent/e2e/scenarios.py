@@ -581,6 +581,13 @@ SCENARIO_DATA = [
                 "wait_for": ["Mina body 当前在线"],
                 "timeout": 30,
             },
+            {
+                "kind": "request",
+                "request_id": "local-player-inventory-observation",
+                "value": "我手里拿着什么？背包里有什么？",
+                "wait_for": ["Gunpowder"],
+                "timeout": 30,
+            },
         ],
         "forbidden_tools": [
             {"name": "web_search"},
@@ -601,7 +608,7 @@ SCENARIO_DATA = [
             "run_read_only_command",
         },
         "expected_model": {"mode": "exact", "count": 0},
-        "expected_response_contains": ["生命", "饥饿", "坐标", "Mina body 当前在线", "距离你"],
+        "expected_response_contains": ["生命", "饥饿", "坐标", "Mina body 当前在线", "距离你", "Gunpowder"],
         "rubric": "Simple local observation questions must be answered from the Fabric snapshot without model calls, tools, or body actions.",
     },
     {

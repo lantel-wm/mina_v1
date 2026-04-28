@@ -523,6 +523,70 @@ def test_harness_answers_body_position_from_snapshot_without_model_or_tools(tmp_
     assert memory.recent_tool_calls(request_id="req-body-observation", limit=10) == []
 
 
+def test_harness_answers_player_inventory_from_snapshot_without_model_or_tools(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-player-inventory-observation",
+            "trigger": "command",
+            "message": "我手里拿着什么？背包里有什么？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "inventory": [
+                    {"slot": 0, "item": "minecraft:gunpowder", "count": 1, "name": "Gunpowder", "selected": True},
+                    {"slot": 1, "item": "minecraft:oak_log", "count": 4, "name": "Oak Log"},
+                ]
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "你当前选中：Gunpowder x1" in content
+    assert "背包可见物品：Gunpowder x1，Oak Log x4" in content
+    assert response["debug"]["intent"] == "player_inventory_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-player-inventory-observation", limit=10) == []
+
+
+def test_harness_answers_body_held_item_from_snapshot_without_model_or_tools(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-body-held-item-observation",
+            "trigger": "command",
+            "message": "Mina 手里拿着什么？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "body_state": {
+                    "online": True,
+                    "dimension": "minecraft:overworld",
+                    "x": 3.5,
+                    "y": 80,
+                    "z": -1.5,
+                    "selected_item": {"slot": 0, "item": "minecraft:spruce_log", "count": 6, "name": "Spruce Log"},
+                }
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "Mina body 当前在线" in content
+    assert "手持 Spruce Log x6" in content
+    assert response["debug"]["intent"] == "body_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-body-held-item-observation", limit=10) == []
+
+
 def test_harness_sanitizes_model_markdown_for_minecraft_chat(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

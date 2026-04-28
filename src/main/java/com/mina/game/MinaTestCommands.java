@@ -11,6 +11,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.regex.Pattern;
@@ -177,6 +179,7 @@ public final class MinaTestCommands {
 		if (requester != null) {
 			run(server, "tp " + TEST_PLAYER + " 0.5 " + TREE_Y + " -2.5 0 0");
 			resetVitals(requester);
+			resetRequesterInventory(requester);
 		}
 		if (body != null) {
 			run(server, "tp " + config.bodyUsername + " 0.5 " + TREE_Y + " -1.5 0 0");
@@ -368,6 +371,11 @@ public final class MinaTestCommands {
 		player.setHealth(player.getMaxHealth());
 		player.getFoodData().setFoodLevel(20);
 		player.getFoodData().setSaturation(5.0F);
+	}
+
+	private void resetRequesterInventory(ServerPlayer player) {
+		int selectedSlot = player.getInventory().getSelectedSlot();
+		player.getInventory().setItem(selectedSlot, new ItemStack(Items.GUNPOWDER, 1));
 	}
 
 	private int snapshot(CommandSourceStack source) {

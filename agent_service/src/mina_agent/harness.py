@@ -693,6 +693,11 @@ def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: b
     task_status_request = is_body_task_status_request(normalized)
     if task_status_request and (has_active_body_task or not _ambiguous_player_status_intent(normalized)):
         return None
+    if _player_inventory_observation_intent(normalized):
+        return TurnResponse(
+            messages=[{"target": "requester", "content": _player_inventory_observation_message(snapshot)}],
+            debug={"local_observation": True, "intent": "player_inventory_observation"},
+        )
     if _body_observation_intent(normalized):
         return TurnResponse(
             messages=[{"target": "requester", "content": _body_observation_message(snapshot)}],
@@ -743,9 +748,53 @@ def _player_observation_intent(message: str) -> bool:
     )
 
 
+def _player_inventory_observation_intent(message: str) -> bool:
+    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
+        return False
+    if any(token in message for token in ("背包", "物品栏", "inventory", "my items")):
+        return True
+    has_player_subject = any(token in message for token in ("我", "my ", "am i", "i "))
+    has_item_question = any(
+        token in message
+        for token in (
+            "手里",
+            "手上",
+            "拿着",
+            "选中",
+            "当前物品",
+            "holding",
+            "held item",
+            "selected item",
+            "what do i have",
+        )
+    )
+    return has_player_subject and has_item_question
+
+
 def _body_observation_intent(message: str) -> bool:
     has_body_subject = any(token in message for token in ("mina", "身体", "假人", "body", "你"))
-    has_observation = any(token in message for token in ("在哪", "位置", "坐标", "离我", "距离", "状态", "where", "position", "coordinates"))
+    has_observation = any(
+        token in message
+        for token in (
+            "在哪",
+            "位置",
+            "坐标",
+            "离我",
+            "距离",
+            "状态",
+            "手里",
+            "手上",
+            "拿着",
+            "选中",
+            "物品",
+            "where",
+            "position",
+            "coordinates",
+            "holding",
+            "held item",
+            "selected item",
+        )
+    )
     return has_body_subject and has_observation
 
 
@@ -787,7 +836,39 @@ def _body_observation_message(snapshot: dict[str, Any]) -> str:
     health = _number_phrase(body.get("health"))
     if health:
         parts.append(f"生命 {health}")
+    held = _item_phrase(body.get("selected_item"))
+    if held:
+        parts.append(f"手持 {held}")
     return "；".join(parts) + "。"
+
+
+def _player_inventory_observation_message(snapshot: dict[str, Any]) -> str:
+    inventory = snapshot.get("inventory") if isinstance(snapshot.get("inventory"), list) else []
+    items = [item for item in inventory if isinstance(item, dict) and _item_phrase(item)]
+    parts: list[str] = []
+    selected = next((item for item in items if item.get("selected")), None)
+    if selected:
+        parts.append(f"你当前选中：{_item_phrase(selected)}")
+    if items:
+        parts.append("背包可见物品：" + "，".join(_item_phrase(item) for item in items[:8] if _item_phrase(item)))
+    if parts:
+        return "；".join(parts) + "。"
+    return "我还没有拿到你的背包快照，或当前快照里没有可见物品。"
+
+
+def _item_phrase(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    item_id = str(value.get("item") or "").strip()
+    if not item_id or item_id == "minecraft:air":
+        return ""
+    name = str(value.get("name") or "").strip()
+    if not name:
+        name = item_id.removeprefix("minecraft:").replace("_", " ").title()
+    count = _number_phrase(value.get("count"))
+    if count:
+        return f"{name} x{count}"
+    return name
 
 
 def _position_phrase(state: dict[str, Any]) -> str:
