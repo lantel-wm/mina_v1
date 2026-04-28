@@ -97,6 +97,48 @@ class ContextInspectingDeepSeek:
         )
 
 
+class StatusCallingDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.tool_messages: list[dict[str, Any]] = []
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        self.tool_messages = [message for message in messages if message.get("role") == "tool"]
+        if self.calls == 1:
+            return DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-status",
+                            "type": "function",
+                            "function": {
+                                "name": "task_status",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 1},
+                raw={},
+            )
+        assert self.tool_messages
+        assert '"last_error": null' in self.tool_messages[-1]["content"]
+        assert '"type": "follow_player"' in self.tool_messages[-1]["content"]
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": "当前任务：follow_player，状态：active。"},
+            finish_reason="stop",
+            usage={"completion_tokens": 1},
+            raw={},
+        )
+
+
 class ActionDispatchDeepSeek:
     def __init__(self) -> None:
         self.calls = 0
@@ -209,6 +251,40 @@ def test_harness_injects_current_task_into_context(tmp_path) -> None:
     )
 
     assert response["messages"][0]["content"] == "当前任务是跟随玩家。"
+
+
+def test_harness_records_model_status_tool_result_as_ok(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    turn = {
+        "request_id": "req-start",
+        "trigger": "command",
+        "message": "跟随我",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {"body_state": {"online": True}},
+    }
+    started = tools.run("start_body_task", {"task_type": "follow_player"}, turn)
+    assert started.actions
+
+    deepseek = StatusCallingDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    response = harness.run_turn(
+        {
+            "request_id": "req-model-status",
+            "trigger": "command",
+            "message": "状态",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert response["messages"][0]["content"] == "当前任务：follow_player，状态：active。"
+    assert deepseek.calls == 2
+    calls = memory.recent_tool_calls(request_id="req-model-status", limit=10)
+    assert [call["tool_name"] for call in calls] == ["task_status"]
+    assert calls[0]["status"] == "ok"
 
 
 def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:

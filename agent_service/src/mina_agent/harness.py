@@ -141,7 +141,7 @@ class AgentHarness:
                         name,
                         args,
                         {"content": result.content, "actions": result_actions},
-                        "ok" if result_actions or "error" not in result.content else "error",
+                        "ok" if result_actions or not _is_tool_error(result.content) else "error",
                     )
                     if result_actions:
                         response_messages = _tool_payload_messages(result.content)

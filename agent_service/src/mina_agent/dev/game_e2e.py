@@ -38,6 +38,7 @@ def main() -> int:
             "model_action_barrier",
             "model_read_only_command",
             "model_knowledge_query",
+            "model_task_status",
             "offline_body_unavailable",
             "offline_knowledge_query",
             "offline_read_only_command",
@@ -73,7 +74,12 @@ def main() -> int:
         "offline_replace_follow_with_chop",
         "offline_permission_denied",
     }
-    fake_deepseek_scenarios = {"model_action_barrier", "model_read_only_command", "model_knowledge_query"}
+    fake_deepseek_scenarios = {
+        "model_action_barrier",
+        "model_read_only_command",
+        "model_knowledge_query",
+        "model_task_status",
+    }
     service_scenarios = {*offline_service_scenarios, *fake_deepseek_scenarios}
     fake_search = start_fake_search(args.search_port) if args.scenario in {"offline_knowledge_query", "model_knowledge_query"} else None
     fake_deepseek = start_fake_deepseek(args.deepseek_port) if args.scenario in fake_deepseek_scenarios else None
@@ -110,6 +116,7 @@ def main() -> int:
                 "model_action_barrier",
                 "model_read_only_command",
                 "model_knowledge_query",
+                "model_task_status",
                 "offline_body_unavailable",
                 "offline_follow",
                 "offline_task_status",
@@ -154,6 +161,8 @@ def main() -> int:
             run_model_read_only_command(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_knowledge_query":
             run_model_knowledge_query(server, output, args.port, args.deepseek_port)
+        elif args.scenario == "model_task_status":
+            run_model_task_status(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "offline_body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "offline_knowledge_query":
@@ -647,6 +656,31 @@ def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 2:
         raise AssertionError(f"fake DeepSeek should have two calls for web_search tool loop, got {calls!r}")
+
+
+def run_model_task_status(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    timeout: float,
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    run_model_action_barrier(proc, output, timeout, sidecar_port, deepseek_port)
+    send(proc, "mina-test request 状态")
+    output.wait_for("当前任务：follow_player", timeout=30)
+    output.wait_for("状态：active", timeout=30)
+    call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "task_status"
+        and item.get("status") == "ok"
+        and "follow_player" in str(item.get("result_json") or ""),
+        timeout=10,
+    )
+    if not call:
+        raise AssertionError("model status request did not record an active task_status tool call")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 3:
+        raise AssertionError(f"fake DeepSeek should have three calls for follow plus task_status tool loop, got {calls!r}")
 
 
 def run_permission_denied(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int) -> None:
