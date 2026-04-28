@@ -144,50 +144,25 @@ This verifies:
 - Body tools require action permission.
 - Allowed body tools schedule Fabric actions.
 
-Headless real-game E2E:
+Live real-game E2E:
 
 ```sh
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario chop_tree --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario follow_player --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario read_only_command --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario knowledge_query --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario banned_command --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_banned_command --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_private_body_tool --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario task_status --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario stop_follow --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario replace_follow_with_chop --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario body_unavailable --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_chop_tree --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_chop_then_status --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_chop_target_disappears --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_unreachable_chop_tree --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_replace_follow_with_chop --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_follow_player --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_spawn_body_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_follow_heartbeat --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_multi_body_action_barrier --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_action_barrier --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_read_only_command --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_knowledge_query --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_memory_roundtrip --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_task_status --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_stop_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_stop_permission_denied --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_permission_denied --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_body_unavailable --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_body_unavailable --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_knowledge_query --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_read_only_command --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_chop_tree --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_task_status --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_stop_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_replace_follow_with_chop --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_permission_denied --sidecar service
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live
 ```
 
-This starts a sidecar and a dedicated Fabric server in `build/e2e/server`, downloads PuppetPlayers/Fabric Language Kotlin into that runtime if missing, and drives the test-only `/mina-test` commands. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task. Most scenarios use the deterministic scripted sidecar. The `model_chop_tree`, `model_chop_then_status`, `model_chop_target_disappears`, `model_unreachable_chop_tree`, `model_replace_follow_with_chop`, `model_follow_player`, `model_spawn_body_follow`, `model_follow_heartbeat`, `model_multi_body_action_barrier`, `model_action_barrier`, `model_task_status`, `model_stop_follow`, `model_stop_permission_denied`, `model_permission_denied`, and `model_body_unavailable` scenarios use the real `mina_agent.app` sidecar with a configured local fake DeepSeek server, then verify explicit body commands are handled by `BodySubagent` without calling the main model. The `model_banned_command`, `model_private_body_tool`, `model_read_only_command`, `model_knowledge_query`, and `model_memory_roundtrip` scenarios still use fake DeepSeek/SearXNG to verify main-agent command, safety, knowledge, and memory tool loops without live API keys. The `offline_follow`, `offline_chop_tree`, `offline_task_status`, `offline_stop_follow`, `offline_replace_follow_with_chop`, `offline_body_unavailable`, `offline_permission_denied`, `offline_read_only_command`, and `offline_knowledge_query` scenarios use the real `mina_agent.app` sidecar with `MINA_API_KEY` forced empty, then verify the no-key fallback can still start, continue, report status, stop, replace, or reject body tasks, execute a constrained read-only command, and call a test SearXNG-compatible search server. The `chop_tree` scenario requires `/mina-test ready` before the request and passes only after the target log is observed as air. The `follow_player` and `model_follow_player` scenarios start the follow skill, move the requester, and pass only after Mina's body returns within the allowed follow distance; `model_spawn_body_follow` first removes the body, then verifies the skill runtime schedules `body_spawn` before continuing the same follow loop. The `model_follow_heartbeat` scenario keeps the requester still and verifies the follow skill schedules a new follow action after the monitor heartbeat. The `model_multi_body_action_barrier` scenario verifies deterministic body-intent routing chooses one high-level body task and does not let the main model schedule multiple body actions. The `read_only_command` scenario verifies that a model-side command request is constrained to `run_read_only_command` and that Fabric returns the command output. The `banned_command` scenario verifies Fabric-side defense in depth by sending a write command through the read-only action path and asserting the target block is unchanged; `model_banned_command` verifies the sidecar rejects the same write command before scheduling any Fabric action, and `model_private_body_tool` verifies hallucinated low-level body tools are rejected without creating tasks or actions. The `knowledge_query` scenario verifies the `/mina` knowledge-answer path with a deterministic scripted search-style response; real-sidecar knowledge scenarios also assert that the sidecar records a successful `web_search` tool call. The `model_memory_roundtrip` scenario verifies that configured-model `memory_write` and `memory_search` calls persist and retrieve player-scoped facts. The `task_status` scenario verifies current-task status queries without requiring the model to know a task id; `model_chop_then_status` verifies completed tasks are no longer reported as current while remaining visible in `/v1/tasks`. The `model_unreachable_chop_tree` scenario blocks every approach around the test logs, then verifies the skill fails cleanly without scheduling Fabric actions or changing the target log. The `model_chop_target_disappears` scenario moves Mina away, removes the initially selected log during the move step, then verifies the skill records `target_disappeared`, reselects the upper log, and completes without model low-level actions. The `model_stop_permission_denied` scenario verifies a denied stop request records a failed tool call and does not schedule `body_stop`. The `stop_follow` and `replace_follow_with_chop` scenarios verify task cancellation, body stop, and late monitor-result handling. The `body_unavailable` scenario runs with Mina body actions disabled and verifies that Fabric action failure flows back through the skill runtime instead of hanging. The task summary is written to `build/e2e/trace-summary.json`; tool calls plus task/action/result events, including non-task read-only commands, are written to `build/e2e/trace.jsonl`. Trace outputs store large snapshots as `snapshot_hash` plus a small `snapshot_summary`, not raw world snapshots.
+This is the only E2E runner. It loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar and a dedicated Fabric/PuppetPlayers server in `build/e2e/server`, then drives declarative `/mina-test` scenarios. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task.
+
+Useful suites:
+
+```sh
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite body
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario read_only_time_live_model
+```
+
+Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `summary.json`, `trace-summary.json`, `server.log`, `sidecar.log`, `sidecar-stdout.log`, per-scenario `trace.json`, per-scenario `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, `/v1/tasks/{task_id}/events`, and `/v1/traces/{request_id}` for focused debugging. Trace outputs compact large snapshots as `snapshot_hash` plus `snapshot_summary`, not raw world snapshots.
+
+The live suite covers deterministic body-router scenarios that should make zero model calls, plus model-facing scenarios that must call real DeepSeek for read-only world queries and safety refusals. Do not add E2E scenarios backed by scripted sidecars, fake DeepSeek, or offline fallback mode; keep those concerns in unit tests only.
 
 ## Iteration Workflow
 
@@ -196,7 +171,7 @@ The working target is a usable Minecraft agent that can answer knowledge questio
 For every behavior change:
 
 1. Keep model-facing tools high-level and safe. Minecraft mutations must go through Fabric actions and monitors; do not expose raw movement, attack, write-command, or unrestricted MCP tools to the model.
-2. Add or update a deterministic scripted test before relying on live model behavior. Prefer extending `agent_service/dev/game_e2e.py` and `/mina-test` so failures reproduce without a GUI client or API key.
+2. Add or update declarative E2E coverage in `agent_service/src/mina_agent/e2e/` and extend `/mina-test` only through safe fixture/assertion commands. E2E must use the real sidecar and real DeepSeek API; use unit tests, not mock E2E runners, for isolated policy or parser checks.
 3. Run the baseline checks:
 
 ```sh
@@ -204,51 +179,16 @@ UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test pytest -
 GRADLE_USER_HOME=$PWD/.gradle ./gradlew build --no-daemon
 ```
 
-4. Run the relevant headless E2E scenarios. At minimum, keep `chop_tree` passing before committing body-control changes:
+4. Run the relevant headless E2E scenarios with a real DeepSeek key configured in `agent_service/.env` or the environment. At minimum, keep the live body suite passing before committing body-control changes:
 
 ```sh
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario chop_tree --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario follow_player --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario read_only_command --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario knowledge_query --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario banned_command --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_banned_command --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_private_body_tool --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario task_status --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario stop_follow --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario replace_follow_with_chop --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario body_unavailable --sidecar scripted
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_chop_tree --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_chop_then_status --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_chop_target_disappears --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_unreachable_chop_tree --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_replace_follow_with_chop --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_follow_player --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_spawn_body_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_follow_heartbeat --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_multi_body_action_barrier --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_action_barrier --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_read_only_command --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_knowledge_query --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_memory_roundtrip --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_task_status --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_stop_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_stop_permission_denied --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_permission_denied --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario model_body_unavailable --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_body_unavailable --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_knowledge_query --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_read_only_command --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_chop_tree --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_task_status --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_stop_follow --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_replace_follow_with_chop --sidecar service
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario offline_permission_denied --sidecar service
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite body
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live
 ```
 
-5. Inspect `build/e2e/trace-summary.json` and `build/e2e/trace.jsonl` when an E2E scenario fails. The real sidecar also exposes `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, and `/v1/tasks/{task_id}/events` for focused debugging. Fix the policy, monitor, or skill runtime first; do not compensate by letting the model directly call lower-level body primitives.
-6. Commit after a coherent, tested increment. Push only when a git remote is configured and all relevant scripted E2E scenarios pass. Live DeepSeek E2E is optional and should be gated by `MINA_API_KEY`/explicit opt-in so default CI remains deterministic.
+5. Inspect `build/e2e/runs/<timestamp>/summary.json`, `trace-summary.json`, per-scenario `trace.jsonl`, `server.log`, and `sidecar.log` when an E2E scenario fails. The real sidecar also exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, and `/v1/tasks/{task_id}/events` for focused debugging. Fix the policy, monitor, or skill runtime first; do not compensate by letting the model directly call lower-level body primitives.
+6. Commit after a coherent, tested increment. Push only when a git remote is configured and relevant live E2E scenarios pass.
 
 ## Run Sidecar
 

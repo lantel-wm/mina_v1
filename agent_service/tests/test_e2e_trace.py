@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from mina_agent.dev.game_e2e import compact_summary_action_events, compact_summary_tool_calls, compact_trace_payload
+from mina_agent.e2e.trace import compact_summary_action_events, compact_summary_tool_calls, compact_trace_payload
 
 
 def test_compact_trace_payload_replaces_raw_snapshot_with_hash_and_summary() -> None:

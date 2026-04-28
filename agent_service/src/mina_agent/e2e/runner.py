@@ -1,0 +1,627 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import queue
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from mina_agent.config import load_dotenv_defaults
+
+from .manifest import ActionExpectation, Scenario, ToolExpectation
+from .scenarios import SCENARIOS, SUITES
+from .trace import compact_summary_action_events, compact_summary_model_calls, compact_summary_tool_calls, trace_records
+
+
+ROOT = Path(__file__).resolve().parents[4]
+SERVER_DIR = ROOT / "build" / "e2e" / "server"
+RUNS_DIR = ROOT / "build" / "e2e" / "runs"
+PUPPET_VERSION_ID = "VccNE5wh"
+KOTLIN_VERSION = "1.13.11+kotlin.2.3.21"
+
+
+@dataclass
+class RunResult:
+    scenario: str
+    ok: bool
+    attempts: int
+    error: str = ""
+
+
+def main(argv: list[str] | None = None) -> int:
+    load_dotenv_defaults()
+    args = parse_args(argv)
+    selected = select_scenarios(args)
+    live_model = require_live_deepseek_env()
+
+    run_id = time.strftime("%Y%m%d-%H%M%S")
+    artifact_dir = RUNS_DIR / run_id
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    prepare_runtime(args.port, args.server_port, enable_body=not args.disable_body)
+    if not args.skip_build:
+        run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
+
+    runner = E2ERunner(
+        scenarios=selected,
+        artifact_dir=artifact_dir,
+        port=args.port,
+        server_port=args.server_port,
+        timeout=args.timeout,
+        searxng_url=args.searxng_url,
+    )
+    results = runner.run()
+    summary = {
+        "ok": all(result.ok for result in results),
+        "run_id": run_id,
+        "suite": args.suite,
+        "scenarios": [result.__dict__ for result in results],
+        "artifact_dir": str(artifact_dir),
+        "deepseek": live_model,
+    }
+    (artifact_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["ok"] else 1
+
+
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Mina declarative live E2E scenarios.")
+    parser.add_argument("--suite", default="live", choices=sorted(SUITES))
+    parser.add_argument("--scenario", action="append", choices=sorted(SCENARIOS))
+    parser.add_argument("--port", type=int, default=18911)
+    parser.add_argument("--server-port", type=int, default=25566)
+    parser.add_argument("--timeout", type=float, default=180.0)
+    parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--disable-body", action="store_true")
+    parser.add_argument("--searxng-url", default=os.getenv("MINA_SEARXNG_URL", "http://127.0.0.1:8888"))
+    return parser.parse_args(argv)
+
+
+def select_scenarios(args: argparse.Namespace) -> list[Scenario]:
+    names = args.scenario if args.scenario else SUITES[args.suite]
+    return [SCENARIOS[name] for name in names]
+
+
+def require_live_deepseek_env() -> dict[str, str]:
+    api_key = os.getenv("MINA_API_KEY", "").strip()
+    if not api_key:
+        raise SystemExit("MINA_API_KEY is required for Mina E2E; refusing to downgrade to fake/offline mode.")
+
+    base_url = os.getenv("MINA_BASE_URL", "https://api.deepseek.com").strip().rstrip("/")
+    host = urllib.parse.urlparse(base_url).hostname or ""
+    if host in {"localhost", "0.0.0.0", "::1"} or host.startswith("127."):
+        raise SystemExit("MINA_BASE_URL must point to the real DeepSeek API for Mina E2E; refusing loopback mock endpoint.")
+    if not host.endswith("deepseek.com"):
+        raise SystemExit(f"MINA_BASE_URL must point to DeepSeek for Mina E2E, got host={host!r}.")
+
+    model = os.getenv("MINA_MODEL", "deepseek-v4-flash").strip() or "deepseek-v4-flash"
+    if "fake" in model.lower() or model.startswith("mina-"):
+        raise SystemExit(f"MINA_MODEL must be a real DeepSeek model for Mina E2E, got {model!r}.")
+
+    return {"base_url": base_url, "model": model}
+
+
+class E2ERunner:
+    def __init__(
+        self,
+        scenarios: list[Scenario],
+        artifact_dir: Path,
+        port: int,
+        server_port: int,
+        timeout: float,
+        searxng_url: str,
+    ):
+        self.scenarios = scenarios
+        self.artifact_dir = artifact_dir
+        self.port = port
+        self.server_port = server_port
+        self.timeout = timeout
+        self.searxng_url = searxng_url
+        self.sidecar: subprocess.Popen[str] | None = None
+        self.server: subprocess.Popen[str] | None = None
+        self.server_output: ProcessOutput | None = None
+        self.sidecar_output: ProcessOutput | None = None
+
+    def run(self) -> list[RunResult]:
+        results: list[RunResult] = []
+        self.sidecar = start_sidecar(self.port, self.artifact_dir, self.searxng_url)
+        self.sidecar_output = ProcessOutput(self.sidecar, self.artifact_dir / "sidecar-stdout.log", echo=False)
+        self.sidecar_output.start()
+        try:
+            wait_http(f"http://127.0.0.1:{self.port}/healthz", timeout=30, proc=self.sidecar)
+            self.server = start_server(self.artifact_dir)
+            self.server_output = ProcessOutput(self.server, self.artifact_dir / "server.log", echo=True)
+            self.server_output.start()
+            self.server_output.wait_for("Done", timeout=self.timeout)
+            for scenario in self.scenarios:
+                results.append(self._run_with_retries(scenario))
+            self._write_run_artifacts()
+            return results
+        finally:
+            if self.server is not None:
+                stop_process(self.server, command="stop")
+            if self.sidecar is not None:
+                stop_process(self.sidecar)
+
+    def _run_with_retries(self, scenario: Scenario) -> RunResult:
+        last_error = ""
+        for attempt in range(1, scenario.retry + 2):
+            try:
+                self._run_scenario(scenario)
+                return RunResult(scenario=scenario.name, ok=True, attempts=attempt)
+            except Exception as exc:  # noqa: BLE001 - runner must preserve scenario failure in summary.
+                last_error = str(exc)
+                self._write_failure_snapshot(scenario, last_error)
+                if attempt <= scenario.retry:
+                    continue
+                return RunResult(scenario=scenario.name, ok=False, attempts=attempt, error=last_error)
+        return RunResult(scenario=scenario.name, ok=False, attempts=scenario.retry + 1, error=last_error)
+
+    def _run_scenario(self, scenario: Scenario) -> None:
+        assert self.server is not None
+        assert self.server_output is not None
+        print(f"[mina-e2e] scenario start: {scenario.name}")
+        send(self.server, f"mina-test fixture reset {scenario.fixture}")
+        self.server_output.wait_for(f"Mina test fixture {scenario.fixture} reset complete", timeout=30)
+        poll_command(
+            self.server,
+            self.server_output,
+            "mina-test ready",
+            success="Mina test ready",
+            pending=["Mina test not ready"],
+            timeout=60,
+        )
+        self._cleanup_active_body_task(scenario.name)
+        for step in scenario.steps:
+            self._run_step(step_kind=step.kind, value=step.value, request_id=step.request_id, wait_for=step.wait_for, timeout=step.timeout)
+        for assertion in scenario.world_asserts:
+            self._run_step(step_kind="assert", value=assertion, request_id="", wait_for=[], timeout=min(scenario.timeout, self.timeout))
+        self._assert_tools(scenario)
+        self._assert_actions(scenario)
+        self._assert_model_calls(scenario)
+        self._write_scenario_artifacts(scenario)
+        print(f"[mina-e2e] scenario passed: {scenario.name}")
+
+    def _cleanup_active_body_task(self, scenario_name: str) -> None:
+        assert self.server is not None
+        assert self.server_output is not None
+        request_id = "e2e-cleanup-" + scenario_name.replace("_", "-")
+        send(self.server, f"mina-test request_with_id {request_id} 停止")
+        found = self.server_output.wait_for_any(
+            ["我已经停止当前身体任务", "当前没有正在执行的身体任务", "我没有权限停止身体任务"],
+            timeout=30,
+        )
+        if not found:
+            raise TimeoutError(f"{scenario_name}: scenario cleanup did not stop or confirm empty body task state")
+
+    def _run_step(self, step_kind: str, value: str, request_id: str, wait_for: list[str], timeout: float) -> None:
+        assert self.server is not None
+        assert self.server_output is not None
+        if step_kind == "request":
+            if not request_id:
+                raise ValueError("request steps require request_id")
+            send(self.server, f"mina-test request_with_id {request_id} {value}")
+        elif step_kind == "world_mutate":
+            send(self.server, f"mina-test world mutate {value}")
+        elif step_kind == "actor_spawn":
+            send(self.server, f"mina-test actor spawn {value}")
+        elif step_kind == "actor_leave":
+            send(self.server, f"mina-test actor leave {value}")
+        elif step_kind == "actor_tp":
+            actor, _, position = value.partition(" ")
+            send(self.server, f"mina-test actor tp {actor} {position}")
+        elif step_kind == "assert":
+            poll_command(
+                self.server,
+                self.server_output,
+                f"mina-test assert {value}",
+                success=f"Mina test {value} passed",
+                pending=[f"Mina test {value} failed"],
+                timeout=timeout,
+                interval=2.0,
+            )
+            return
+        else:
+            raise ValueError(f"unknown scenario step kind: {step_kind}")
+        if wait_for:
+            found = self.server_output.wait_for_any(wait_for, timeout=timeout)
+            if not found:
+                raise TimeoutError(f"step {step_kind} did not emit one of {wait_for!r}")
+
+    def _assert_tools(self, scenario: Scenario) -> None:
+        request_ids = scenario.request_ids()
+        for expected in scenario.expected_tools:
+            if not wait_until(lambda: self._find_tool_call(request_ids, expected), timeout=20):
+                raise AssertionError(f"{scenario.name}: missing expected tool call {expected}")
+        calls = self._combined("tool_calls", request_ids)
+        forbidden = [
+            call for call in calls
+            for expected in scenario.forbidden_tools
+            if self._matches_tool_call(call, expected)
+        ]
+        if forbidden:
+            raise AssertionError(f"{scenario.name}: forbidden tool calls were recorded: {forbidden!r}")
+
+    def _find_tool_call(self, request_ids: list[str], expected: ToolExpectation) -> bool:
+        calls = self._combined("tool_calls", request_ids)
+        for call in calls:
+            if self._matches_tool_call(call, expected):
+                return True
+        return False
+
+    @staticmethod
+    def _matches_tool_call(call: dict[str, Any], expected: ToolExpectation) -> bool:
+        if call.get("tool_name") != expected.name:
+            return False
+        if expected.status and call.get("status") != expected.status:
+            return False
+        if expected.args_contains and expected.args_contains not in str(call.get("args_json") or ""):
+            return False
+        if expected.result_contains and expected.result_contains not in str(call.get("result_json") or ""):
+            return False
+        return True
+
+    def _assert_actions(self, scenario: Scenario) -> None:
+        request_ids = scenario.request_ids()
+        for expected in scenario.expected_actions:
+            if not wait_until(lambda: self._find_action_event(request_ids, expected), timeout=30):
+                raise AssertionError(f"{scenario.name}: missing expected action event {expected}")
+        events = self._combined("action_events", request_ids)
+        forbidden = [
+            event for event in events
+            if isinstance(event, dict)
+            and event.get("event_type") == "action_scheduled"
+            and event.get("action_name") in scenario.forbidden_actions
+        ]
+        if forbidden:
+            raise AssertionError(f"{scenario.name}: forbidden Fabric actions were scheduled: {forbidden!r}")
+
+    def _find_action_event(self, request_ids: list[str], expected: ActionExpectation) -> bool:
+        events = self._combined("action_events", request_ids)
+        for event in events:
+            if event.get("event_type") != expected.event_type:
+                continue
+            if event.get("action_name") != expected.name:
+                continue
+            if expected.step_id and event.get("step_id") != expected.step_id:
+                continue
+            return True
+        return False
+
+    def _assert_model_calls(self, scenario: Scenario) -> None:
+        if scenario.expected_model is None:
+            return
+        calls = self._combined("model_calls", scenario.request_ids())
+        count = len(calls)
+        expectation = scenario.expected_model
+        if expectation.mode == "exact" and count != expectation.count:
+            raise AssertionError(f"{scenario.name}: expected exactly {expectation.count} model calls, got {count}")
+        if expectation.mode == "at_least" and count < int(expectation.min_count or 0):
+            raise AssertionError(f"{scenario.name}: expected at least {expectation.min_count} model calls, got {count}")
+        errors = [call for call in calls if call.get("status") != "ok"]
+        if errors:
+            raise AssertionError(f"{scenario.name}: model calls must complete successfully: {errors!r}")
+
+    def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
+        combined: list[dict[str, Any]] = []
+        for request_id in request_ids:
+            trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
+            items = trace.get(key) or []
+            combined.extend(item for item in items if isinstance(item, dict))
+        return combined
+
+    def _write_scenario_artifacts(self, scenario: Scenario) -> None:
+        scenario_dir = self.artifact_dir / scenario.name
+        scenario_dir.mkdir(parents=True, exist_ok=True)
+        records: list[dict[str, Any]] = []
+        traces: dict[str, Any] = {}
+        for request_id in scenario.request_ids():
+            trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
+            traces[request_id] = trace
+            records.extend(trace_records(request_id, trace))
+        (scenario_dir / "trace.jsonl").write_text(
+            "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+            encoding="utf-8",
+        )
+        (scenario_dir / "trace.json").write_text(json.dumps(traces, ensure_ascii=False, indent=2), encoding="utf-8")
+        model_calls = [record for record in records if record.get("event_type") == "model_call"]
+        (scenario_dir / "model_calls.jsonl").write_text(
+            "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in model_calls),
+            encoding="utf-8",
+        )
+
+    def _write_run_artifacts(self) -> None:
+        all_tool_calls = read_json(f"http://127.0.0.1:{self.port}/v1/tool-calls", timeout=5)
+        all_action_events = read_json(f"http://127.0.0.1:{self.port}/v1/action-events", timeout=5)
+        all_model_calls = read_json(f"http://127.0.0.1:{self.port}/v1/model-calls", timeout=5)
+        all_tasks = read_json(f"http://127.0.0.1:{self.port}/v1/tasks", timeout=5)
+        payload = {
+            "tool_calls": compact_summary_tool_calls(all_tool_calls.get("tool_calls", [])),
+            "action_events": compact_summary_action_events(all_action_events.get("events", [])),
+            "model_calls": compact_summary_model_calls(all_model_calls.get("model_calls", [])),
+            "tasks": all_tasks.get("tasks", []),
+        }
+        (self.artifact_dir / "trace-summary.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        (self.artifact_dir / "model_calls.jsonl").write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in payload["model_calls"]),
+            encoding="utf-8",
+        )
+
+    def _write_failure_snapshot(self, scenario: Scenario, error: str) -> None:
+        failure_dir = self.artifact_dir / scenario.name
+        failure_dir.mkdir(parents=True, exist_ok=True)
+        payload: dict[str, Any] = {"scenario": scenario.name, "error": error}
+        try:
+            payload["tasks"] = read_json(f"http://127.0.0.1:{self.port}/v1/tasks", timeout=5)
+            payload["tool_calls"] = read_json(f"http://127.0.0.1:{self.port}/v1/tool-calls", timeout=5)
+            payload["action_events"] = read_json(f"http://127.0.0.1:{self.port}/v1/action-events", timeout=5)
+            payload["model_calls"] = read_json(f"http://127.0.0.1:{self.port}/v1/model-calls", timeout=5)
+        except OSError as exc:
+            payload["snapshot_error"] = str(exc)
+        (failure_dir / "failure.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+class ProcessOutput:
+    def __init__(self, proc: subprocess.Popen[str], log_path: Path, echo: bool):
+        self.proc = proc
+        self.log_path = log_path
+        self.echo = echo
+        self.lines: queue.Queue[str] = queue.Queue()
+        self._thread = threading.Thread(target=self._read, daemon=True)
+
+    def start(self) -> None:
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._thread.start()
+
+    def wait_for(self, text: str, timeout: float) -> str:
+        found = self.wait_for_any([text], timeout)
+        if found != text:
+            raise TimeoutError(text)
+        return found
+
+    def wait_for_any(self, texts: list[str], timeout: float) -> str:
+        deadline = time.time() + timeout
+        buffered: list[str] = []
+        while time.time() < deadline:
+            try:
+                line = self.lines.get(timeout=0.25)
+            except queue.Empty:
+                if self.proc.poll() is not None:
+                    raise RuntimeError("process exited while waiting for output:\n" + "".join(buffered[-80:]))
+                continue
+            buffered.append(line)
+            for text in texts:
+                if text in line:
+                    return text
+        return ""
+
+    def _read(self) -> None:
+        assert self.proc.stdout is not None
+        with self.log_path.open("a", encoding="utf-8") as log:
+            for line in self.proc.stdout:
+                log.write(line)
+                log.flush()
+                if self.echo:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                self.lines.put(line)
+
+
+def prepare_runtime(port: int, server_port: int, enable_body: bool = True) -> None:
+    world_dir = SERVER_DIR / "world"
+    if world_dir.exists():
+        shutil.rmtree(world_dir)
+    (SERVER_DIR / "mods").mkdir(parents=True, exist_ok=True)
+    (SERVER_DIR / "config").mkdir(parents=True, exist_ok=True)
+    (SERVER_DIR / "eula.txt").write_text("eula=true\n", encoding="utf-8")
+    (SERVER_DIR / "server.properties").write_text(
+        "\n".join(
+            [
+                "online-mode=false",
+                f"server-port={server_port}",
+                "enable-command-block=true",
+                "gamemode=survival",
+                "difficulty=peaceful",
+                "spawn-protection=0",
+                "level-name=world",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (SERVER_DIR / "config" / "mina.json").write_text(
+        json.dumps(
+            {
+                "sidecarBaseUrl": f"http://127.0.0.1:{port}",
+                "sidecarTimeoutMs": 90000,
+                "enabled": True,
+                "enableCompanion": False,
+                "allowedOperatorsOnlyForActions": True,
+                "actionAllowlist": ["mina_tester"],
+                "bodyUsername": "mina",
+                "enableBody": enable_body,
+                "snapshotIntervalTicks": 40,
+                "companionCooldownSeconds": 300,
+                "nearbyEntityRadius": 32,
+                "maxInventorySlotsReported": 46,
+                "maxNearbyEntitiesReported": 40,
+                "dangerousCommandDenylist": ["op", "deop", "stop", "ban", "ban-ip", "pardon", "pardon-ip", "whitelist", "save-all", "save-off", "save-on"],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (SERVER_DIR / "config" / "puppet-player-config.json").write_text(
+        json.dumps({"reload_puppet_players": True, "operator_required_for_puppets": True}, indent=2),
+        encoding="utf-8",
+    )
+    download_puppet_players(SERVER_DIR / "mods")
+    download_kotlin(SERVER_DIR / "mods")
+
+
+def start_sidecar(port: int, artifact_dir: Path, searxng_url: str) -> subprocess.Popen[str]:
+    pythonpath = str(ROOT / "agent_service" / "src")
+    env = {
+        **os.environ,
+        "MINA_DB_PATH": str(artifact_dir / "mina-live.sqlite3"),
+        "MINA_LOG_PATH": str(artifact_dir / "sidecar.log"),
+        "MINA_SEARXNG_URL": searxng_url.rstrip("/"),
+        "PYTHONPATH": pythonpath + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    }
+    return subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "mina_agent.app:app", "--host", "127.0.0.1", "--port", str(port)],
+        cwd=ROOT,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+
+def start_server(artifact_dir: Path) -> subprocess.Popen[str]:
+    env = {**os.environ, "GRADLE_USER_HOME": str(ROOT / ".gradle")}
+    return subprocess.Popen(
+        [str(ROOT / "gradlew"), "runE2eServer", "--no-daemon"],
+        cwd=ROOT,
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+
+def download_puppet_players(mods_dir: Path) -> None:
+    existing = list(mods_dir.glob("PuppetPlayers-1.3.1+1.21.11.jar"))
+    if existing:
+        return
+    with urllib.request.urlopen(f"https://api.modrinth.com/v2/version/{PUPPET_VERSION_ID}", timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    files = payload.get("files") or []
+    primary = next((item for item in files if item.get("primary")), files[0])
+    download(primary["url"], mods_dir / primary["filename"])
+
+
+def download_kotlin(mods_dir: Path) -> None:
+    filename = f"fabric-language-kotlin-{KOTLIN_VERSION}.jar"
+    target = mods_dir / filename
+    if target.exists():
+        return
+    local = ROOT / "run" / "mods" / filename
+    if local.exists():
+        shutil.copy2(local, target)
+        return
+    encoded_version = KOTLIN_VERSION.replace("+", "%2B")
+    url = (
+        "https://maven.fabricmc.net/net/fabricmc/fabric-language-kotlin/"
+        f"{encoded_version}/fabric-language-kotlin-{encoded_version}.jar"
+    )
+    download(url, target)
+
+
+def download(url: str, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    with urllib.request.urlopen(url, timeout=60) as response:
+        tmp.write_bytes(response.read())
+    tmp.replace(target)
+
+
+def run_checked(cmd: list[str], cwd: Path) -> None:
+    env = {**os.environ, "GRADLE_USER_HOME": str(ROOT / ".gradle")}
+    subprocess.run(cmd, cwd=cwd, env=env, check=True)
+
+
+def wait_http(url: str, timeout: float, proc: subprocess.Popen[str] | None = None) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            output = ""
+            if proc.stdout is not None:
+                output = proc.stdout.read()
+            raise RuntimeError(f"process exited while waiting for {url}:\n{output}")
+        try:
+            with urlopen_no_proxy(url, timeout=2) as response:
+                if response.status == 200:
+                    return
+        except OSError:
+            time.sleep(0.5)
+    raise TimeoutError(f"Timed out waiting for {url}")
+
+
+def send(proc: subprocess.Popen[str], command: str) -> None:
+    if proc.stdin is None:
+        raise RuntimeError("process stdin is unavailable")
+    proc.stdin.write(command + "\n")
+    proc.stdin.flush()
+
+
+def poll_command(
+    proc: subprocess.Popen[str],
+    output: ProcessOutput,
+    command: str,
+    success: str,
+    pending: list[str],
+    timeout: float,
+    interval: float = 1.0,
+) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        send(proc, command)
+        found = output.wait_for_any([success, *pending], timeout=5)
+        if found == success:
+            return
+        time.sleep(interval)
+    raise TimeoutError(f"{command} did not report {success!r} before timeout")
+
+
+def wait_until(predicate, timeout: float, interval: float = 0.5) -> bool:  # noqa: ANN001
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval)
+    return False
+
+
+def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:
+    if proc.poll() is not None:
+        return
+    if command and proc.stdin is not None:
+        try:
+            send(proc, command)
+            proc.wait(timeout=20)
+            return
+        except (BrokenPipeError, subprocess.TimeoutExpired):
+            pass
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+def read_json(url: str, timeout: float) -> dict[str, Any]:
+    with urlopen_no_proxy(url, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def urlopen_no_proxy(url: str, timeout: float):
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return opener.open(url, timeout=timeout)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
