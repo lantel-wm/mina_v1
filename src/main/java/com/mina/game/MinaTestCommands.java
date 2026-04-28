@@ -347,6 +347,7 @@ public final class MinaTestCommands {
 			source.sendFailure(Component.literal("Test requester is not online."));
 			return 0;
 		}
+		run(source.getServer(), "difficulty normal");
 		requester.getFoodData().setFoodLevel(4);
 		requester.getFoodData().setSaturation(0.0F);
 		source.sendSuccess(() -> Component.literal("Mina test world mutate low_hunger complete."), false);

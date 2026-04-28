@@ -282,6 +282,51 @@ class UnconfiguredDeepSeek:
         return False
 
 
+def test_harness_companion_cooldown_is_per_alert_reason(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(
+        Settings(api_key="test", db_path=tmp_path / "mina.sqlite3", emergency_cooldown_seconds=300),
+        memory,
+        deepseek,
+        tools,
+    )  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "companion_tick",
+        "message": "",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+    }
+
+    health = harness.run_turn(
+        {
+            **base_turn,
+            "request_id": "companion-health",
+            "snapshot": {"player_state": {"health": 4, "food": 20}, "nearby_entities": []},
+        }
+    )
+    hunger = harness.run_turn(
+        {
+            **base_turn,
+            "request_id": "companion-hunger",
+            "snapshot": {"player_state": {"health": 20, "food": 4}, "nearby_entities": []},
+        }
+    )
+    repeated_hunger = harness.run_turn(
+        {
+            **base_turn,
+            "request_id": "companion-hunger-repeat",
+            "snapshot": {"player_state": {"health": 20, "food": 4}, "nearby_entities": []},
+        }
+    )
+
+    assert "血量很低" in health["messages"][0]["content"]
+    assert "饥饿值偏低" in hunger["messages"][0]["content"]
+    assert repeated_hunger["messages"] == []
+    assert deepseek.calls == 0
+
+
 def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

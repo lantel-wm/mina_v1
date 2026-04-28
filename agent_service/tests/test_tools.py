@@ -89,6 +89,23 @@ def _allowed_turn_for(player_id: str, name: str) -> dict:
     return turn
 
 
+def _high_unreachable_log() -> dict:
+    return {
+        "block": "minecraft:oak_log",
+        "category": "log",
+        "x": 1,
+        "y": 86,
+        "z": 0,
+        "center_x": 1.5,
+        "center_y": 86.5,
+        "center_z": 0.5,
+        "distance": 1.0,
+        "approach_x": 1.5,
+        "approach_y": 86,
+        "approach_z": -0.5,
+    }
+
+
 def test_model_tool_specs_do_not_expose_low_level_body_tools() -> None:
     names = {spec["function"]["name"] for spec in tool_specs()}
 
@@ -157,6 +174,22 @@ def test_start_body_task_fails_gracefully_when_logs_have_no_approach(tmp_path) -
     assert '"error": "no log target with approach position"' in result.content
     assert "没有找到可安全接近的原木" in result.content
     assert '"task not found"' in runner.run("task_status", {}, turn).content
+
+
+def test_chop_tree_ignores_vertically_unreachable_log_candidates(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+    turn["snapshot"]["nearby_blocks"]["body"] = [_high_unreachable_log()]
+
+    result = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+
+    assert result.actions
+    assert result.actions[0]["name"] == "body_move_to_position"
+    assert result.actions[0]["args"]["x"] == 2.5
+    assert result.actions[0]["args"]["y"] == 80.0
+    status = runner.run("task_status", {"task_id": result.actions[0]["task_id"]}, turn)
+    assert '"block": "minecraft:spruce_log"' in status.content
+    assert '"y": 80' in status.content
 
 
 def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> None:
@@ -407,6 +440,52 @@ def test_chop_tree_reselects_same_column_log_without_new_approach(tmp_path) -> N
     assert '"y": 81' in status.content
 
 
+def test_chop_tree_prefers_same_column_replacement_over_unreachable_log(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    upper_log = {
+        "block": "minecraft:spruce_log",
+        "category": "log",
+        "x": 2,
+        "y": 81,
+        "z": 0,
+        "center_x": 2.5,
+        "center_y": 81.5,
+        "center_z": 0.5,
+        "distance": 3.2,
+    }
+
+    advanced = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": {
+                        "body_state": {"online": True, "y": 80},
+                        "nearby_blocks": {"body": [_high_unreachable_log(), upper_log]},
+                    },
+                }
+            ]
+        }
+    )
+
+    assert advanced.actions
+    assert advanced.actions[0]["name"] == "body_move_to_position"
+    assert advanced.actions[0]["args"]["x"] == 2.5
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"block": "minecraft:spruce_log"' in status.content
+    assert '"y": 81' in status.content
+
+
 def test_chop_tree_reselects_when_target_disappears_after_look_sent(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()
@@ -497,6 +576,39 @@ def test_chop_tree_completes_when_target_disappears_and_no_replacement_exists(tm
     status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
     assert '"status": "completed"' in status.content
     assert '"last_error": "target disappeared before attack"' in status.content
+
+
+def test_chop_tree_recovery_ignores_unreachable_high_replacement_log(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    advanced = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": {
+                        "body_state": {"online": True, "y": 80},
+                        "nearby_blocks": {"body": [_high_unreachable_log()]},
+                    },
+                }
+            ]
+        }
+    )
+
+    assert advanced.actions == []
+    assert "目标原木已经不存在" in advanced.messages[0]["content"]
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"status": "completed"' in status.content
+    assert '"block": "minecraft:oak_log"' not in status.content
 
 
 def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) -> None:

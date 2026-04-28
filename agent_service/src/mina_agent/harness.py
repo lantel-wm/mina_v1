@@ -364,22 +364,26 @@ class AgentHarness:
             if entity.get("category") == "hostile" and float(entity.get("distance") or 999) <= 12
         ]
         now = time.time()
-        last = self._last_companion_message.get(player_id, 0)
-        urgent = health <= 6 or hunger <= 5 or bool(hostile_close)
-        cooldown = self.settings.emergency_cooldown_seconds if urgent else self.settings.companion_cooldown_seconds
-        if now - last < cooldown:
-            return None
+        alert_kind = ""
         content = ""
         if health <= 6:
+            alert_kind = "health"
             content = "你现在血量很低，先拉开距离并补血。"
         elif hunger <= 5:
+            alert_kind = "hunger"
             content = "饥饿值偏低，记得先吃点东西。"
         elif hostile_close:
+            alert_kind = "hostile"
             nearest = hostile_close[0]
             content = f"附近有 {nearest.get('type', 'hostile mob')}，距离大约 {nearest.get('distance')} 格。"
         if not content:
             return None
-        self._last_companion_message[player_id] = now
+        cooldown_key = f"{player_id}:{alert_kind}"
+        last = self._last_companion_message.get(cooldown_key, 0)
+        cooldown = self.settings.emergency_cooldown_seconds if alert_kind else self.settings.companion_cooldown_seconds
+        if now - last < cooldown:
+            return None
+        self._last_companion_message[cooldown_key] = now
         self.memory.add_event(player_id, "companion_alert", {"content": content}, importance=2)
         self._debug("companion message player=%s content=%s", player.get("name") or player_id, content)
         return TurnResponse(messages=[{"target": "requester", "content": content}])

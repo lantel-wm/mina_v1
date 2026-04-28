@@ -551,7 +551,7 @@ def _action(
 
 def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     for block in _log_candidates(snapshot):
-        if _has_approach(block):
+        if _is_reachable_log_candidate(block, snapshot):
             return dict(block)
     return None
 
@@ -569,23 +569,57 @@ def _with_previous_approach(current: dict[str, Any], previous: dict[str, Any]) -
 
 
 def _choose_replacement_log_target(snapshot: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any] | None:
-    replacement = _choose_log_target(snapshot)
-    if replacement is not None:
-        return replacement
     if not all(key in previous for key in ("x", "y", "z", "approach_x", "approach_y", "approach_z")):
-        return None
+        return _choose_log_target(snapshot)
     previous_x = int(previous["x"])
     previous_z = int(previous["z"])
     previous_y = int(previous["y"])
     for block in _log_candidates(snapshot):
         same_column = int(block["x"]) == previous_x and int(block["z"]) == previous_z
-        if same_column and 0 < int(block["y"]) - previous_y <= 4:
+        if same_column and 0 < int(block["y"]) - previous_y <= 3:
             replacement = dict(block)
             replacement["approach_x"] = previous["approach_x"]
             replacement["approach_y"] = previous["approach_y"]
             replacement["approach_z"] = previous["approach_z"]
             return replacement
-    return None
+    return _choose_log_target(snapshot)
+
+
+def _is_reachable_log_candidate(block: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+    if not _has_approach(block):
+        return False
+    approach_y = _float_value(block.get("approach_y"))
+    target_y = _float_value(block.get("y"))
+    if approach_y is None or target_y is None:
+        return False
+    anchor_ys = _snapshot_actor_ys(snapshot)
+    if not anchor_ys:
+        return True
+    for actor_y in anchor_ys:
+        approach_delta = approach_y - actor_y
+        target_delta = target_y - actor_y
+        if -4.0 <= approach_delta <= 2.25 and -4.0 <= target_delta <= 3.25:
+            return True
+    return False
+
+
+def _snapshot_actor_ys(snapshot: dict[str, Any]) -> list[float]:
+    values: list[float] = []
+    for key in ("body_state", "player_state"):
+        state = snapshot.get(key)
+        if not isinstance(state, dict):
+            continue
+        y = _float_value(state.get("y"))
+        if y is not None:
+            values.append(y)
+    return values
+
+
+def _float_value(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _log_candidates(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
