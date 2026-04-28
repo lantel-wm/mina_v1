@@ -275,6 +275,31 @@ SCENARIO_DATA = [
         "rubric": "Task status queries should resolve through the body subagent without requiring the model to know task ids.",
     },
     {
+        "name": "companion_low_health_alert",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "companion", "safety"],
+        "steps": [
+            {"kind": "world_mutate", "value": "low_health", "wait_for": ["Mina test world mutate low_health complete."]},
+            {
+                "kind": "companion_tick",
+                "request_id": "companion-low-health",
+                "wait_for": ["血量很低"],
+                "timeout": 30,
+            },
+        ],
+        "forbidden_actions": {
+            "body_spawn",
+            "body_move_to_position",
+            "body_move_to_requester",
+            "body_chain",
+            "body_attack",
+            "body_use",
+            "run_read_only_command",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Companion ticks should emit timely low-health advice without using the model or controlling the body.",
+    },
+    {
         "name": "read_only_time_live_model",
         "fixture": "follow_player",
         "tags": ["live", "core", "world_tool", "model"],

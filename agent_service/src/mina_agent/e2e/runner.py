@@ -288,6 +288,16 @@ class E2ERunner:
                 timeout=timeout,
                 context="request_response",
             )
+        elif step_kind == "companion_tick":
+            if not request_id:
+                raise ValueError("companion_tick steps require request_id")
+            self._send_server_command(scenario_name, f"mina-test companion_tick_with_id {request_id}")
+            response_line = self._wait_request_response(
+                scenario_name,
+                request_id,
+                timeout=timeout,
+                context="companion_response",
+            )
         elif step_kind == "world_mutate":
             self._send_server_command(scenario_name, f"mina-test world mutate {value}")
             response_line = ""

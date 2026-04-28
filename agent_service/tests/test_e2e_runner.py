@@ -40,6 +40,7 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         for scenario in live
         for expected in scenario.expected_tools
     )
+    assert any("companion" in scenario.tags for scenario in live)
 
 
 def test_scenario_manifest_supports_expected_trace_invariants() -> None:

@@ -62,6 +62,12 @@ public final class MinaTestCommands {
 								StringArgumentType.getString(context, "request_id"),
 								StringArgumentType.getString(context, "content")
 							)))))
+				.then(literal("companion_tick_with_id")
+					.then(argument("request_id", StringArgumentType.word())
+						.executes(context -> companionTickWithId(
+							context.getSource(),
+							StringArgumentType.getString(context, "request_id")
+						))))
 				.then(literal("fixture")
 					.then(literal("reset")
 						.then(argument("name", StringArgumentType.word())
@@ -219,6 +225,15 @@ public final class MinaTestCommands {
 		return turnController.submitPlayerTurn(source.getServer(), requester, "command", content, false, requestId);
 	}
 
+	private int companionTickWithId(CommandSourceStack source, String requestId) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online. Run /mina-test fixture reset first."));
+			return 0;
+		}
+		return turnController.submitPlayerTurn(source.getServer(), requester, "companion_tick", "", false, requestId);
+	}
+
 	private int actorSpawn(CommandSourceStack source, String name) {
 		if (!validActorName(source, name)) {
 			return 0;
@@ -274,6 +289,7 @@ public final class MinaTestCommands {
 				source.sendSuccess(() -> Component.literal("Mina test world mutate clear_weather complete."), false);
 				yield 1;
 			}
+			case "low_health" -> lowHealth(source);
 			default -> {
 				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
 				yield 0;
@@ -306,6 +322,17 @@ public final class MinaTestCommands {
 	private int removeTargetLog(CommandSourceStack source) {
 		source.getLevel().setBlock(TARGET_LOG, Blocks.AIR.defaultBlockState(), 3);
 		source.sendSuccess(() -> Component.literal("Mina test target log removed."), false);
+		return 1;
+	}
+
+	private int lowHealth(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		requester.setHealth(4.0F);
+		source.sendSuccess(() -> Component.literal("Mina test world mutate low_health complete."), false);
 		return 1;
 	}
 
