@@ -157,6 +157,7 @@ def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> 
     assert '"status": "completed"' in runner.run("task_status", {"task_id": task_id}, turn).content
     stopped = runner.run("stop_body_task", {"task_id": task_id}, turn)
     assert stopped.actions == []
+    assert '"ok": false' in stopped.content
     assert "当前没有正在执行的身体任务" in stopped.content
 
 
@@ -219,6 +220,17 @@ def test_stop_body_task_cancels_active_task(tmp_path) -> None:
     assert stopped.actions
     assert stopped.actions[0]["name"] == "body_stop"
     assert '"status": "cancelled"' in status.content
+
+
+def test_stop_body_task_reports_error_when_no_task_is_active(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    stopped = runner.run("stop_body_task", {}, _allowed_turn())
+
+    assert stopped.actions == []
+    assert '"ok": false' in stopped.content
+    assert '"error": "no active body task"' in stopped.content
+    assert "当前没有正在执行的身体任务" in stopped.content
 
 
 def test_task_status_can_use_current_active_task_without_id(tmp_path) -> None:

@@ -259,8 +259,12 @@ class ToolRunner:
 
     def _stop_body_task(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         response = self.skills.stop_task(str(args.get("task_id") or "") or None, turn)
+        ok = bool(response.actions)
+        payload: dict[str, Any] = {"ok": ok, "messages": response.messages, "actions": response.actions}
+        if not ok:
+            payload["error"] = "no active body task"
         return ToolResult(
-            content=json.dumps({"ok": True, "messages": response.messages, "actions": response.actions}, ensure_ascii=False),
+            content=json.dumps(payload, ensure_ascii=False),
             actions=response.actions,
         )
 
