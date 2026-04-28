@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from mina_agent.dev.game_e2e import compact_trace_payload
+from mina_agent.dev.game_e2e import compact_summary_action_events, compact_summary_tool_calls, compact_trace_payload
 
 
 def test_compact_trace_payload_replaces_raw_snapshot_with_hash_and_summary() -> None:
@@ -33,3 +33,43 @@ def test_compact_trace_payload_replaces_raw_snapshot_with_hash_and_summary() -> 
     assert compact["snapshot_summary"]["body"]["online"] is True
     assert compact["snapshot_summary"]["nearby"]["logs"] == 1
     assert "inventory" not in json.dumps(compact)
+
+
+def test_trace_summary_compacts_action_event_payload_json() -> None:
+    events = [
+        {
+            "event_type": "action_result",
+            "payload_json": json.dumps(
+                {
+                    "status": "success",
+                    "snapshot": {
+                        "body_state": {"online": True, "inventory": [{"slot": 0}]},
+                        "nearby_blocks": [{"category": "log"}],
+                    },
+                }
+            ),
+        }
+    ]
+
+    compact = compact_summary_action_events(events)
+
+    assert "payload_json" not in compact[0]
+    assert compact[0]["payload"]["snapshot_summary"]["nearby"]["logs"] == 1
+    assert "inventory" not in json.dumps(compact)
+
+
+def test_trace_summary_parses_tool_call_json_fields() -> None:
+    calls = [
+        {
+            "tool_name": "web_search",
+            "args_json": '{"query":"Minecraft Wiki"}',
+            "result_json": '{"content":"ok"}',
+        }
+    ]
+
+    compact = compact_summary_tool_calls(calls)
+
+    assert compact[0]["args"] == {"query": "Minecraft Wiki"}
+    assert compact[0]["result"] == {"content": "ok"}
+    assert "args_json" not in compact[0]
+    assert "result_json" not in compact[0]

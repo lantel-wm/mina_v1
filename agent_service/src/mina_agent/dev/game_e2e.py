@@ -664,11 +664,13 @@ def write_trace_summary(port: int) -> None:
     except OSError:
         return
     try:
-        payload["action_events"] = read_json(f"http://127.0.0.1:{port}/v1/action-events", timeout=5).get("events", [])
+        action_events = read_json(f"http://127.0.0.1:{port}/v1/action-events", timeout=5).get("events", [])
+        payload["action_events"] = compact_summary_action_events(action_events)
     except OSError:
         payload["action_events"] = []
     try:
-        payload["tool_calls"] = read_json(f"http://127.0.0.1:{port}/v1/tool-calls", timeout=5).get("tool_calls", [])
+        tool_calls = read_json(f"http://127.0.0.1:{port}/v1/tool-calls", timeout=5).get("tool_calls", [])
+        payload["tool_calls"] = compact_summary_tool_calls(tool_calls)
     except OSError:
         payload["tool_calls"] = []
     trace = ROOT / "build" / "e2e" / "trace-summary.json"
@@ -737,18 +739,8 @@ def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:
     for call in tasks_payload.get("tool_calls") or []:
         if not isinstance(call, dict):
             continue
-        args = call.get("args_json")
-        result = call.get("result_json")
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except json.JSONDecodeError:
-                pass
-        if isinstance(result, str):
-            try:
-                result = json.loads(result)
-            except json.JSONDecodeError:
-                pass
+        args = call.get("args") if "args" in call else parse_json_field(call.get("args_json"))
+        result = call.get("result") if "result" in call else parse_json_field(call.get("result_json"))
         records.append(
             {
                 "trace_id": trace_id,
@@ -793,6 +785,34 @@ def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:
     )
 
 
+def compact_summary_action_events(events: Any) -> list[dict[str, Any]]:
+    compact_events: list[dict[str, Any]] = []
+    if not isinstance(events, list):
+        return compact_events
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        compact = dict(event)
+        payload = compact.pop("payload_json", None)
+        compact["payload"] = compact_trace_payload(parse_json_field(payload))
+        compact_events.append(compact)
+    return compact_events
+
+
+def compact_summary_tool_calls(calls: Any) -> list[dict[str, Any]]:
+    compact_calls: list[dict[str, Any]] = []
+    if not isinstance(calls, list):
+        return compact_calls
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        compact = dict(call)
+        compact["args"] = parse_json_field(compact.pop("args_json", None))
+        compact["result"] = parse_json_field(compact.pop("result_json", None))
+        compact_calls.append(compact)
+    return compact_calls
+
+
 def compact_trace_payload(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return payload
@@ -802,6 +822,15 @@ def compact_trace_payload(payload: Any) -> Any:
         compact["snapshot_hash"] = snapshot_hash(snapshot)
         compact["snapshot_summary"] = trace_snapshot_summary(snapshot)
     return compact
+
+
+def parse_json_field(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
 
 
 def snapshot_hash(snapshot: dict[str, Any]) -> str:
