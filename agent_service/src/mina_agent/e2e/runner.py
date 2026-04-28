@@ -658,6 +658,7 @@ class E2ERunner:
             encoding="utf-8",
         )
         aggregate_run_trace_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
+        aggregate_scenario_summaries_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
 
     def _write_failure_snapshot(self, scenario: Scenario, error: str) -> None:
         failure_dir = self.artifact_dir / scenario.name
@@ -1191,6 +1192,26 @@ def aggregate_run_trace_jsonl(artifact_dir: Path, scenario_names: list[str]) -> 
                 records.append(record)
     records.sort(key=_record_created_at)
     (artifact_dir / "trace.jsonl").write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+def aggregate_scenario_summaries_jsonl(artifact_dir: Path, scenario_names: list[str]) -> None:
+    records: list[dict[str, Any]] = []
+    for scenario_name in scenario_names:
+        summary_path = artifact_dir / scenario_name / "summary.json"
+        if not summary_path.exists():
+            records.append({"scenario": scenario_name, "status": "missing_summary"})
+            continue
+        try:
+            record = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            record = {"scenario": scenario_name, "status": "invalid_summary", "error": str(exc)}
+        if isinstance(record, dict):
+            record.setdefault("scenario", scenario_name)
+            records.append(record)
+    (artifact_dir / "scenario_summaries.jsonl").write_text(
         "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
         encoding="utf-8",
     )

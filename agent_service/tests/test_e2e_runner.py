@@ -11,6 +11,7 @@ from mina_agent.e2e.runner import (
     ROOT,
     SearxngFixtureServer,
     aggregate_run_trace_jsonl,
+    aggregate_scenario_summaries_jsonl,
     compact_snapshot_from_server_line,
     git_metadata,
     main,
@@ -759,6 +760,30 @@ def test_aggregate_run_trace_jsonl_preserves_scenario_and_time_order(tmp_path) -
     ]
     assert [record["event_type"] for record in records] == ["early", "late"]
     assert [record["scenario"] for record in records] == ["second", "first"]
+
+
+def test_aggregate_scenario_summaries_jsonl_preserves_selection_order(tmp_path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (second / "summary.json").write_text(
+        json.dumps({"scenario": "second", "status": "passed"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (first / "summary.json").write_text(
+        json.dumps({"scenario": "first", "status": "failed"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    aggregate_scenario_summaries_jsonl(tmp_path, ["first", "missing", "second"])
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "scenario_summaries.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [record["scenario"] for record in records] == ["first", "missing", "second"]
+    assert [record["status"] for record in records] == ["failed", "missing_summary", "passed"]
 
 
 def test_git_metadata_is_model_visible_run_context() -> None:
