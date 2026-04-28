@@ -11,6 +11,7 @@ from .body_agent import (
     is_body_follow_request,
     is_body_instructional_request,
     is_body_stop_request,
+    is_body_task_status_request,
 )
 from .config import Settings
 from .context import build_messages, is_memory_recall_request
@@ -53,6 +54,15 @@ class AgentHarness:
         message = str(turn.get("message") or "")
         if message:
             self.memory.add_conversation(request_id, player_id, "user", message)
+
+        local_observation = _local_observation_response(turn)
+        if local_observation is not None:
+            for message_item in local_observation.messages:
+                content = str(message_item.get("content") or "").strip()
+                if content:
+                    self.memory.add_conversation(request_id, player_id, "assistant", content)
+            self._debug("turn local_observation request_id=%s intent=%s", request_id, local_observation.debug.get("intent"))
+            return local_observation.to_dict()
 
         body_response = self.body_subagent.handle(turn)
         if body_response is not None:
@@ -266,7 +276,7 @@ class AgentHarness:
         if not normalized:
             return None
 
-        if _contains_any(normalized, {"状态", "status", "进度"}):
+        if is_body_task_status_request(normalized):
             args: dict[str, Any] = {}
             result = self.tools.run("task_status", args, turn)
             self._record_tool_call(turn, "task_status", args, result, [])
@@ -534,6 +544,128 @@ def _action_ack(tool_name: str) -> str:
     if tool_name == "stop_body_task":
         return "我已经停止当前身体任务。"
     return "我开始执行。"
+
+
+def _local_observation_response(turn: dict[str, Any]) -> TurnResponse | None:
+    if turn.get("trigger") != "command":
+        return None
+    message = str(turn.get("message") or "").strip()
+    normalized = message.lower()
+    if not normalized or is_body_task_status_request(normalized):
+        return None
+    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
+    if _body_observation_intent(normalized):
+        return TurnResponse(
+            messages=[{"target": "requester", "content": _body_observation_message(snapshot)}],
+            debug={"local_observation": True, "intent": "body_observation"},
+        )
+    if _player_observation_intent(normalized):
+        return TurnResponse(
+            messages=[{"target": "requester", "content": _player_observation_message(snapshot)}],
+            debug={"local_observation": True, "intent": "player_observation"},
+        )
+    return None
+
+
+def _player_observation_intent(message: str) -> bool:
+    if any(token in message for token in ("身体", "假人", "mina body", "body")):
+        return False
+    return any(
+        token in message
+        for token in (
+            "我的状态",
+            "我状态",
+            "我现在状态",
+            "我在哪",
+            "我在什么位置",
+            "我的位置",
+            "我的坐标",
+            "当前位置",
+            "坐标是多少",
+            "血量",
+            "生命值",
+            "生命",
+            "饥饿",
+            "饱食",
+            "饱食度",
+            "where am i",
+            "my coordinates",
+            "my position",
+            "my health",
+            "my hunger",
+        )
+    )
+
+
+def _body_observation_intent(message: str) -> bool:
+    has_body_subject = any(token in message for token in ("mina", "身体", "假人", "body", "你"))
+    has_observation = any(token in message for token in ("在哪", "位置", "坐标", "离我", "距离", "状态", "where", "position", "coordinates"))
+    return has_body_subject and has_observation
+
+
+def _player_observation_message(snapshot: dict[str, Any]) -> str:
+    player = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    if not player:
+        return "我还没有拿到你的当前状态快照。"
+    parts: list[str] = []
+    position = _position_phrase(player)
+    if position:
+        parts.append(f"你的位置：{position}")
+    health = _number_phrase(player.get("health"))
+    max_health = _number_phrase(player.get("max_health"))
+    if health:
+        if max_health:
+            parts.append(f"生命 {health}/{max_health}")
+        else:
+            parts.append(f"生命 {health}")
+    food = _number_phrase(player.get("food"))
+    if food:
+        parts.append(f"饥饿 {food}")
+    mode = player.get("game_mode")
+    if mode:
+        parts.append(f"模式 {mode}")
+    return "；".join(parts) + "。" if parts else "我还没有拿到你的当前状态快照。"
+
+
+def _body_observation_message(snapshot: dict[str, Any]) -> str:
+    body = snapshot.get("body_state") if isinstance(snapshot.get("body_state"), dict) else {}
+    if not body or not body.get("online"):
+        return "Mina body 当前不在线。"
+    parts = ["Mina body 当前在线"]
+    position = _position_phrase(body)
+    if position:
+        parts.append(f"位置：{position}")
+    distance = _number_phrase(body.get("distance_to_requester"))
+    if distance:
+        parts.append(f"距离你 {distance} 格")
+    health = _number_phrase(body.get("health"))
+    if health:
+        parts.append(f"生命 {health}")
+    return "；".join(parts) + "。"
+
+
+def _position_phrase(state: dict[str, Any]) -> str:
+    x = _number_phrase(state.get("x"))
+    y = _number_phrase(state.get("y"))
+    z = _number_phrase(state.get("z"))
+    if not all((x, y, z)):
+        return ""
+    dimension = str(state.get("dimension") or "").removeprefix("minecraft:")
+    if dimension:
+        return f"{dimension} 坐标 ({x}, {y}, {z})"
+    return f"坐标 ({x}, {y}, {z})"
+
+
+def _number_phrase(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.2f}".rstrip("0").rstrip(".")
 
 
 def _contains_any(value: str, needles: set[str]) -> bool:

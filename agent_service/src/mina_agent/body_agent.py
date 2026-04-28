@@ -35,7 +35,7 @@ class BodySubagent:
         if not normalized:
             return None
 
-        if _status_intent(normalized):
+        if is_body_task_status_request(normalized):
             return self._status(turn)
         if is_body_instructional_request(normalized):
             return None
@@ -138,8 +138,21 @@ def _permission_or_error_message(tool_name: str, error: str) -> str:
     return f"身体任务无法执行：{error}"
 
 
-def _status_intent(message: str) -> bool:
-    return any(token in message for token in ("状态", "进度", "当前任务", "status"))
+def is_body_task_status_request(message: str) -> bool:
+    normalized = message.strip().lower()
+    if normalized in {"状态", "进度", "status", "task status"}:
+        return True
+    return any(
+        token in normalized
+        for token in (
+            "当前任务",
+            "任务状态",
+            "任务进度",
+            "身体任务",
+            "body task",
+            "task progress",
+        )
+    )
 
 
 def _stop_intent(message: str) -> bool:

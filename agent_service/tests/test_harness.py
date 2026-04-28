@@ -393,6 +393,79 @@ def test_harness_companion_cooldown_is_per_alert_reason(tmp_path) -> None:
     assert deepseek.calls == 0
 
 
+def test_harness_answers_player_state_from_snapshot_without_model_or_tools(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-player-observation",
+            "trigger": "command",
+            "message": "我的状态和坐标怎么样？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "player_state": {
+                    "health": 12.5,
+                    "max_health": 20,
+                    "food": 7,
+                    "game_mode": "survival",
+                    "dimension": "minecraft:overworld",
+                    "x": 1.25,
+                    "y": 80,
+                    "z": -2.5,
+                }
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "坐标 (1.25, 80, -2.5)" in content
+    assert "生命 12.5/20" in content
+    assert "饥饿 7" in content
+    assert response["debug"]["intent"] == "player_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-player-observation", limit=10) == []
+
+
+def test_harness_answers_body_position_from_snapshot_without_model_or_tools(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-body-observation",
+            "trigger": "command",
+            "message": "Mina 的身体在哪？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "body_state": {
+                    "online": True,
+                    "dimension": "minecraft:overworld",
+                    "x": 3.5,
+                    "y": 80,
+                    "z": -1.5,
+                    "distance_to_requester": 4.25,
+                    "health": 20,
+                }
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "Mina body 当前在线" in content
+    assert "坐标 (3.5, 80, -1.5)" in content
+    assert "距离你 4.25 格" in content
+    assert response["debug"]["intent"] == "body_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-body-observation", limit=10) == []
+
+
 def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
