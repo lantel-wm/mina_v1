@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Any
 
-from .body_agent import BodySubagent
+from .body_agent import BodySubagent, is_body_instructional_request
 from .config import Settings
 from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
@@ -503,10 +503,14 @@ def _offline_read_only_command(message: str) -> str:
 
 
 def _offline_follow_intent(message: str) -> bool:
+    if is_body_instructional_request(message):
+        return False
     return _contains_any(message, {"跟随我", "跟着我", "follow me", "follow player"})
 
 
 def _offline_chop_tree_intent(message: str) -> bool:
+    if is_body_instructional_request(message):
+        return False
     return _contains_any(
         message,
         {

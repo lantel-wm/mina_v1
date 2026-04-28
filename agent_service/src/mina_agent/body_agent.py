@@ -145,6 +145,8 @@ def _stop_intent(message: str) -> bool:
 
 
 def _follow_intent(message: str) -> bool:
+    if is_body_instructional_request(message):
+        return False
     return any(
         token in message
         for token in (
@@ -164,6 +166,8 @@ def _follow_intent(message: str) -> bool:
 
 
 def _chop_tree_intent(message: str) -> bool:
+    if is_body_instructional_request(message):
+        return False
     return any(
         token in message
         for token in (
@@ -176,5 +180,41 @@ def _chop_tree_intent(message: str) -> bool:
             "cut down tree",
             "cut down a tree",
             "chop wood",
+        )
+    )
+
+
+def is_body_instructional_request(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "怎么",
+            "如何",
+            "怎样",
+            "教程",
+            "攻略",
+            "计划",
+            "规划",
+            "方案",
+            "设计",
+            "解释",
+            "介绍",
+            "知识",
+            "查询",
+            "问一下",
+            "告诉我",
+            "how to",
+            "help me plan",
+            "planning",
+            "plan",
+            "guide",
+            "tutorial",
+            "strategy",
+            "explain",
+            "tell me about",
+            "what is",
+            "should i",
+            "tree farm",
+            "farm design",
         )
     )

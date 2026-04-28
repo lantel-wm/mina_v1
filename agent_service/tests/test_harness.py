@@ -265,6 +265,24 @@ class EmptyDeepSeek:
         )
 
 
+class DirectAnswerDeepSeek:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.calls = 0
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": self.content},
+            finish_reason="stop",
+            usage={"completion_tokens": 1},
+            raw={},
+        )
+
+
 class FailIfCalledDeepSeek:
     def __init__(self) -> None:
         self.calls = 0
@@ -558,6 +576,30 @@ def test_harness_body_subagent_handles_configured_follow_without_model_call(tmp_
     assert [call["tool_name"] for call in calls] == ["start_body_task"]
 
 
+def test_harness_body_subagent_does_not_intercept_tree_planning_request(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DirectAnswerDeepSeek("砍树时先找到原木，再保持合适距离持续攻击。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-body-tree-planning",
+            "trigger": "command",
+            "message": "请告诉我怎么砍树，不要控制身体。",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert deepseek.calls == 1
+    assert response.get("actions", []) == []
+    assert "砍树时" in response["messages"][0]["content"]
+    assert "body_subagent" not in response.get("debug", {})
+    assert memory.recent_tool_calls(request_id="req-body-tree-planning", limit=10) == []
+
+
 def test_harness_body_subagent_replaces_follow_with_chop_in_one_turn(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -752,6 +794,27 @@ def test_harness_offline_fallback_does_not_chop_for_tree_planning_request(tmp_pa
 
     assert "MINA_API_KEY is not configured" in response["messages"][0]["content"]
     assert response.get("actions", []) == []
+
+
+def test_harness_offline_fallback_does_not_chop_for_chinese_tree_question(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-tree-question",
+            "trigger": "command",
+            "message": "请告诉我怎么砍树",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert "MINA_API_KEY is not configured" in response["messages"][0]["content"]
+    assert response.get("actions", []) == []
+    assert memory.recent_tool_calls(request_id="req-offline-tree-question", limit=10) == []
 
 
 def test_harness_offline_fallback_still_chops_for_explicit_tree_action(tmp_path) -> None:

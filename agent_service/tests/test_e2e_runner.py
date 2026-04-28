@@ -65,6 +65,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         "run_read_only_command",
         "start_body_task",
     }
+    body_planning = SCENARIOS["body_planning_request_uses_main_agent"]
+    assert body_planning.expected_model is not None
+    assert body_planning.expected_model.min_count == 1
+    assert any(tool.name == "start_body_task" for tool in body_planning.forbidden_tools)
+    assert "body_move_to_position" in body_planning.forbidden_actions
     stop_denied = SCENARIOS["body_stop_permission_denied_router"]
     assert any(expected.name == "stop_body_task" and expected.status == "error" for expected in stop_denied.expected_tools)
     assert "body_stop" in stop_denied.forbidden_actions

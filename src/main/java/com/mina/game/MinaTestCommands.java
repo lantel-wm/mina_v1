@@ -24,6 +24,9 @@ public final class MinaTestCommands {
 	private static final int TREE_X = 2;
 	private static final int TREE_Y = 80;
 	private static final int TREE_Z = 0;
+	private static final int FIXTURE_RADIUS = 14;
+	private static final int FIXTURE_CLEAR_DOWN = 4;
+	private static final int FIXTURE_CLEAR_UP = 12;
 	private static final BlockPos TARGET_LOG = new BlockPos(TREE_X, TREE_Y, TREE_Z);
 	private static final BlockPos UPPER_LOG = new BlockPos(TREE_X, TREE_Y + 1, TREE_Z);
 	private static final BlockPos SETUP_MARKER = new BlockPos(0, TREE_Y - 1, 0);
@@ -481,10 +484,13 @@ public final class MinaTestCommands {
 				level.getChunk(chunkX, chunkZ);
 			}
 		}
-		for (int x = -5; x <= 5; x++) {
-			for (int z = -5; z <= 5; z++) {
+		for (int x = -FIXTURE_RADIUS; x <= FIXTURE_RADIUS; x++) {
+			for (int z = -FIXTURE_RADIUS; z <= FIXTURE_RADIUS; z++) {
 				level.setBlock(new BlockPos(x, TREE_Y - 1, z), Blocks.GRASS_BLOCK.defaultBlockState(), 3);
-				for (int y = TREE_Y; y <= TREE_Y + 8; y++) {
+				for (int y = TREE_Y - FIXTURE_CLEAR_DOWN; y <= TREE_Y + FIXTURE_CLEAR_UP; y++) {
+					if (y == TREE_Y - 1) {
+						continue;
+					}
 					level.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 3);
 				}
 			}
