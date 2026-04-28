@@ -19,7 +19,7 @@ from .context import build_messages, is_memory_recall_request
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .schemas import TurnResponse
-from .tools import ToolRunner, tool_specs
+from .tools import MINECRAFT_WRITE_COMMANDS, ToolRunner, tool_specs
 
 LOGGER = logging.getLogger("mina_agent.harness")
 
@@ -83,6 +83,15 @@ class AgentHarness:
                 len(body_response.response.actions),
             )
             return body_response.response.to_dict()
+
+        local_read_only = self._local_read_only_response(turn)
+        if local_read_only is not None:
+            for message_item in local_read_only.messages:
+                content = str(message_item.get("content") or "").strip()
+                if content:
+                    self.memory.add_conversation(request_id, player_id, "assistant", content)
+            self._debug("turn local_read_only request_id=%s command=%s", request_id, local_read_only.debug.get("command"))
+            return local_read_only.to_dict()
 
         if not self.deepseek.configured():
             offline = self._offline_fallback(turn)
@@ -271,6 +280,20 @@ class AgentHarness:
         self._debug("turn max_tool_turns request_id=%s actions=%s", request_id, len(actions))
         return TurnResponse(messages=[{"target": "requester", "content": content}], actions=actions, debug={"usage": usage}).to_dict()
 
+    def _local_read_only_response(self, turn: dict[str, Any]) -> TurnResponse | None:
+        if turn.get("trigger") != "command":
+            return None
+        command = _local_read_only_command(str(turn.get("message") or ""))
+        if not command:
+            return None
+        return self._tool_response(
+            "run_read_only_command",
+            {"command": command},
+            turn,
+            "我会执行这个只读查询。",
+            {"local_read_only": True, "command": command},
+        )
+
     def _offline_fallback(self, turn: dict[str, Any]) -> TurnResponse | None:
         message = str(turn.get("message") or "").strip()
         normalized = message.lower()
@@ -341,13 +364,14 @@ class AgentHarness:
                 "我记住了。",
             )
 
-        command = _offline_read_only_command(normalized)
+        command = _local_read_only_command(message)
         if command:
-            return self._offline_tool_response(
+            return self._tool_response(
                 "run_read_only_command",
                 {"command": command},
                 turn,
                 "我会执行这个只读查询。",
+                {"offline_fallback": True, "local_read_only": True, "command": command},
             )
 
         if _contains_any(normalized, {"查资料", "查一下", "查找", "联网", "搜索", "search", "wiki"}):
@@ -378,6 +402,16 @@ class AgentHarness:
         return None
 
     def _offline_tool_response(self, name: str, args: dict[str, Any], turn: dict[str, Any], fallback_message: str) -> TurnResponse:
+        return self._tool_response(name, args, turn, fallback_message, {"offline_fallback": True})
+
+    def _tool_response(
+        self,
+        name: str,
+        args: dict[str, Any],
+        turn: dict[str, Any],
+        fallback_message: str,
+        debug: dict[str, Any],
+    ) -> TurnResponse:
         result = self.tools.run(name, args, turn)
         payload = _json_object(result.content)
         actions = []
@@ -388,11 +422,11 @@ class AgentHarness:
         if payload.get("ok") is False:
             error = str(payload.get("error") or "tool unavailable")
             if not messages:
-                messages = [{"target": "requester", "content": f"离线模式无法完成请求：{error}"}]
+                messages = [{"target": "requester", "content": f"无法完成请求：{error}"}]
         elif not messages:
             messages = [{"target": "requester", "content": fallback_message}]
         self._record_tool_call(turn, name, args, result, actions)
-        return TurnResponse(messages=messages, actions=actions, debug={"offline_fallback": True})
+        return TurnResponse(messages=messages, actions=actions, debug=debug)
 
     def _record_tool_call(
         self,
@@ -707,16 +741,35 @@ def _contains_any(value: str, needles: set[str]) -> bool:
     return any(needle in value for needle in needles)
 
 
-def _offline_read_only_command(message: str) -> str:
-    if "时间" in message or "time" in message:
+def _local_read_only_command(message: str) -> str:
+    normalized = message.strip().lower()
+    if not normalized or _mentions_minecraft_write_command(normalized):
+        return ""
+    if "时间" in normalized or "几点" in normalized or "game time" in normalized or "server time" in normalized:
         return "time query daytime"
-    if "种子" in message or "seed" in message:
+    if "种子" in normalized or "seed" in normalized or "world seed" in normalized:
         return "seed"
-    if "天气" in message or "weather" in message:
+    if "天气" in normalized or "weather" in normalized:
         return "weather query"
-    if "在线" in message or "玩家列表" in message or message == "list" or "player list" in message:
+    if (
+        "在线玩家" in normalized
+        or "玩家列表" in normalized
+        or "谁在线" in normalized
+        or "哪些玩家在线" in normalized
+        or normalized == "list"
+        or "list players" in normalized
+        or "player list" in normalized
+    ):
         return "list"
     return ""
+
+
+def _mentions_minecraft_write_command(message: str) -> bool:
+    for token in re.findall(r"[a-z0-9_:\\-]+", message.lower()):
+        command = token.split(":")[-1]
+        if command in MINECRAFT_WRITE_COMMANDS:
+            return True
+    return False
 
 
 def _offline_follow_intent(message: str) -> bool:

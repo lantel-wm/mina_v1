@@ -579,13 +579,13 @@ SCENARIO_DATA = [
         "rubric": "Simple local observation questions must be answered from the Fabric snapshot without model calls, tools, or body actions.",
     },
     {
-        "name": "read_only_time_live_model",
+        "name": "read_only_time_router",
         "fixture": "follow_player",
-        "tags": ["live", "core", "world_tool", "model"],
+        "tags": ["live", "core", "world_tool", "router"],
         "steps": [
             {
                 "kind": "request",
-                "request_id": "read-only-time-live-model",
+                "request_id": "read-only-time-router",
                 "value": "查询当前游戏时间",
                 "wait_for": ["The time is", "我会执行这个只读查询", "当前游戏时间"],
                 "timeout": 120,
@@ -597,17 +597,17 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "run_read_only_command"},
         ],
-        "expected_model": {"mode": "at_least", "min_count": 1},
-        "rubric": "World-state queries must use the constrained read-only command tool and return command output.",
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "High-confidence time queries must use the constrained read-only command tool without a main-model call.",
     },
     {
-        "name": "read_only_seed_live_model",
+        "name": "read_only_seed_router",
         "fixture": "follow_player",
-        "tags": ["live", "core", "world_tool", "model"],
+        "tags": ["live", "core", "world_tool", "router"],
         "steps": [
             {
                 "kind": "request",
-                "request_id": "read-only-seed-live-model",
+                "request_id": "read-only-seed-router",
                 "value": "查询当前世界种子",
                 "wait_for": ["Seed:"],
                 "timeout": 120,
@@ -619,17 +619,17 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "run_read_only_command"},
         ],
-        "expected_model": {"mode": "at_least", "min_count": 1},
-        "rubric": "World seed queries must use the constrained seed command and surface command output.",
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "High-confidence world seed queries must use the constrained seed command without a main-model call.",
     },
     {
-        "name": "read_only_player_list_live_model",
+        "name": "read_only_player_list_router",
         "fixture": "follow_player",
-        "tags": ["live", "core", "world_tool", "model"],
+        "tags": ["live", "core", "world_tool", "router"],
         "steps": [
             {
                 "kind": "request",
-                "request_id": "read-only-player-list-live-model",
+                "request_id": "read-only-player-list-router",
                 "value": "查询当前在线玩家列表",
                 "wait_for": ["There are"],
                 "timeout": 120,
@@ -641,17 +641,17 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "run_read_only_command"},
         ],
-        "expected_model": {"mode": "at_least", "min_count": 1},
-        "rubric": "Online player list queries must use the constrained list command and surface command output.",
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "High-confidence online player list queries must use the constrained list command without a main-model call.",
     },
     {
-        "name": "read_only_weather_live_model",
+        "name": "read_only_weather_router",
         "fixture": "follow_player",
-        "tags": ["live", "core", "world_tool", "model"],
+        "tags": ["live", "core", "world_tool", "router"],
         "steps": [
             {
                 "kind": "request",
-                "request_id": "read-only-weather-live-model",
+                "request_id": "read-only-weather-router",
                 "value": "查询当前天气",
                 "wait_for": ["clear", "rain", "thunder", "天气"],
                 "timeout": 120,
@@ -663,8 +663,8 @@ SCENARIO_DATA = [
         "expected_actions": [
             {"name": "run_read_only_command"},
         ],
-        "expected_model": {"mode": "at_least", "min_count": 1},
-        "rubric": "Weather queries must use the constrained weather command and surface current weather output.",
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "High-confidence weather queries must use the constrained weather command without a main-model call.",
     },
     {
         "name": "read_only_prefix_injection_rejected_live_model",
