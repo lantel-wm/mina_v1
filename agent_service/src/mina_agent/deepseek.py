@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -91,7 +92,7 @@ class DeepSeekClient:
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
             raise DeepSeekError(exc.code, error_body) from exc
-        except urllib.error.URLError as exc:
+        except (urllib.error.URLError, TimeoutError, http.client.HTTPException, OSError) as exc:
             raise DeepSeekError(503, str(exc)) from exc
 
         choices = payload.get("choices") or []

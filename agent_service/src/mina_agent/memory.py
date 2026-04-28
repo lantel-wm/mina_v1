@@ -69,6 +69,20 @@ class MemoryStore:
                     status text not null,
                     created_at real not null
                 );
+                create table if not exists model_calls (
+                    id integer primary key autoincrement,
+                    request_id text not null,
+                    subturn integer not null,
+                    model text not null,
+                    messages_count integer not null,
+                    tools_json text not null,
+                    status text not null,
+                    finish_reason text not null,
+                    usage_json text not null,
+                    response_json text not null,
+                    error text not null,
+                    created_at real not null
+                );
                 create table if not exists task_events (
                     id integer primary key autoincrement,
                     task_id text not null,
@@ -214,6 +228,70 @@ class MemoryStore:
                     """
                     select request_id, tool_name, args_json, result_json, status, created_at
                     from tool_calls
+                    order by id desc
+                    limit ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+    def record_model_call(
+        self,
+        request_id: str,
+        subturn: int,
+        model: str,
+        messages_count: int,
+        tools: list[str],
+        status: str,
+        finish_reason: str = "",
+        usage: dict[str, Any] | None = None,
+        response: dict[str, Any] | None = None,
+        error: str = "",
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                insert into model_calls(
+                    request_id, subturn, model, messages_count, tools_json, status,
+                    finish_reason, usage_json, response_json, error, created_at
+                )
+                values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    request_id,
+                    subturn,
+                    model,
+                    messages_count,
+                    json.dumps(tools, ensure_ascii=False),
+                    status,
+                    finish_reason,
+                    json.dumps(usage or {}, ensure_ascii=False),
+                    json.dumps(response or {}, ensure_ascii=False),
+                    error,
+                    time.time(),
+                ),
+            )
+
+    def recent_model_calls(self, request_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            if request_id:
+                rows = conn.execute(
+                    """
+                    select request_id, subturn, model, messages_count, tools_json, status,
+                           finish_reason, usage_json, response_json, error, created_at
+                    from model_calls
+                    where request_id = ?
+                    order by id desc
+                    limit ?
+                    """,
+                    (request_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    select request_id, subturn, model, messages_count, tools_json, status,
+                           finish_reason, usage_json, response_json, error, created_at
+                    from model_calls
                     order by id desc
                     limit ?
                     """,

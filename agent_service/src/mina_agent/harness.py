@@ -89,7 +89,31 @@ class AgentHarness:
         try:
             for subturn in range(1, self.settings.max_tool_turns + 1):
                 self._debug("model call request_id=%s subturn=%s messages=%s", request_id, subturn, len(messages))
-                response = self.deepseek.chat(messages, tools=tool_specs())
+                specs = tool_specs()
+                try:
+                    response = self.deepseek.chat(messages, tools=specs)
+                    self.memory.record_model_call(
+                        request_id=request_id,
+                        subturn=subturn,
+                        model=self.settings.model,
+                        messages_count=len(messages),
+                        tools=_tool_spec_names(specs),
+                        status="ok",
+                        finish_reason=response.finish_reason,
+                        usage=response.usage,
+                        response=_model_response_summary(response.message),
+                    )
+                except DeepSeekError as exc:
+                    self.memory.record_model_call(
+                        request_id=request_id,
+                        subturn=subturn,
+                        model=self.settings.model,
+                        messages_count=len(messages),
+                        tools=_tool_spec_names(specs),
+                        status="error",
+                        error=f"HTTP {exc.status}: {_truncate(exc.message, 1200)}",
+                    )
+                    raise
                 usage = response.usage
                 assistant_message = response.message
                 messages.append(assistant_message)
@@ -418,6 +442,34 @@ def _tool_payload_messages(content: str) -> list[dict[str, Any]]:
     if not isinstance(messages, list):
         return []
     return [message for message in messages if isinstance(message, dict)]
+
+
+def _tool_spec_names(specs: list[dict[str, Any]]) -> list[str]:
+    names: list[str] = []
+    for spec in specs:
+        function = spec.get("function") if isinstance(spec, dict) else {}
+        if isinstance(function, dict):
+            name = str(function.get("name") or "")
+            if name:
+                names.append(name)
+    return names
+
+
+def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
+    tool_calls = message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []
+    tool_names: list[str] = []
+    for call in tool_calls:
+        function = call.get("function") if isinstance(call, dict) else {}
+        if isinstance(function, dict):
+            name = str(function.get("name") or "")
+            if name:
+                tool_names.append(name)
+    content = str(message.get("content") or "")
+    return {
+        "content_preview": _truncate(content, 500),
+        "tool_call_count": len(tool_calls),
+        "tool_names": tool_names,
+    }
 
 
 def _action_ack(tool_name: str) -> str:

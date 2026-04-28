@@ -265,6 +265,30 @@ def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     assert calls[0]["status"] == "ok"
 
 
+def test_harness_records_model_call_journal(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = ToolCallingDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    harness.run_turn(
+        {
+            "request_id": "req-model",
+            "trigger": "command",
+            "message": "帮我查一下 diamond ore",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    calls = memory.recent_model_calls(request_id="req-model", limit=10)
+    assert [call["status"] for call in calls] == ["ok", "ok"]
+    assert [call["subturn"] for call in calls] == [1, 2]
+    assert "web_search" in calls[0]["tools_json"]
+    assert "web_search" in calls[0]["response_json"]
+
+
 def test_harness_dispatches_fabric_action_before_next_model_subturn(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

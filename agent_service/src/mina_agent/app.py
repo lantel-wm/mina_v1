@@ -100,6 +100,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def tool_calls(request_id: str | None = None) -> dict[str, Any]:
         return {"ok": True, "tool_calls": memory.recent_tool_calls(request_id=request_id, limit=500)}
 
+    @app.get("/v1/model-calls")
+    def model_calls(request_id: str | None = None) -> dict[str, Any]:
+        return {"ok": True, "model_calls": memory.recent_model_calls(request_id=request_id, limit=500)}
+
+    @app.get("/v1/traces/{trace_id}")
+    def trace(trace_id: str) -> dict[str, Any]:
+        action_events = memory.recent_action_events(request_id=trace_id, limit=500)
+        task_ids = {
+            str(event.get("task_id") or "")
+            for event in action_events
+            if str(event.get("task_id") or "")
+        }
+        task_events = []
+        for task_id in sorted(task_ids):
+            task_events.extend(memory.recent_task_events(task_id, limit=200))
+        return {
+            "ok": True,
+            "trace_id": trace_id,
+            "model_calls": memory.recent_model_calls(request_id=trace_id, limit=500),
+            "tool_calls": memory.recent_tool_calls(request_id=trace_id, limit=500),
+            "action_events": action_events,
+            "task_events": task_events,
+            "tasks": skills.list_tasks(),
+        }
+
     return app
 
 

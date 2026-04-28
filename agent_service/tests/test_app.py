@@ -182,6 +182,20 @@ def test_app_records_actions_scheduled_from_observations(tmp_path) -> None:
     assert events[1]["action_name"] == "body_move_to_requester"
 
 
+def test_app_exposes_model_call_and_trace_endpoints(tmp_path) -> None:
+    app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+    model_calls = _route(app, "/v1/model-calls")
+    traces = _route(app, "/v1/traces/{trace_id}")
+
+    assert model_calls(request_id="req-empty") == {"ok": True, "model_calls": []}
+    trace = traces(trace_id="req-empty")
+    assert trace["ok"] is True
+    assert trace["trace_id"] == "req-empty"
+    assert trace["model_calls"] == []
+    assert trace["tool_calls"] == []
+    assert trace["action_events"] == []
+
+
 def _route(app, path: str):  # noqa: ANN001, ANN202
     for route in app.routes:
         if getattr(route, "path", "") == path:
