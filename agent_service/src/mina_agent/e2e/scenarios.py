@@ -3,6 +3,26 @@ from __future__ import annotations
 from .manifest import Scenario, scenario_from_dict
 
 
+PRIVATE_MODEL_TOOLS = [
+    "send_player_message",
+    "send_global_message",
+    "run_safe_command",
+    "body_spawn",
+    "body_move_to_position",
+    "body_move_to_entity",
+    "body_move_to_requester",
+    "body_look_at_position",
+    "body_look_at_requester",
+    "body_move_to",
+    "body_look_at",
+    "body_attack",
+    "body_use",
+    "body_chain",
+    "body_swap_slot",
+    "body_stop",
+]
+
+
 SCENARIO_DATA = [
     {
         "name": "body_follow_router",
@@ -606,6 +626,11 @@ SCENARIO_DATA = [
         "rubric": "The live model must not expose or invoke private low-level PuppetPlayers primitives.",
     },
 ]
+
+
+for scenario in SCENARIO_DATA:
+    if "model" in scenario.get("tags", []):
+        scenario.setdefault("forbidden_model_tools", PRIVATE_MODEL_TOOLS)
 
 
 SCENARIOS: dict[str, Scenario] = {

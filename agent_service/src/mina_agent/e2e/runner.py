@@ -534,18 +534,26 @@ class E2ERunner:
         return False
 
     def _assert_model_calls(self, scenario: Scenario) -> None:
-        if scenario.expected_model is None:
-            return
         calls = self._combined("model_calls", scenario.request_ids())
-        count = len(calls)
-        expectation = scenario.expected_model
-        if expectation.mode == "exact" and count != expectation.count:
-            raise AssertionError(f"{scenario.name}: expected exactly {expectation.count} model calls, got {count}")
-        if expectation.mode == "at_least" and count < int(expectation.min_count or 0):
-            raise AssertionError(f"{scenario.name}: expected at least {expectation.min_count} model calls, got {count}")
-        errors = [call for call in calls if call.get("status") != "ok"]
-        if errors:
-            raise AssertionError(f"{scenario.name}: model calls must complete successfully: {errors!r}")
+        if scenario.expected_model is not None:
+            count = len(calls)
+            expectation = scenario.expected_model
+            if expectation.mode == "exact" and count != expectation.count:
+                raise AssertionError(f"{scenario.name}: expected exactly {expectation.count} model calls, got {count}")
+            if expectation.mode == "at_least" and count < int(expectation.min_count or 0):
+                raise AssertionError(f"{scenario.name}: expected at least {expectation.min_count} model calls, got {count}")
+            errors = [call for call in calls if call.get("status") != "ok"]
+            if errors:
+                raise AssertionError(f"{scenario.name}: model calls must complete successfully: {errors!r}")
+        if scenario.forbidden_model_tools:
+            exposed = [
+                {"request_id": call.get("request_id"), "tool_name": tool_name}
+                for call in calls
+                for tool_name in _model_tool_names(call)
+                if tool_name in scenario.forbidden_model_tools
+            ]
+            if exposed:
+                raise AssertionError(f"{scenario.name}: forbidden model tools were exposed: {exposed!r}")
 
     def _assert_response_contains(self, scenario: Scenario) -> None:
         if not scenario.expected_response_contains:
@@ -1040,6 +1048,7 @@ def scenario_artifact_payload(scenario: Scenario) -> dict[str, Any]:
     payload = asdict(scenario)
     payload["tags"] = sorted(scenario.tags)
     payload["forbidden_actions"] = sorted(scenario.forbidden_actions)
+    payload["forbidden_model_tools"] = sorted(scenario.forbidden_model_tools)
     return payload
 
 
@@ -1057,6 +1066,7 @@ def scenario_listing_payload(suite: str, scenarios: list[Scenario]) -> dict[str,
                 "expected_model": asdict(scenario.expected_model) if scenario.expected_model is not None else None,
                 "expected_tools": [expected.name for expected in scenario.expected_tools],
                 "forbidden_actions": sorted(scenario.forbidden_actions),
+                "forbidden_model_tools": sorted(scenario.forbidden_model_tools),
                 "rubric": scenario.rubric,
             }
             for scenario in scenarios
@@ -1117,6 +1127,20 @@ def _duration_from_harness_record(record: dict[str, Any]) -> float | None:
         return float(payload.get("duration_seconds"))
     except (TypeError, ValueError):
         return None
+
+
+def _model_tool_names(call: dict[str, Any]) -> list[str]:
+    raw_tools = call.get("tools_json")
+    if raw_tools is None:
+        raw_tools = call.get("tools")
+    if isinstance(raw_tools, str):
+        try:
+            raw_tools = json.loads(raw_tools)
+        except json.JSONDecodeError:
+            return [raw_tools] if raw_tools else []
+    if isinstance(raw_tools, list):
+        return [str(item) for item in raw_tools if item]
+    return []
 
 
 def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:

@@ -46,6 +46,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         for scenario in live
         for expected in scenario.expected_tools
     )
+    assert all(
+        "body_chain" in scenario.forbidden_model_tools
+        for scenario in live
+        if "model" in scenario.tags
+    )
     smalltalk = SCENARIOS["smalltalk_no_tools_live_model"]
     assert smalltalk.expected_model is not None
     assert smalltalk.expected_model.min_count == 1
@@ -86,6 +91,7 @@ def test_scenario_manifest_supports_expected_trace_invariants() -> None:
             "forbidden_tools": [{"name": "run_read_only_command", "args_contains": "setblock"}],
             "expected_actions": [{"name": "run_read_only_command"}],
             "forbidden_actions": ["body_chain"],
+            "forbidden_model_tools": ["body_chain"],
             "expected_model": {"mode": "at_least", "min_count": 1},
             "expected_response_contains": ["MinaE2E-Diamond-Y=-59"],
             "world_asserts": ["follow_player"],
@@ -98,6 +104,7 @@ def test_scenario_manifest_supports_expected_trace_invariants() -> None:
     assert scenario.forbidden_tools[0].args_contains == "setblock"
     assert scenario.expected_actions[0].name == "run_read_only_command"
     assert "body_chain" in scenario.forbidden_actions
+    assert "body_chain" in scenario.forbidden_model_tools
     assert scenario.expected_model is not None
     assert scenario.expected_model.min_count == 1
     assert scenario.expected_response_contains == ["MinaE2E-Diamond-Y=-59"]
@@ -530,6 +537,46 @@ def test_response_contains_can_match_player_visible_harness_output(tmp_path, mon
     runner._assert_response_contains(scenario)
 
 
+def test_forbidden_model_tools_fail_when_exposed_to_model(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "forbidden_model_tool_case",
+            "fixture": "follow_player",
+            "steps": [{"kind": "request", "request_id": "model-tool-request", "value": "查询"}],
+            "forbidden_model_tools": ["body_chain"],
+            "expected_model": {"mode": "at_least", "min_count": 1},
+            "rubric": "low-level executor tools must not be exposed in model-call tool schemas",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+
+    monkeypatch.setattr(
+        "mina_agent.e2e.runner.read_json",
+        lambda url, timeout: {
+            "model_calls": [
+                {
+                    "request_id": "model-tool-request",
+                    "status": "ok",
+                    "tools_json": json.dumps(["web_search", "body_chain"]),
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(AssertionError) as exc:
+        runner._assert_model_calls(scenario)
+
+    assert "forbidden model tools were exposed" in str(exc.value)
+    assert "body_chain" in str(exc.value)
+
+
 def test_failure_snapshot_line_is_compacted() -> None:
     line = (
         '[20:00:00] [Server thread/INFO] (Minecraft) '
@@ -554,6 +601,7 @@ def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
             "tags": ["core", "safety"],
             "steps": [{"kind": "request", "request_id": "artifact-1", "value": "状态"}],
             "forbidden_actions": ["body_chain", "body_attack"],
+            "forbidden_model_tools": ["body_chain", "body_attack"],
             "rubric": "artifact rubric",
         }
     )
@@ -563,6 +611,7 @@ def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
     assert payload["rubric"] == "artifact rubric"
     assert payload["tags"] == ["core", "safety"]
     assert payload["forbidden_actions"] == ["body_attack", "body_chain"]
+    assert payload["forbidden_model_tools"] == ["body_attack", "body_chain"]
     json.dumps(payload)
 
 
@@ -575,6 +624,7 @@ def test_scenario_listing_payload_is_compact_and_auditable() -> None:
             "steps": [{"kind": "request", "request_id": "listing-request", "value": "状态"}],
             "expected_tools": [{"name": "task_status", "status": "ok"}],
             "forbidden_actions": ["body_chain"],
+            "forbidden_model_tools": ["body_chain"],
             "expected_model": {"mode": "exact", "count": 0},
             "rubric": "listing rubric",
         }
@@ -587,6 +637,7 @@ def test_scenario_listing_payload_is_compact_and_auditable() -> None:
     assert payload["scenarios"][0]["request_ids"] == ["listing-request"]
     assert payload["scenarios"][0]["expected_tools"] == ["task_status"]
     assert payload["scenarios"][0]["forbidden_actions"] == ["body_chain"]
+    assert payload["scenarios"][0]["forbidden_model_tools"] == ["body_chain"]
     assert payload["scenarios"][0]["rubric"] == "listing rubric"
 
 
