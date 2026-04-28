@@ -198,8 +198,15 @@ class E2ERunner:
                 return RunResult(scenario=scenario.name, ok=True, attempts=attempt)
             except Exception as exc:  # noqa: BLE001 - runner must preserve scenario failure in summary.
                 last_error = str(exc)
+                will_retry = attempt <= scenario.retry
+                self._record_harness_event(
+                    scenario.name,
+                    "scenario_failed",
+                    {"attempt": attempt, "error": last_error, "will_retry": will_retry},
+                )
                 self._write_failure_snapshot(scenario, last_error)
-                if attempt <= scenario.retry:
+                if will_retry:
+                    self._record_harness_event(scenario.name, "scenario_retry", {"next_attempt": attempt + 1})
                     continue
                 return RunResult(scenario=scenario.name, ok=False, attempts=attempt, error=last_error)
         return RunResult(scenario=scenario.name, ok=False, attempts=scenario.retry + 1, error=last_error)

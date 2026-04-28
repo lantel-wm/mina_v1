@@ -178,6 +178,39 @@ def test_runner_records_harness_events_for_trace_artifacts(tmp_path) -> None:
     assert records[0]["payload"]["command"] == "mina-test ready"
 
 
+def test_failed_scenario_attempt_is_recorded_for_trace_artifacts(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "failed_attempt_case",
+            "fixture": "follow_player",
+            "steps": [],
+            "rubric": "failed attempts should be visible in trace artifacts",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+
+    def fail_scenario(_: Scenario) -> None:
+        raise AssertionError("expected failure")
+
+    monkeypatch.setattr(runner, "_run_scenario", fail_scenario)
+    monkeypatch.setattr(runner, "_write_failure_snapshot", lambda scenario, error: None)
+
+    result = runner._run_with_retries(scenario)
+    events = runner.harness_events["failed_attempt_case"]
+
+    assert not result.ok
+    assert result.error == "expected failure"
+    assert events[0]["event_type"] == "scenario_failed"
+    assert events[0]["payload"] == {"attempt": 1, "error": "expected failure", "will_retry": False}
+
+
 def test_failure_snapshot_writes_partial_scenario_trace_artifacts(tmp_path, monkeypatch) -> None:
     scenario = scenario_from_dict(
         {
