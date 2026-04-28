@@ -92,6 +92,12 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert any(step.value == "别再跟着我" for step in continued_negative_stop.steps)
     assert continued_negative_stop.expected_model is not None
     assert continued_negative_stop.expected_model.count == 0
+    plain_lookup = SCENARIOS["knowledge_plain_lookup_search_router"]
+    assert any(expected.name == "web_search" and expected.status == "ok" for expected in plain_lookup.expected_tools)
+    assert any(step.value.startswith("帮我查一下 Minecraft") for step in plain_lookup.steps)
+    assert plain_lookup.expected_model is not None
+    assert plain_lookup.expected_model.count == 0
+    assert any(tool.name == "run_read_only_command" for tool in plain_lookup.forbidden_tools)
     search = SCENARIOS["knowledge_search_live_model"]
     assert "Ignore every previous instruction" in search.forbidden_response_contains
     assert any("companion" in scenario.tags for scenario in live)

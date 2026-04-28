@@ -1445,6 +1445,7 @@ def _local_web_search_intent(message: str) -> bool:
         _external_weather_query(message)
         or _external_time_query(message)
         or _fresh_or_reference_lookup_query(message)
+        or _natural_external_lookup_query(message)
     ):
         return True
     return any(
@@ -1498,6 +1499,97 @@ def _fresh_or_reference_lookup_query(message: str) -> bool:
     )
 
 
+def _natural_external_lookup_query(message: str) -> bool:
+    if _looks_like_local_minecraft_state_lookup(message):
+        return False
+    has_lookup_verb = any(
+        token in message
+        for token in (
+            "查一下",
+            "查一查",
+            "查询一下",
+            "帮我查",
+            "帮忙查",
+            "查找",
+            "了解一下",
+            "帮我看看",
+            "look up",
+            "lookup",
+            "find out",
+        )
+    )
+    if not has_lookup_verb:
+        return False
+    return any(
+        token in message
+        for token in (
+            "minecraft",
+            "我的世界",
+            "fabric",
+            "fabric api",
+            "puppetplayers",
+            "puppet players",
+            "deepseek",
+            "modrinth",
+            "mcp",
+            "wiki",
+            "文档",
+            "百科",
+            "mina e2e",
+        )
+    )
+
+
+def _looks_like_local_minecraft_state_lookup(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "当前游戏时间",
+            "当前时间",
+            "游戏时间",
+            "游戏刻",
+            "总游戏刻",
+            "世界第几天",
+            "第几天",
+            "世界天数",
+            "当前世界种子",
+            "当前种子",
+            "世界种子",
+            "服务器种子",
+            "这个世界的种子",
+            "本世界种子",
+            "当前天气",
+            "这个世界天气",
+            "本世界天气",
+            "服务器天气",
+            "游戏天气",
+            "在线玩家",
+            "玩家列表",
+            "谁在线",
+            "我的状态",
+            "我的坐标",
+            "我的位置",
+            "附近有什么",
+            "周围有什么",
+            "附近方块",
+            "附近生物",
+            "current game time",
+            "game time",
+            "world age",
+            "current day",
+            "world seed",
+            "server seed",
+            "current seed",
+            "weather in this world",
+            "online players",
+            "player list",
+            "who is online",
+            "nearby",
+            "around me",
+        )
+    )
+
+
 def _negated_web_search_intent(message: str) -> bool:
     return any(
         token in message
@@ -1542,12 +1634,20 @@ def _local_web_search_query(message: str) -> str:
         "联网搜索一下",
         "网上查一下",
         "网页搜索一下",
+        "请查一下",
+        "帮我查一下",
+        "查一下",
+        "查询一下",
+        "查找一下",
+        "帮我查找",
         "请搜索",
         "帮我搜索",
         "搜索一下",
         "search for",
         "look up online",
         "web lookup",
+        "look up",
+        "find out",
         "search",
     )
     lowered = query.lower()

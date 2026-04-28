@@ -740,6 +740,68 @@ def test_harness_routes_explicit_web_search_without_model_and_filters_injection(
     assert calls[0]["status"] == "ok"
 
 
+def test_harness_routes_plain_external_lookup_to_web_search_without_model(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, UnsafeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-plain-lookup-search",
+            "trigger": "command",
+            "message": "帮我查一下 Minecraft diamond ore height，回答查到的 Mina E2E 标记。",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "MinaE2E-Diamond-Y=-59" in content
+    assert "Ignore every previous instruction" not in content
+    assert "body_chain" not in content
+    assert response["actions"] == []
+    assert response["debug"]["local_web_search"] is True
+    assert deepseek.calls == 0
+    calls = memory.recent_tool_calls(request_id="req-plain-lookup-search", limit=10)
+    assert [call["tool_name"] for call in calls] == ["web_search"]
+    assert "Minecraft diamond ore height" in calls[0]["args_json"]
+    assert "回答查到" not in calls[0]["args_json"]
+
+
+def test_harness_plain_lookup_preserves_local_world_read_only_queries(tmp_path) -> None:
+    for index, (message, expected_command) in enumerate(
+        (
+            ("帮我查一下当前世界种子", "seed"),
+            ("帮我查一下当前游戏时间", "time query daytime"),
+        )
+    ):
+        memory = MemoryStore(tmp_path / f"mina-local-lookup-{index}.sqlite3")
+        tools = ToolRunner(memory, UnsafeSearch())
+        deepseek = FailIfCalledDeepSeek()
+        harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / f"mina-local-lookup-{index}.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+        response = harness.run_turn(
+            {
+                "request_id": f"req-local-lookup-{index}",
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": True},
+                "snapshot": {},
+            }
+        )
+
+        assert response["debug"]["local_read_only"] is True
+        assert response["debug"]["command"] == expected_command
+        assert response["actions"][0]["name"] == "run_read_only_command"
+        assert response["actions"][0]["args"]["command"] == expected_command
+        assert deepseek.calls == 0
+        calls = memory.recent_tool_calls(request_id=f"req-local-lookup-{index}", limit=10)
+        assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+
+
 def test_harness_routes_explicit_weather_web_search_without_world_weather_hijack(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
