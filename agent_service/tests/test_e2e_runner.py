@@ -56,6 +56,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         "run_read_only_command",
         "start_body_task",
     }
+    stop_denied = SCENARIOS["body_stop_permission_denied_router"]
+    assert any(expected.name == "stop_body_task" and expected.status == "error" for expected in stop_denied.expected_tools)
+    assert "body_stop" in stop_denied.forbidden_actions
+    assert stop_denied.expected_model is not None
+    assert stop_denied.expected_model.count == 0
     assert any("companion" in scenario.tags for scenario in live)
     health_companion = SCENARIOS["companion_low_health_alert"]
     hunger_companion = SCENARIOS["companion_low_hunger_alert"]
