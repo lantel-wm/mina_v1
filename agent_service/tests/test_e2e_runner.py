@@ -41,6 +41,8 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         for expected in scenario.expected_tools
     )
     assert any("companion" in scenario.tags for scenario in live)
+    companion = SCENARIOS["companion_low_health_alert"]
+    assert any(step.request_id == "companion-low-health-cooldown" for step in companion.steps)
 
 
 def test_scenario_manifest_supports_expected_trace_invariants() -> None:

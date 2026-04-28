@@ -286,6 +286,12 @@ SCENARIO_DATA = [
                 "wait_for": ["血量很低"],
                 "timeout": 30,
             },
+            {
+                "kind": "companion_tick",
+                "request_id": "companion-low-health-cooldown",
+                "wait_for": ['"messages":[]'],
+                "timeout": 30,
+            },
         ],
         "forbidden_actions": {
             "body_spawn",
@@ -297,7 +303,7 @@ SCENARIO_DATA = [
             "run_read_only_command",
         },
         "expected_model": {"mode": "exact", "count": 0},
-        "rubric": "Companion ticks should emit timely low-health advice without using the model or controlling the body.",
+        "rubric": "Companion ticks should emit timely low-health advice, then stay silent during cooldown, without using the model or controlling the body.",
     },
     {
         "name": "read_only_time_live_model",
