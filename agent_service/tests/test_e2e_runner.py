@@ -178,6 +178,104 @@ def test_runner_records_harness_events_for_trace_artifacts(tmp_path) -> None:
     assert records[0]["payload"]["command"] == "mina-test ready"
 
 
+def test_failure_snapshot_writes_partial_scenario_trace_artifacts(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "failed_trace_case",
+            "fixture": "follow_player",
+            "steps": [{"kind": "request", "request_id": "failed-trace-request", "value": "查询"}],
+            "rubric": "failure artifacts should be auditable",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+    runner._record_harness_event("failed_trace_case", "server_output_line", {"line": "partial response"})
+
+    def fake_read_json(url: str, timeout: float) -> dict[str, object]:
+        if "/v1/traces/failed-trace-request" in url:
+            return {
+                "tool_calls": [
+                    {
+                        "request_id": "failed-trace-request",
+                        "tool_name": "web_search",
+                        "status": "ok",
+                        "args_json": "{}",
+                        "result_json": "{}",
+                        "created_at": 1,
+                    }
+                ],
+            }
+        if url.endswith("/v1/tasks"):
+            return {"tasks": []}
+        if url.endswith("/v1/tool-calls"):
+            return {"tool_calls": []}
+        if url.endswith("/v1/action-events"):
+            return {"events": []}
+        if url.endswith("/v1/model-calls"):
+            return {"model_calls": []}
+        raise OSError(url)
+
+    monkeypatch.setattr("mina_agent.e2e.runner.read_json", fake_read_json)
+
+    runner._write_failure_snapshot(scenario, "boom")
+
+    scenario_dir = tmp_path / "failed_trace_case"
+    records = [
+        json.loads(line)
+        for line in (scenario_dir / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    failure = json.loads((scenario_dir / "failure.json").read_text(encoding="utf-8"))
+
+    assert (scenario_dir / "manifest.json").exists()
+    assert (scenario_dir / "model_calls.jsonl").exists()
+    assert any(record["event_type"] == "tool_call" for record in records)
+    assert any(record["event_type"] == "server_output_line" for record in records)
+    assert failure["error"] == "boom"
+    assert failure["world_snapshot"]["ok"] is False
+
+
+def test_failure_trace_artifacts_record_trace_read_errors(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "failed_trace_read",
+            "fixture": "follow_player",
+            "steps": [{"kind": "request", "request_id": "missing-trace-request", "value": "查询"}],
+            "rubric": "trace read errors should be explicit",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+
+    def fake_read_json(url: str, timeout: float) -> dict[str, object]:
+        if "/v1/traces/missing-trace-request" in url:
+            raise OSError("sidecar trace endpoint unavailable")
+        return {}
+
+    monkeypatch.setattr("mina_agent.e2e.runner.read_json", fake_read_json)
+
+    runner._write_failure_snapshot(scenario, "boom")
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "failed_trace_read" / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert records[0]["event_type"] == "trace_read_error"
+    assert "sidecar trace endpoint unavailable" in records[0]["error"]
+
+
 def test_failure_snapshot_line_is_compacted() -> None:
     line = (
         '[20:00:00] [Server thread/INFO] (Minecraft) '

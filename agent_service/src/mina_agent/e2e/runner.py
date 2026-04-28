@@ -521,7 +521,7 @@ class E2ERunner:
             combined.extend(item for item in items if isinstance(item, dict))
         return combined
 
-    def _write_scenario_artifacts(self, scenario: Scenario) -> None:
+    def _write_scenario_artifacts(self, scenario: Scenario, best_effort: bool = False) -> None:
         scenario_dir = self.artifact_dir / scenario.name
         scenario_dir.mkdir(parents=True, exist_ok=True)
         (scenario_dir / "manifest.json").write_text(
@@ -531,7 +531,22 @@ class E2ERunner:
         records: list[dict[str, Any]] = []
         traces: dict[str, Any] = {}
         for request_id in scenario.request_ids():
-            trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
+            try:
+                trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
+            except OSError as exc:
+                if not best_effort:
+                    raise
+                trace = {"error": str(exc)}
+                records.append(
+                    {
+                        "trace_id": request_id,
+                        "request_id": request_id,
+                        "event_type": "trace_read_error",
+                        "source": "e2e_harness",
+                        "error": str(exc),
+                        "created_at": time.time(),
+                    }
+                )
             traces[request_id] = trace
             records.extend(trace_records(request_id, trace))
         records.extend(self.harness_events.get(scenario.name, []))
@@ -583,6 +598,10 @@ class E2ERunner:
             payload["model_calls"] = read_json(f"http://127.0.0.1:{self.port}/v1/model-calls", timeout=5)
         except OSError as exc:
             payload["snapshot_error"] = str(exc)
+        try:
+            self._write_scenario_artifacts(scenario, best_effort=True)
+        except Exception as exc:  # noqa: BLE001 - failure artifacts must preserve the original scenario error.
+            payload["artifact_error"] = str(exc)
         (failure_dir / "failure.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _capture_failure_world_snapshot(self, scenario_name: str) -> dict[str, Any]:
