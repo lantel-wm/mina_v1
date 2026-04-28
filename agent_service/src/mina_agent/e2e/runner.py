@@ -556,12 +556,15 @@ class E2ERunner:
                 raise AssertionError(f"{scenario.name}: forbidden model tools were exposed: {exposed!r}")
 
     def _assert_response_contains(self, scenario: Scenario) -> None:
-        if not scenario.expected_response_contains:
+        if not scenario.expected_response_contains and not scenario.forbidden_response_contains:
             return
         haystack = self._response_haystack(scenario)
         for expected in scenario.expected_response_contains:
             if expected not in haystack:
                 raise AssertionError(f"{scenario.name}: response trace did not contain {expected!r}")
+        for forbidden in scenario.forbidden_response_contains:
+            if forbidden in haystack:
+                raise AssertionError(f"{scenario.name}: response trace contained forbidden text {forbidden!r}")
 
     def _response_haystack(self, scenario: Scenario) -> str:
         calls = self._combined("model_calls", scenario.request_ids())
@@ -1067,6 +1070,7 @@ def scenario_listing_payload(suite: str, scenarios: list[Scenario]) -> dict[str,
                 "expected_tools": [expected.name for expected in scenario.expected_tools],
                 "forbidden_actions": sorted(scenario.forbidden_actions),
                 "forbidden_model_tools": sorted(scenario.forbidden_model_tools),
+                "forbidden_response_contains": scenario.forbidden_response_contains,
                 "rubric": scenario.rubric,
             }
             for scenario in scenarios
