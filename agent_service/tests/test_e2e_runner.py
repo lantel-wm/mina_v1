@@ -9,6 +9,7 @@ from mina_agent.e2e.manifest import Scenario, scenario_from_dict
 from mina_agent.e2e.runner import (
     E2ERunner,
     ROOT,
+    RunResult,
     SearxngFixtureServer,
     aggregate_run_trace_jsonl,
     aggregate_scenario_summaries_jsonl,
@@ -17,6 +18,7 @@ from mina_agent.e2e.runner import (
     main,
     parse_args,
     require_live_deepseek_env,
+    run_summary_payload,
     scenario_artifact_payload,
     select_scenarios,
     scenario_listing_payload,
@@ -749,6 +751,38 @@ def test_write_run_manifest_records_selected_scenarios_and_runner_options(tmp_pa
     assert payload["runner"]["external_searxng"] is True
     assert payload["deepseek"]["model"] == "deepseek-v4-flash"
     assert payload["scenarios"][0]["rubric"] == "manifest should preserve selected scenario config"
+
+
+def test_run_summary_payload_records_ci_friendly_counts(tmp_path) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "summary_counts_case",
+            "fixture": "follow_player",
+            "tags": ["core", "safety"],
+            "steps": [],
+        }
+    )
+
+    payload = run_summary_payload(
+        "run-1",
+        "live",
+        [
+            RunResult("passed_case", True, 1, 1.2),
+            RunResult("failed_case", False, 2, 3.45, "boom"),
+        ],
+        tmp_path,
+        {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"},
+        {"model_call_count": 1},
+        [scenario],
+    )
+
+    assert payload["ok"] is False
+    assert payload["scenario_count"] == 2
+    assert payload["passed_count"] == 1
+    assert payload["failed_count"] == 1
+    assert payload["duration_seconds"] == 4.65
+    assert payload["scenario_tag_counts"] == {"core": 1, "safety": 1}
+    assert payload["scenarios"][1]["error"] == "boom"
 
 
 def test_scenario_tag_counts_are_sorted() -> None:

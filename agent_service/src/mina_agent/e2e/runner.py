@@ -75,17 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         searxng_url=args.searxng_url,
     )
     results = runner.run()
-    summary = {
-        "ok": all(result.ok for result in results),
-        "run_id": run_id,
-        "suite": args.suite,
-        "scenarios": [result.__dict__ for result in results],
-        "artifact_dir": str(artifact_dir),
-        "deepseek": live_model,
-        "model_usage": runner.model_usage,
-        "scenario_tag_counts": scenario_tag_counts(selected),
-        "git": git_metadata(ROOT),
-    }
+    summary = run_summary_payload(run_id, args.suite, results, artifact_dir, live_model, runner.model_usage, selected)
     (artifact_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if summary["ok"] else 1
@@ -1201,6 +1191,32 @@ def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: 
         "scenarios": [scenario_artifact_payload(scenario) for scenario in scenarios],
     }
     (artifact_dir / "run_manifest.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def run_summary_payload(
+    run_id: str,
+    suite: str,
+    results: list[RunResult],
+    artifact_dir: Path,
+    live_model: dict[str, str],
+    model_usage: dict[str, int],
+    scenarios: list[Scenario],
+) -> dict[str, Any]:
+    return {
+        "ok": all(result.ok for result in results),
+        "run_id": run_id,
+        "suite": suite,
+        "scenario_count": len(results),
+        "passed_count": sum(1 for result in results if result.ok),
+        "failed_count": sum(1 for result in results if not result.ok),
+        "duration_seconds": round(sum(result.duration_seconds for result in results), 3),
+        "scenarios": [result.__dict__ for result in results],
+        "artifact_dir": str(artifact_dir),
+        "deepseek": live_model,
+        "model_usage": model_usage,
+        "scenario_tag_counts": scenario_tag_counts(scenarios),
+        "git": git_metadata(ROOT),
+    }
 
 
 def scenario_tag_counts(scenarios: list[Scenario]) -> dict[str, int]:
