@@ -251,7 +251,10 @@ def test_failed_scenario_attempt_is_recorded_for_trace_artifacts(tmp_path, monke
     assert result.error == "expected failure"
     assert result.duration_seconds >= 0
     assert events[0]["event_type"] == "scenario_failed"
-    assert events[0]["payload"] == {"attempt": 1, "error": "expected failure", "will_retry": False}
+    assert events[0]["payload"]["attempt"] == 1
+    assert events[0]["payload"]["error"] == "expected failure"
+    assert events[0]["payload"]["will_retry"] is False
+    assert events[0]["payload"]["duration_seconds"] >= 0
 
 
 def test_failure_snapshot_writes_partial_scenario_trace_artifacts(tmp_path, monkeypatch) -> None:
@@ -381,6 +384,82 @@ def test_scenario_artifacts_write_final_snapshot(tmp_path, monkeypatch) -> None:
 
     snapshot = json.loads((tmp_path / "final_snapshot_case" / "final_snapshot.json").read_text(encoding="utf-8"))
     assert snapshot == {"ok": True, "context": "final_snapshot", "snapshot_hash": "abc123"}
+
+
+def test_scenario_artifacts_write_summary_json(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "summary_case",
+            "fixture": "follow_player",
+            "tags": ["core", "body"],
+            "steps": [{"kind": "request", "request_id": "summary-request", "value": "查找钻石"}],
+            "rubric": "summary should make per-scenario audit quick",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+    runner._record_harness_event("summary_case", "scenario_passed", {"duration_seconds": 1.25})
+    monkeypatch.setattr(
+        runner,
+        "_capture_world_snapshot",
+        lambda scenario_name, context: {"ok": True, "context": context, "snapshot_hash": "summary123"},
+    )
+
+    def fake_read_json(url: str, timeout: float) -> dict[str, object]:
+        if "/v1/traces/summary-request" in url:
+            return {
+                "model_calls": [
+                    {
+                        "request_id": "summary-request",
+                        "model": "deepseek-v4-flash",
+                        "status": "ok",
+                        "usage_json": json.dumps(
+                            {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7}
+                        ),
+                        "created_at": 1,
+                    }
+                ],
+                "tool_calls": [
+                    {
+                        "request_id": "summary-request",
+                        "tool_name": "web_search",
+                        "status": "ok",
+                        "args_json": "{}",
+                        "result_json": "{}",
+                        "created_at": 2,
+                    }
+                ],
+                "action_events": [
+                    {
+                        "request_id": "summary-request",
+                        "event_type": "action_scheduled",
+                        "action_name": "body_move_to_requester",
+                        "payload_json": "{}",
+                        "created_at": 3,
+                    }
+                ],
+            }
+        raise OSError(url)
+
+    monkeypatch.setattr("mina_agent.e2e.runner.read_json", fake_read_json)
+
+    runner._write_scenario_artifacts(scenario)
+
+    summary = json.loads((tmp_path / "summary_case" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["scenario"] == "summary_case"
+    assert summary["tags"] == ["body", "core"]
+    assert summary["status"] == "passed"
+    assert summary["duration_seconds"] == 1.25
+    assert summary["model_usage"]["total_tokens"] == 7
+    assert summary["tool_call_counts"] == {"web_search:ok": 1}
+    assert summary["action_scheduled_counts"] == {"body_move_to_requester": 1}
+    assert summary["final_snapshot"]["snapshot_hash"] == "summary123"
 
 
 def test_world_snapshot_harness_event_is_compacted(tmp_path, monkeypatch) -> None:

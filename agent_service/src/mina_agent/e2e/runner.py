@@ -216,7 +216,12 @@ class E2ERunner:
                 self._record_harness_event(
                     scenario.name,
                     "scenario_failed",
-                    {"attempt": attempt, "error": last_error, "will_retry": will_retry},
+                    {
+                        "attempt": attempt,
+                        "error": last_error,
+                        "will_retry": will_retry,
+                        "duration_seconds": round(time.monotonic() - started_at, 3),
+                    },
                 )
                 self._write_failure_snapshot(scenario, last_error)
                 if will_retry:
@@ -240,6 +245,7 @@ class E2ERunner:
     def _run_scenario(self, scenario: Scenario) -> None:
         assert self.server is not None
         assert self.server_output is not None
+        started_at = time.monotonic()
         print(f"[mina-e2e] scenario start: {scenario.name}")
         self._record_harness_event(scenario.name, "scenario_start", {"fixture": scenario.fixture})
         self._send_server_command(scenario.name, f"mina-test fixture reset {scenario.fixture}")
@@ -279,7 +285,11 @@ class E2ERunner:
         self._assert_actions(scenario)
         self._assert_model_calls(scenario)
         self._assert_response_contains(scenario)
-        self._record_harness_event(scenario.name, "scenario_passed", {})
+        self._record_harness_event(
+            scenario.name,
+            "scenario_passed",
+            {"duration_seconds": round(time.monotonic() - started_at, 3)},
+        )
         self._write_scenario_artifacts(scenario)
         print(f"[mina-e2e] scenario passed: {scenario.name}")
 
@@ -575,6 +585,7 @@ class E2ERunner:
         )
         records: list[dict[str, Any]] = []
         traces: dict[str, Any] = {}
+        final_snapshot: dict[str, Any] | None = None
         if not best_effort:
             final_snapshot = self._capture_world_snapshot(scenario.name, "final_snapshot")
             (scenario_dir / "final_snapshot.json").write_text(
@@ -610,6 +621,10 @@ class E2ERunner:
         model_calls = [record for record in records if record.get("event_type") == "model_call"]
         (scenario_dir / "model_calls.jsonl").write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in model_calls),
+            encoding="utf-8",
+        )
+        (scenario_dir / "summary.json").write_text(
+            json.dumps(scenario_summary_payload(scenario, records, final_snapshot), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
@@ -1047,6 +1062,61 @@ def scenario_listing_payload(suite: str, scenarios: list[Scenario]) -> dict[str,
             for scenario in scenarios
         ],
     }
+
+
+def scenario_summary_payload(
+    scenario: Scenario,
+    records: list[dict[str, Any]],
+    final_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    event_counts: Counter[str] = Counter()
+    tool_call_counts: Counter[str] = Counter()
+    action_scheduled_counts: Counter[str] = Counter()
+    model_calls: list[dict[str, Any]] = []
+    status = "unknown"
+    duration_seconds: float | None = None
+    for record in records:
+        event_type = str(record.get("event_type") or "unknown")
+        event_counts[event_type] += 1
+        if event_type == "tool_call":
+            tool_name = str(record.get("tool_name") or "unknown")
+            tool_status = str(record.get("status") or "unknown")
+            tool_call_counts[f"{tool_name}:{tool_status}"] += 1
+        elif event_type == "action_scheduled":
+            action_name = str(record.get("action_name") or "unknown")
+            action_scheduled_counts[action_name] += 1
+        elif event_type == "model_call":
+            model_calls.append(record)
+        elif event_type == "scenario_passed":
+            status = "passed"
+            duration_seconds = _duration_from_harness_record(record)
+        elif event_type == "scenario_failed" and status != "passed":
+            status = "failed"
+            duration_seconds = _duration_from_harness_record(record)
+    return {
+        "scenario": scenario.name,
+        "fixture": scenario.fixture,
+        "tags": sorted(scenario.tags),
+        "request_ids": scenario.request_ids(),
+        "status": status,
+        "duration_seconds": duration_seconds,
+        "rubric": scenario.rubric,
+        "event_counts": dict(sorted(event_counts.items())),
+        "tool_call_counts": dict(sorted(tool_call_counts.items())),
+        "action_scheduled_counts": dict(sorted(action_scheduled_counts.items())),
+        "model_usage": model_usage_summary(model_calls),
+        "final_snapshot": final_snapshot,
+    }
+
+
+def _duration_from_harness_record(record: dict[str, Any]) -> float | None:
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return float(payload.get("duration_seconds"))
+    except (TypeError, ValueError):
+        return None
 
 
 def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:
