@@ -373,6 +373,33 @@ SCENARIO_DATA = [
         "rubric": "Colloquial chop requests such as '撸树' must route to the deterministic chop_tree skill without model calls.",
     },
     {
+        "name": "body_collect_wood_chop_router",
+        "fixture": "chop_tree",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-collect-wood-chop-router",
+                "value": "帮我收集木头",
+                "wait_for": ["我开始砍树"],
+            },
+            {"kind": "assert", "value": "chop_tree", "timeout": 180},
+            {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_position"},
+            {"name": "body_look_at_position"},
+            {"name": "body_attack"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "trace_invariants": ["no_body_look_monitor_timeout"],
+        "world_asserts": ["chop_tree", "upper_log_absent"],
+        "rubric": "Natural collect-wood requests must route to the deterministic chop_tree skill without exposing low-level body actions to the model.",
+    },
+    {
         "name": "body_chop_target_disappears_router",
         "fixture": "chop_tree",
         "tags": ["live", "core", "body", "router"],
