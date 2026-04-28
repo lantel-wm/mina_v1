@@ -406,7 +406,7 @@ def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     for block in logs:
         if all(key in block for key in ("approach_x", "approach_y", "approach_z")):
             return dict(block)
-    return dict(logs[0]) if logs else None
+    return None
 
 
 def _flatten_blocks(value: Any) -> list[dict[str, Any]]:

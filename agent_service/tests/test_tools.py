@@ -98,6 +98,19 @@ def test_start_body_task_schedules_observable_move_when_body_online(tmp_path) ->
     assert action["step_id"].startswith("move:")
 
 
+def test_start_body_task_fails_gracefully_when_logs_have_no_approach(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+    turn["snapshot"]["nearby_blocks"]["requester"][0].pop("approach_x")
+    turn["snapshot"]["nearby_blocks"]["requester"][0].pop("approach_y")
+    turn["snapshot"]["nearby_blocks"]["requester"][0].pop("approach_z")
+
+    result = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+
+    assert result.actions == []
+    assert "没有找到可安全接近的原木" in result.content
+
+
 def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) -> None:
     runner = _runner(tmp_path)
 
