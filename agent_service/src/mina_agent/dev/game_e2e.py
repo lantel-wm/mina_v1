@@ -43,6 +43,7 @@ def main() -> int:
             "offline_read_only_command",
             "offline_chop_tree",
             "offline_follow",
+            "offline_task_status",
             "offline_stop_follow",
             "offline_replace_follow_with_chop",
             "offline_permission_denied",
@@ -68,6 +69,7 @@ def main() -> int:
         "offline_chop_tree",
         "offline_body_unavailable",
         "offline_stop_follow",
+        "offline_task_status",
         "offline_replace_follow_with_chop",
         "offline_permission_denied",
     }
@@ -110,6 +112,7 @@ def main() -> int:
                 "model_knowledge_query",
                 "offline_body_unavailable",
                 "offline_follow",
+                "offline_task_status",
                 "offline_stop_follow",
                 "offline_read_only_command",
                 "offline_knowledge_query",
@@ -161,6 +164,8 @@ def main() -> int:
             run_chop_tree(server, output, args.timeout, args.port)
         elif args.scenario == "offline_follow":
             run_follow_player(server, output, args.timeout, args.port)
+        elif args.scenario == "offline_task_status":
+            run_task_status(server, output, args.port)
         elif args.scenario == "offline_stop_follow":
             run_stop_follow(server, output, args.timeout, args.port)
         elif args.scenario == "offline_replace_follow_with_chop":
@@ -506,14 +511,31 @@ def run_banned_command(proc: subprocess.Popen[str], output: "OutputReader") -> N
     )
 
 
-def run_task_status(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+def run_task_status(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int | None = None) -> None:
     send(proc, "mina-test request 状态")
     output.wait_for("当前没有正在执行的身体任务", timeout=30)
+    if sidecar_port is not None:
+        call = wait_tool_call(
+            sidecar_port,
+            lambda item: item.get("tool_name") == "task_status" and "task not found" in str(item.get("result_json") or ""),
+            timeout=10,
+        )
+        if not call:
+            raise AssertionError("initial status request did not record a task_status tool call")
     send(proc, "mina-test request 跟随我")
     output.wait_for("我开始跟随你", timeout=30)
+    assert_body_task_tool_call(sidecar_port, "follow_player")
     send(proc, "mina-test request 状态")
     output.wait_for("当前任务：follow_player", timeout=30)
     output.wait_for("状态：active", timeout=30)
+    if sidecar_port is not None:
+        call = wait_tool_call(
+            sidecar_port,
+            lambda item: item.get("tool_name") == "task_status" and "follow_player" in str(item.get("result_json") or ""),
+            timeout=10,
+        )
+        if not call:
+            raise AssertionError("active status request did not record a task_status tool call")
 
 
 def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout: float, sidecar_port: int | None = None) -> None:
