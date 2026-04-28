@@ -31,6 +31,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Mina Agent Service", version="0.1.0")
 
+    async def record_scheduled_actions(request_id: str, data: dict[str, Any]) -> None:
+        for action in data.get("actions") or []:
+            if isinstance(action, dict):
+                await asyncio.to_thread(memory.record_action_event, request_id, "action_scheduled", action)
+
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
         return {
@@ -50,9 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def turn(payload: dict[str, Any]) -> dict[str, Any]:
         data = await asyncio.to_thread(harness.run_turn, payload)
         request_id = str(payload.get("request_id") or "")
-        for action in data.get("actions") or []:
-            if isinstance(action, dict):
-                await asyncio.to_thread(memory.record_action_event, request_id, "action_scheduled", action)
+        await record_scheduled_actions(request_id, data)
         return data
 
     @app.post("/v1/action-results")
@@ -64,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await asyncio.to_thread(memory.record_action_event, request_id, "action_result", result)
         response = await asyncio.to_thread(skills.handle_action_results, payload)
         data = response.to_dict()
+        await record_scheduled_actions(request_id, data)
         data["ok"] = True
         data["received"] = payload.get("request_id") or payload.get("action_id")
         return data
@@ -72,6 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def observations(payload: dict[str, Any]) -> dict[str, Any]:
         response = await asyncio.to_thread(skills.handle_observation, payload)
         data = response.to_dict()
+        request_id = str(payload.get("request_id") or "")
+        await record_scheduled_actions(request_id, data)
         data["ok"] = True
         return data
 
