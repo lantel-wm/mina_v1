@@ -43,6 +43,16 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         for scenario in live
         for expected in scenario.expected_tools
     )
+    smalltalk = SCENARIOS["smalltalk_no_tools_live_model"]
+    assert smalltalk.expected_model is not None
+    assert smalltalk.expected_model.min_count == 1
+    assert {tool.name for tool in smalltalk.forbidden_tools} >= {
+        "web_search",
+        "memory_write",
+        "memory_search",
+        "run_read_only_command",
+        "start_body_task",
+    }
     assert any("companion" in scenario.tags for scenario in live)
     health_companion = SCENARIOS["companion_low_health_alert"]
     hunger_companion = SCENARIOS["companion_low_hunger_alert"]
