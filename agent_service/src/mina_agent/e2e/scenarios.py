@@ -627,6 +627,36 @@ SCENARIO_DATA = [
         "rubric": "High-confidence time queries must use the constrained read-only command tool without a main-model call.",
     },
     {
+        "name": "read_only_time_variants_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "world_tool", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "read-only-time-day-router",
+                "value": "查询当前世界第几天",
+                "wait_for": ["The time is", "我会执行这个只读查询"],
+                "timeout": 120,
+            },
+            {
+                "kind": "request",
+                "request_id": "read-only-time-gametime-router",
+                "value": "查询当前总游戏刻",
+                "wait_for": ["The time is", "我会执行这个只读查询"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "time query day"},
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "time query gametime"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Natural time variants must map to the precise read-only Minecraft time query instead of always using daytime.",
+    },
+    {
         "name": "read_only_seed_router",
         "fixture": "follow_player",
         "tags": ["live", "core", "world_tool", "router"],

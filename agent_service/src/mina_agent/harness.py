@@ -830,8 +830,9 @@ def _local_read_only_command(message: str) -> str:
     locate = _natural_locate_command(normalized)
     if locate:
         return locate
-    if "时间" in normalized or "几点" in normalized or "game time" in normalized or "server time" in normalized:
-        return "time query daytime"
+    time_command = _natural_time_command(normalized)
+    if time_command:
+        return time_command
     if "种子" in normalized or "seed" in normalized or "world seed" in normalized:
         return "seed"
     if "天气" in normalized or "weather" in normalized:
@@ -846,6 +847,51 @@ def _local_read_only_command(message: str) -> str:
         or "player list" in normalized
     ):
         return "list"
+    return ""
+
+
+def _natural_time_command(message: str) -> str:
+    if any(
+        token in message
+        for token in (
+            "游戏刻",
+            "总游戏刻",
+            "总时间",
+            "gametime",
+            "game ticks",
+            "world age",
+            "total game time",
+        )
+    ):
+        return "time query gametime"
+    if any(
+        token in message
+        for token in (
+            "第几天",
+            "第多少天",
+            "第几日",
+            "第多少日",
+            "世界天数",
+            "游戏天数",
+            "day count",
+            "current day",
+            "what day",
+            "which day",
+        )
+    ):
+        return "time query day"
+    if any(
+        token in message
+        for token in (
+            "时间",
+            "几点",
+            "昼夜时间",
+            "game time",
+            "server time",
+            "daytime",
+        )
+    ):
+        return "time query daytime"
     return ""
 
 

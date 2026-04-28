@@ -1211,6 +1211,39 @@ def test_harness_local_read_only_router_accepts_literal_allowed_commands(tmp_pat
     assert deepseek.calls == 0
 
 
+def test_harness_local_read_only_router_maps_time_variants(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    cases = [
+        ("req-natural-time-daytime", "查询当前游戏时间", "time query daytime"),
+        ("req-natural-time-day", "查询当前世界第几天", "time query day"),
+        ("req-natural-time-day-count", "what is the current day count?", "time query day"),
+        ("req-natural-time-gametime", "查询当前总游戏刻", "time query gametime"),
+    ]
+    for request_id, message, command in cases:
+        response = harness.run_turn(
+            {
+                "request_id": request_id,
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": False},
+                "snapshot": {},
+            }
+        )
+
+        assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+        assert response["actions"][0]["name"] == "run_read_only_command"
+        assert response["actions"][0]["args"]["command"] == command
+        assert response["debug"]["command"] == command
+        calls = memory.recent_tool_calls(request_id=request_id, limit=10)
+        assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+    assert deepseek.calls == 0
+
+
 def test_harness_local_read_only_router_maps_natural_structure_queries(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
