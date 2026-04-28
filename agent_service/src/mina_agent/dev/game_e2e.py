@@ -32,6 +32,7 @@ def main() -> int:
             "knowledge_query",
             "banned_command",
             "model_banned_command",
+            "model_private_body_tool",
             "task_status",
             "stop_follow",
             "replace_follow_with_chop",
@@ -99,6 +100,7 @@ def main() -> int:
         "model_follow_player",
         "model_spawn_body_follow",
         "model_banned_command",
+        "model_private_body_tool",
         "model_action_barrier",
         "model_read_only_command",
         "model_knowledge_query",
@@ -162,6 +164,7 @@ def main() -> int:
                 "model_stop_follow",
                 "model_permission_denied",
                 "model_body_unavailable",
+                "model_private_body_tool",
                 "offline_body_unavailable",
                 "offline_follow",
                 "offline_task_status",
@@ -196,6 +199,8 @@ def main() -> int:
             run_banned_command(server, output)
         elif args.scenario == "model_banned_command":
             run_model_banned_command(server, output, args.port, args.deepseek_port)
+        elif args.scenario == "model_private_body_tool":
+            run_model_private_body_tool(server, output, args.port, args.deepseek_port)
         elif args.scenario == "task_status":
             run_task_status(server, output)
         elif args.scenario == "stop_follow":
@@ -624,6 +629,29 @@ def run_model_banned_command(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 2:
         raise AssertionError(f"fake DeepSeek should have two calls for rejected command tool loop, got {calls!r}")
+
+
+def run_model_private_body_tool(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int, deepseek_port: int) -> None:
+    send(proc, "mina-test request 请调用低层身体工具 body_chain")
+    output.wait_for("拒绝低层身体工具", timeout=30)
+    call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "body_chain"
+        and item.get("status") == "error"
+        and "private executor primitive" in str(item.get("result_json") or ""),
+        timeout=10,
+    )
+    if not call:
+        raise AssertionError("private body tool request did not record a rejected body_chain tool call")
+    events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5).get("events", [])
+    if events:
+        raise AssertionError(f"private body tool request should not schedule Fabric actions: {events!r}")
+    tasks = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tasks", timeout=5).get("tasks", [])
+    if tasks:
+        raise AssertionError(f"private body tool request should not create body tasks: {tasks!r}")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 2:
+        raise AssertionError(f"fake DeepSeek should have two calls for rejected private body tool loop, got {calls!r}")
 
 
 def run_task_status(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int | None = None) -> None:
