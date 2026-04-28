@@ -211,6 +211,47 @@ class MultiActionDispatchDeepSeek:
         )
 
 
+class DangerousReadOnlyCommandDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.tool_messages: list[dict[str, Any]] = []
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        self.tool_messages = [message for message in messages if message.get("role") == "tool"]
+        if self.calls == 1:
+            return DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-setblock",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": '{"command": "setblock 0 80 0 minecraft:air"}',
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 1},
+                raw={},
+            )
+        assert self.tool_messages
+        assert "Only read-only commands" in self.tool_messages[-1]["content"]
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": "我不能执行写命令。"},
+            finish_reason="stop",
+            usage={"completion_tokens": 1},
+            raw={},
+        )
+
+
 class EmptyDeepSeek:
     def configured(self) -> bool:
         return True
@@ -517,6 +558,32 @@ def test_harness_body_subagent_replaces_follow_with_chop_in_one_turn(tmp_path) -
     cancelled = [task for task in tasks if task["status"] == "cancelled"]
     assert [task["type"] for task in active] == ["chop_tree"]
     assert [task["type"] for task in cancelled] == ["follow_player"]
+
+
+def test_harness_rejects_model_write_command_tool_call_without_action(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DangerousReadOnlyCommandDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-dangerous-command",
+            "trigger": "command",
+            "message": "model dangerous command test",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    assert deepseek.calls == 2
+    assert response["actions"] == []
+    assert response["messages"][0]["content"] == "我不能执行写命令。"
+    calls = memory.recent_tool_calls(request_id="req-dangerous-command", limit=10)
+    assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+    assert calls[0]["status"] == "error"
+    assert "setblock" in calls[0]["args_json"]
 
 
 def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
