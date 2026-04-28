@@ -49,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv_defaults()
     args = parse_args(argv)
     selected = select_scenarios(args)
+    if args.list_scenarios:
+        print(json.dumps(scenario_listing_payload(args.suite, selected), ensure_ascii=False, indent=2))
+        return 0
     live_model = require_live_deepseek_env()
 
     run_id = time.strftime("%Y%m%d-%H%M%S")
@@ -95,6 +98,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--disable-body", action="store_true")
     parser.add_argument("--searxng-url", default="")
+    parser.add_argument("--list-scenarios", action="store_true", help="Print selected scenario metadata without running E2E.")
     parser.add_argument(
         "--require-live-model",
         action="store_true",
@@ -993,6 +997,26 @@ def scenario_artifact_payload(scenario: Scenario) -> dict[str, Any]:
     payload["tags"] = sorted(scenario.tags)
     payload["forbidden_actions"] = sorted(scenario.forbidden_actions)
     return payload
+
+
+def scenario_listing_payload(suite: str, scenarios: list[Scenario]) -> dict[str, Any]:
+    return {
+        "suite": suite,
+        "scenario_count": len(scenarios),
+        "scenarios": [
+            {
+                "name": scenario.name,
+                "fixture": scenario.fixture,
+                "tags": sorted(scenario.tags),
+                "request_ids": scenario.request_ids(),
+                "expected_model": asdict(scenario.expected_model) if scenario.expected_model is not None else None,
+                "expected_tools": [expected.name for expected in scenario.expected_tools],
+                "forbidden_actions": sorted(scenario.forbidden_actions),
+                "rubric": scenario.rubric,
+            }
+            for scenario in scenarios
+        ],
+    }
 
 
 def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:

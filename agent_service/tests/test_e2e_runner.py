@@ -18,6 +18,7 @@ from mina_agent.e2e.runner import (
     require_live_deepseek_env,
     scenario_artifact_payload,
     select_scenarios,
+    scenario_listing_payload,
     write_run_manifest,
 )
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
@@ -131,6 +132,18 @@ def test_live_runner_requires_api_key_by_default(monkeypatch) -> None:
         main(["--suite", "live", "--skip-build"])
 
     assert "MINA_API_KEY is required" in str(exc.value)
+
+
+def test_list_scenarios_does_not_require_api_key(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("mina_agent.e2e.runner.load_dotenv_defaults", lambda: None)
+    monkeypatch.delenv("MINA_API_KEY", raising=False)
+
+    assert main(["--scenario", "companion_healthy_silent", "--list-scenarios"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["scenario_count"] == 1
+    assert payload["scenarios"][0]["name"] == "companion_healthy_silent"
+    assert payload["scenarios"][0]["expected_model"]["count"] == 0
 
 
 def test_require_live_model_flag_still_fails_fast_without_api_key(monkeypatch) -> None:
@@ -393,6 +406,29 @@ def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
     assert payload["tags"] == ["core", "safety"]
     assert payload["forbidden_actions"] == ["body_attack", "body_chain"]
     json.dumps(payload)
+
+
+def test_scenario_listing_payload_is_compact_and_auditable() -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "listing_case",
+            "fixture": "follow_player",
+            "tags": ["core", "safety"],
+            "steps": [{"kind": "request", "request_id": "listing-request", "value": "状态"}],
+            "expected_tools": [{"name": "task_status", "status": "ok"}],
+            "forbidden_actions": ["body_chain"],
+            "expected_model": {"mode": "exact", "count": 0},
+            "rubric": "listing rubric",
+        }
+    )
+
+    payload = scenario_listing_payload("live", [scenario])
+
+    assert payload["scenario_count"] == 1
+    assert payload["scenarios"][0]["request_ids"] == ["listing-request"]
+    assert payload["scenarios"][0]["expected_tools"] == ["task_status"]
+    assert payload["scenarios"][0]["forbidden_actions"] == ["body_chain"]
+    assert payload["scenarios"][0]["rubric"] == "listing rubric"
 
 
 def test_write_run_manifest_records_selected_scenarios_and_runner_options(tmp_path) -> None:
