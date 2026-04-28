@@ -20,7 +20,14 @@ from mina_agent.config import load_dotenv_defaults
 
 from .manifest import ActionExpectation, Scenario, ToolExpectation, load_scenarios_from_file
 from .scenarios import SCENARIOS, SUITES
-from .trace import compact_summary_action_events, compact_summary_model_calls, compact_summary_tool_calls, model_usage_summary, trace_records
+from .trace import (
+    compact_summary_action_events,
+    compact_summary_model_calls,
+    compact_summary_tool_calls,
+    compact_trace_payload,
+    model_usage_summary,
+    trace_records,
+)
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -548,6 +555,7 @@ class E2ERunner:
         failure_dir = self.artifact_dir / scenario.name
         failure_dir.mkdir(parents=True, exist_ok=True)
         payload: dict[str, Any] = {"scenario": scenario.name, "error": error}
+        payload["world_snapshot"] = self._capture_failure_world_snapshot(scenario.name)
         try:
             payload["tasks"] = read_json(f"http://127.0.0.1:{self.port}/v1/tasks", timeout=5)
             payload["tool_calls"] = read_json(f"http://127.0.0.1:{self.port}/v1/tool-calls", timeout=5)
@@ -556,6 +564,30 @@ class E2ERunner:
         except OSError as exc:
             payload["snapshot_error"] = str(exc)
         (failure_dir / "failure.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _capture_failure_world_snapshot(self, scenario_name: str) -> dict[str, Any]:
+        if self.server is None or self.server_output is None or self.server.poll() is not None:
+            return {"ok": False, "error": "server is not running"}
+        try:
+            self._send_server_command(scenario_name, "mina-test snapshot")
+            line = self.server_output.wait_for_line(['"request_id":"test_snapshot"'], timeout=5)
+            if not line:
+                return {"ok": False, "error": "snapshot command did not return a test_snapshot payload"}
+            self._record_harness_event(
+                scenario_name,
+                "server_output_line",
+                {
+                    "context": "failure_snapshot",
+                    "required": ['"request_id":"test_snapshot"'],
+                    "line": line.strip(),
+                    "timeout_seconds": 5,
+                },
+            )
+            compact = compact_snapshot_from_server_line(line)
+            compact["ok"] = bool(compact)
+            return compact
+        except Exception as exc:  # noqa: BLE001 - failure capture must never mask the scenario error.
+            return {"ok": False, "error": str(exc)}
 
 
 class ProcessOutput:
@@ -869,6 +901,17 @@ def read_json(url: str, timeout: float) -> dict[str, Any]:
     with urlopen_no_proxy(url, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return payload if isinstance(payload, dict) else {}
+
+
+def compact_snapshot_from_server_line(line: str) -> dict[str, Any]:
+    start = line.find("{")
+    if start < 0:
+        return {}
+    payload = json.loads(line[start:])
+    if not isinstance(payload, dict) or not isinstance(payload.get("snapshot"), dict):
+        return {}
+    compact = compact_trace_payload({"snapshot": payload["snapshot"]})
+    return compact if isinstance(compact, dict) else {}
 
 
 def urlopen_no_proxy(url: str, timeout: float):

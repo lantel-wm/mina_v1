@@ -9,6 +9,7 @@ from mina_agent.e2e.manifest import Scenario, scenario_from_dict
 from mina_agent.e2e.runner import (
     E2ERunner,
     SearxngFixtureServer,
+    compact_snapshot_from_server_line,
     main,
     parse_args,
     require_live_deepseek_env,
@@ -168,3 +169,19 @@ def test_runner_records_harness_events_for_trace_artifacts(tmp_path) -> None:
     assert [record["event_type"] for record in records] == ["server_command", "server_output_match"]
     assert all(record["source"] == "e2e_harness" for record in records)
     assert records[0]["payload"]["command"] == "mina-test ready"
+
+
+def test_failure_snapshot_line_is_compacted() -> None:
+    line = (
+        '[20:00:00] [Server thread/INFO] (Minecraft) '
+        '{"request_id":"test_snapshot","snapshot":{"player_state":{"health":20,"food":19},'
+        '"body_state":{"online":true,"inventory":[{"slot":0}]},'
+        '"nearby_blocks":[{"category":"log"}]}}'
+    )
+
+    compact = compact_snapshot_from_server_line(line)
+
+    assert compact["snapshot_summary"]["player"]["health"] == 20
+    assert compact["snapshot_summary"]["nearby"]["logs"] == 1
+    assert "snapshot" not in compact
+    assert "inventory" not in json.dumps(compact)
