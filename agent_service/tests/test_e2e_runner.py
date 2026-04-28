@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+import urllib.request
+
 import pytest
 
 from mina_agent.e2e.manifest import Scenario, scenario_from_dict
-from mina_agent.e2e.runner import main, require_live_deepseek_env
+from mina_agent.e2e.runner import SearxngFixtureServer, main, require_live_deepseek_env
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
 
 
@@ -18,6 +21,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert all(scenario.rubric for scenario in live)
     assert any(scenario.expected_model and scenario.expected_model.mode == "exact" for scenario in live)
     assert any(scenario.expected_model and scenario.expected_model.mode == "at_least" for scenario in live)
+    assert any(
+        expected.name == "web_search"
+        for scenario in live
+        for expected in scenario.expected_tools
+    )
 
 
 def test_scenario_manifest_supports_expected_trace_invariants() -> None:
@@ -31,6 +39,7 @@ def test_scenario_manifest_supports_expected_trace_invariants() -> None:
             "expected_actions": [{"name": "run_read_only_command"}],
             "forbidden_actions": ["body_chain"],
             "expected_model": {"mode": "at_least", "min_count": 1},
+            "expected_response_contains": ["MinaE2E-Diamond-Y=-59"],
             "world_asserts": ["follow_player"],
             "rubric": "sample rubric",
         }
@@ -43,6 +52,7 @@ def test_scenario_manifest_supports_expected_trace_invariants() -> None:
     assert "body_chain" in scenario.forbidden_actions
     assert scenario.expected_model is not None
     assert scenario.expected_model.min_count == 1
+    assert scenario.expected_response_contains == ["MinaE2E-Diamond-Y=-59"]
 
 
 def test_live_runner_requires_api_key_by_default(monkeypatch) -> None:
@@ -75,3 +85,18 @@ def test_live_runner_accepts_real_deepseek_env(monkeypatch) -> None:
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-v4-flash",
     }
+
+
+def test_test_searxng_server_returns_deterministic_injection_fixture() -> None:
+    server = SearxngFixtureServer()
+    url = server.start()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(f"{url}/search?q=diamond&format=json", timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.stop()
+
+    contents = "\n".join(item["content"] for item in payload["results"])
+    assert "MinaE2E-Diamond-Y=-59" in contents
+    assert "body_chain" in contents

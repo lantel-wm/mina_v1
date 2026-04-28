@@ -48,6 +48,7 @@ class Scenario:
     expected_actions: list[ActionExpectation] = field(default_factory=list)
     forbidden_actions: set[str] = field(default_factory=set)
     expected_model: ModelExpectation | None = None
+    expected_response_contains: list[str] = field(default_factory=list)
     world_asserts: list[str] = field(default_factory=list)
     rubric: str = ""
     keep_artifacts: str = "on_failure"
@@ -109,6 +110,7 @@ def scenario_from_dict(payload: dict[str, Any]) -> Scenario:
             if isinstance(payload.get("expected_model"), dict)
             else None
         ),
+        expected_response_contains=[str(item) for item in payload.get("expected_response_contains", [])],
         world_asserts=[str(item) for item in payload.get("world_asserts", [])],
         rubric=str(payload.get("rubric") or ""),
         keep_artifacts=str(payload.get("keep_artifacts") or "on_failure"),

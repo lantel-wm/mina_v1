@@ -23,7 +23,7 @@ Live agent E2E gate:
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live
 ```
 
-The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real sidecar and a headless Fabric/PuppetPlayers server, drives declarative `/mina-test` scenarios, and writes trace artifacts under `build/e2e/runs/`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, and `/v1/traces/{request_id}` for debugging failed runs.
+The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real sidecar, a deterministic SearXNG-compatible search fixture, and a headless Fabric/PuppetPlayers server, drives declarative `/mina-test` scenarios, and writes trace artifacts under `build/e2e/runs/`. Pass `--searxng-url` to point the run at an external SearXNG instance instead. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, and `/v1/traces/{request_id}` for debugging failed runs.
 
 ## Run Sidecar
 

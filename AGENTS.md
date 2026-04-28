@@ -150,7 +150,7 @@ Live real-game E2E:
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live
 ```
 
-This is the only E2E runner. It loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar and a dedicated Fabric/PuppetPlayers server in `build/e2e/server`, then drives declarative `/mina-test` scenarios. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task.
+This is the only E2E runner. It loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar, starts a deterministic SearXNG-compatible search fixture unless `--searxng-url` is provided, and starts a dedicated Fabric/PuppetPlayers server in `build/e2e/server`, then drives declarative `/mina-test` scenarios. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task.
 
 Useful suites:
 
@@ -162,7 +162,7 @@ UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -
 
 Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `summary.json`, `trace-summary.json`, `server.log`, `sidecar.log`, `sidecar-stdout.log`, per-scenario `trace.json`, per-scenario `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, `/v1/tasks/{task_id}/events`, and `/v1/traces/{request_id}` for focused debugging. Trace outputs compact large snapshots as `snapshot_hash` plus `snapshot_summary`, not raw world snapshots.
 
-The live suite covers deterministic body-router scenarios that should make zero model calls, plus model-facing scenarios that must call real DeepSeek for read-only world queries and safety refusals. Do not add E2E scenarios backed by scripted sidecars, fake DeepSeek, or offline fallback mode; keep those concerns in unit tests only.
+The live suite covers deterministic body-router scenarios that should make zero model calls, plus model-facing scenarios that must call real DeepSeek for read-only world queries, web search, prompt-injection resistance, and safety refusals. Do not add E2E scenarios backed by scripted sidecars, fake DeepSeek, or offline fallback mode; keep those concerns in unit tests only.
 
 ## Iteration Workflow
 
@@ -234,6 +234,8 @@ http://127.0.0.1:8888
 ```
 
 The local reference project at `/Users/zhaozhiyu/Projects/caster/chatbot` contains a SearXNG Docker setup. Mina calls the SearXNG JSON `/search` endpoint directly.
+
+The E2E runner starts a local deterministic SearXNG-compatible fixture by default so live model tests can assert `web_search` behavior without relying on the public internet. Pass `--searxng-url http://127.0.0.1:8888` to exercise an external SearXNG instance instead.
 
 ## MCP
 
