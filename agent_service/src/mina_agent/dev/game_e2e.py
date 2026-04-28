@@ -32,6 +32,7 @@ def main() -> int:
             "task_status",
             "stop_follow",
             "replace_follow_with_chop",
+            "body_unavailable",
         ],
     )
     parser.add_argument("--sidecar", default="scripted", choices=["scripted"])
@@ -41,7 +42,7 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
 
-    prepare_runtime(args.port, args.server_port)
+    prepare_runtime(args.port, args.server_port, enable_body=args.scenario != "body_unavailable")
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
@@ -57,7 +58,7 @@ def main() -> int:
             "chop_tree"
             if args.scenario == "replace_follow_with_chop"
             else "follow_player"
-            if args.scenario in {"read_only_command", "knowledge_query", "task_status", "stop_follow"}
+            if args.scenario in {"read_only_command", "knowledge_query", "task_status", "stop_follow", "body_unavailable"}
             else args.scenario
         )
         send(server, f"mina-test setup {setup_scenario}")
@@ -84,6 +85,8 @@ def main() -> int:
             run_stop_follow(server, output, args.timeout)
         elif args.scenario == "replace_follow_with_chop":
             run_replace_follow_with_chop(server, output, args.timeout)
+        elif args.scenario == "body_unavailable":
+            run_body_unavailable(server, output)
         write_trace_summary(args.port)
         return 0
     finally:
@@ -92,7 +95,7 @@ def main() -> int:
         stop_process(sidecar)
 
 
-def prepare_runtime(port: int, server_port: int) -> None:
+def prepare_runtime(port: int, server_port: int, enable_body: bool = True) -> None:
     world_dir = SERVER_DIR / "world"
     if world_dir.exists():
         shutil.rmtree(world_dir)
@@ -124,7 +127,7 @@ def prepare_runtime(port: int, server_port: int) -> None:
                 "allowedOperatorsOnlyForActions": True,
                 "actionAllowlist": ["mina_tester"],
                 "bodyUsername": "mina",
-                "enableBody": True,
+                "enableBody": enable_body,
                 "snapshotIntervalTicks": 40,
                 "companionCooldownSeconds": 300,
                 "nearbyEntityRadius": 32,
@@ -354,6 +357,13 @@ def run_replace_follow_with_chop(proc: subprocess.Popen[str], output: "OutputRea
     )
 
 
+def run_body_unavailable(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    output.wait_for("mina body unavailable enableBody=false", timeout=30)
+    output.wait_for("跟随连续失败", timeout=30)
+
+
 def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:
     if proc.poll() is not None:
         return
@@ -445,6 +455,7 @@ class OutputReader:
                 continue
             buffered.append(line)
             sys.stdout.write(line)
+            sys.stdout.flush()
             for text in texts:
                 if text in line:
                     return text

@@ -112,7 +112,7 @@ def tool_specs() -> list[dict[str, Any]]:
                         "task_type": {"type": "string", "enum": ["chop_tree", "follow_player"]},
                         "target_hint": {"type": "string"},
                     },
-                    ["task_type", "target_hint"],
+                    ["task_type"],
                 ),
             },
         },

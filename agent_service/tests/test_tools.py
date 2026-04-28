@@ -69,6 +69,12 @@ def test_stop_and_status_task_id_is_optional_for_model() -> None:
     assert specs["task_status"]["required"] == []
 
 
+def test_start_body_task_target_hint_is_optional_for_model() -> None:
+    specs = {spec["function"]["name"]: spec["function"]["parameters"] for spec in tool_specs()}
+
+    assert specs["start_body_task"]["required"] == ["task_type"]
+
+
 def test_start_body_task_requires_permission(tmp_path) -> None:
     runner = _runner(tmp_path)
 
@@ -101,6 +107,28 @@ def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) ->
     assert action["name"] == "body_move_to_requester"
     assert action["monitor"]["type"] == "follow_requester"
     assert action["step_id"].startswith("follow:")
+
+
+def test_start_body_task_works_without_target_hint(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("start_body_task", {"task_type": "follow_player"}, _allowed_turn())
+
+    assert result.actions
+    assert result.actions[0]["name"] == "body_move_to_requester"
+
+
+def test_start_body_task_spawns_body_when_snapshot_reports_offline(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+    turn["snapshot"]["body_state"]["online"] = False
+
+    result = runner.run("start_body_task", {"task_type": "follow_player"}, turn)
+
+    assert result.actions
+    action = result.actions[0]
+    assert action["name"] == "body_spawn"
+    assert action["monitor"]["type"] == "body_online"
 
 
 def test_new_body_task_stops_replaced_active_task(tmp_path) -> None:
