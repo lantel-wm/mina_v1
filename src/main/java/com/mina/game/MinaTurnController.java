@@ -39,6 +39,10 @@ public final class MinaTurnController {
 	}
 
 	public int submitPlayerTurn(MinecraftServer server, ServerPlayer player, String trigger, String content, boolean thinkingMessage) {
+		return submitPlayerTurn(server, player, trigger, content, thinkingMessage, UUID.randomUUID().toString());
+	}
+
+	public int submitPlayerTurn(MinecraftServer server, ServerPlayer player, String trigger, String content, boolean thinkingMessage, String requestId) {
 		if (player == null) {
 			return 0;
 		}
@@ -53,9 +57,9 @@ public final class MinaTurnController {
 			previous.cancel(true);
 		}
 
-		String requestId = UUID.randomUUID().toString();
-		JsonObject payload = snapshotter.createTurnPayload(server, player, config, trigger, content, requestId);
-		MinaMod.LOGGER.info("mina turn start requestId={} player={} content={}", requestId, player.getGameProfile().name(), content);
+		String resolvedRequestId = requestId == null || requestId.isBlank() ? UUID.randomUUID().toString() : requestId;
+		JsonObject payload = snapshotter.createTurnPayload(server, player, config, trigger, content, resolvedRequestId);
+		MinaMod.LOGGER.info("mina turn start requestId={} player={} content={}", resolvedRequestId, player.getGameProfile().name(), content);
 		if (thinkingMessage) {
 			player.sendSystemMessage(Component.literal("[Mina] thinking..."));
 		}
@@ -66,15 +70,15 @@ public final class MinaTurnController {
 			server.executeIfPossible(() -> {
 				if (throwable != null) {
 					if (isCancellation(throwable)) {
-						MinaMod.LOGGER.info("Mina sidecar turn cancelled requestId={} player={}", requestId, player.getGameProfile().name());
+						MinaMod.LOGGER.info("Mina sidecar turn cancelled requestId={} player={}", resolvedRequestId, player.getGameProfile().name());
 						return;
 					}
 					MinaMod.LOGGER.warn("Mina sidecar turn failed", throwable);
 					player.sendSystemMessage(Component.literal("[Mina] sidecar request failed: " + rootMessage(throwable)));
 					return;
 				}
-				MinaMod.LOGGER.info("mina turn response requestId={} response={}", requestId, response);
-				processSidecarResponse(server, player, requestId, response);
+				MinaMod.LOGGER.info("mina turn response requestId={} response={}", resolvedRequestId, response);
+				processSidecarResponse(server, player, resolvedRequestId, response);
 			});
 		});
 		return 1;

@@ -13,6 +13,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.level.block.Blocks;
 
+import java.util.regex.Pattern;
+
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 
@@ -25,6 +27,7 @@ public final class MinaTestCommands {
 	private static final BlockPos TARGET_LOG = new BlockPos(TREE_X, TREE_Y, TREE_Z);
 	private static final BlockPos UPPER_LOG = new BlockPos(TREE_X, TREE_Y + 1, TREE_Z);
 	private static final BlockPos SETUP_MARKER = new BlockPos(0, TREE_Y - 1, 0);
+	private static final Pattern ACTOR_NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
 
 	private final MinaConfig config;
 	private final MinaSnapshotter snapshotter;
@@ -51,6 +54,37 @@ public final class MinaTestCommands {
 				.then(literal("request")
 					.then(argument("content", StringArgumentType.greedyString())
 						.executes(context -> request(context.getSource(), StringArgumentType.getString(context, "content")))))
+				.then(literal("request_with_id")
+					.then(argument("request_id", StringArgumentType.word())
+						.then(argument("content", StringArgumentType.greedyString())
+							.executes(context -> requestWithId(
+								context.getSource(),
+								StringArgumentType.getString(context, "request_id"),
+								StringArgumentType.getString(context, "content")
+							)))))
+				.then(literal("fixture")
+					.then(literal("reset")
+						.then(argument("name", StringArgumentType.word())
+							.executes(context -> fixtureReset(context.getSource(), StringArgumentType.getString(context, "name"))))))
+				.then(literal("actor")
+					.then(literal("spawn")
+						.then(argument("name", StringArgumentType.word())
+							.executes(context -> actorSpawn(context.getSource(), StringArgumentType.getString(context, "name")))))
+					.then(literal("leave")
+						.then(argument("name", StringArgumentType.word())
+							.executes(context -> actorLeave(context.getSource(), StringArgumentType.getString(context, "name")))))
+					.then(literal("tp")
+						.then(argument("name", StringArgumentType.word())
+							.then(argument("position", StringArgumentType.greedyString())
+								.executes(context -> actorTeleport(
+									context.getSource(),
+									StringArgumentType.getString(context, "name"),
+									StringArgumentType.getString(context, "position")
+								))))))
+				.then(literal("world")
+					.then(literal("mutate")
+						.then(argument("operation", StringArgumentType.word())
+							.executes(context -> worldMutate(context.getSource(), StringArgumentType.getString(context, "operation"))))))
 				.then(literal("ready").executes(context -> ready(context.getSource())))
 				.then(literal("deny_actions").executes(context -> denyActions(context.getSource())))
 				.then(literal("allow_actions").executes(context -> allowActions(context.getSource())))
@@ -85,6 +119,31 @@ public final class MinaTestCommands {
 		blockTreeApproaches(source.getLevel());
 		source.sendSuccess(() -> Component.literal("Mina test blocked_chop_tree setup complete. Poll /mina-test ready before requesting."), false);
 		return 1;
+	}
+
+	private int fixtureReset(CommandSourceStack source, String name) {
+		return switch (name) {
+			case "chop_tree" -> {
+				setupWorldAndPlayers(source);
+				source.sendSuccess(() -> Component.literal("Mina test fixture chop_tree reset complete. Poll /mina-test ready before requesting."), false);
+				yield 1;
+			}
+			case "follow_player" -> {
+				setupWorldAndPlayers(source);
+				source.sendSuccess(() -> Component.literal("Mina test fixture follow_player reset complete. Poll /mina-test ready before requesting."), false);
+				yield 1;
+			}
+			case "blocked_chop_tree" -> {
+				setupWorldAndPlayers(source);
+				blockTreeApproaches(source.getLevel());
+				source.sendSuccess(() -> Component.literal("Mina test fixture blocked_chop_tree reset complete. Poll /mina-test ready before requesting."), false);
+				yield 1;
+			}
+			default -> {
+				source.sendFailure(Component.literal("Unknown Mina test fixture: " + name));
+				yield 0;
+			}
+		};
 	}
 
 	private void setupWorldAndPlayers(CommandSourceStack source) {
@@ -149,6 +208,77 @@ public final class MinaTestCommands {
 			return 0;
 		}
 		return turnController.submitPlayerTurn(source.getServer(), requester, "command", content, false);
+	}
+
+	private int requestWithId(CommandSourceStack source, String requestId, String content) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online. Run /mina-test fixture reset first."));
+			return 0;
+		}
+		return turnController.submitPlayerTurn(source.getServer(), requester, "command", content, false, requestId);
+	}
+
+	private int actorSpawn(CommandSourceStack source, String name) {
+		if (!validActorName(source, name)) {
+			return 0;
+		}
+		run(source.getServer(), "puppet " + name + " spawn");
+		source.sendSuccess(() -> Component.literal("Mina test actor " + name + " spawned."), false);
+		return 1;
+	}
+
+	private int actorLeave(CommandSourceStack source, String name) {
+		if (!validActorName(source, name)) {
+			return 0;
+		}
+		run(source.getServer(), "puppet " + name + " leave");
+		source.sendSuccess(() -> Component.literal("Mina test actor " + name + " left."), false);
+		return 1;
+	}
+
+	private int actorTeleport(CommandSourceStack source, String name, String position) {
+		if (!validActorName(source, name)) {
+			return 0;
+		}
+		String normalized = normalizedPosition(position);
+		if (normalized.isBlank()) {
+			source.sendFailure(Component.literal("Mina test actor tp requires: x y z [yaw pitch]."));
+			return 0;
+		}
+		run(source.getServer(), "tp " + name + " " + normalized);
+		source.sendSuccess(() -> Component.literal("Mina test actor " + name + " teleported."), false);
+		return 1;
+	}
+
+	private int worldMutate(CommandSourceStack source, String operation) {
+		return switch (operation) {
+			case "remove_target_log" -> removeTargetLog(source);
+			case "block_tree_approaches" -> {
+				blockTreeApproaches(source.getLevel());
+				source.sendSuccess(() -> Component.literal("Mina test world mutate block_tree_approaches complete."), false);
+				yield 1;
+			}
+			case "move_requester_far" -> moveRequesterFar(source);
+			case "move_body_far" -> moveBodyFar(source);
+			case "deny_actions" -> denyActions(source);
+			case "allow_actions" -> allowActions(source);
+			case "leave_body" -> leaveBody(source);
+			case "day" -> {
+				run(source.getServer(), "time set day");
+				source.sendSuccess(() -> Component.literal("Mina test world mutate day complete."), false);
+				yield 1;
+			}
+			case "clear_weather" -> {
+				run(source.getServer(), "weather clear");
+				source.sendSuccess(() -> Component.literal("Mina test world mutate clear_weather complete."), false);
+				yield 1;
+			}
+			default -> {
+				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
+				yield 0;
+			}
+		};
 	}
 
 	private int moveRequesterFar(CommandSourceStack source) {
@@ -261,6 +391,29 @@ public final class MinaTestCommands {
 			server.createCommandSourceStack().withMaximumPermission(PermissionSet.ALL_PERMISSIONS),
 			command
 		);
+	}
+
+	private static boolean validActorName(CommandSourceStack source, String name) {
+		if (ACTOR_NAME.matcher(name).matches()) {
+			return true;
+		}
+		source.sendFailure(Component.literal("Invalid Mina test actor name: " + name));
+		return false;
+	}
+
+	private static String normalizedPosition(String position) {
+		String[] parts = position.trim().split("\\s+");
+		if (parts.length != 3 && parts.length != 5) {
+			return "";
+		}
+		for (String part : parts) {
+			try {
+				Double.parseDouble(part);
+			} catch (NumberFormatException exception) {
+				return "";
+			}
+		}
+		return String.join(" ", parts);
 	}
 
 	private static void prepareChopTreeWorld(ServerLevel level) {
