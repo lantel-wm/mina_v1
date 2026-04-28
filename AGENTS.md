@@ -152,13 +152,40 @@ UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -
 
 This is the only E2E runner. It loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar, starts a deterministic SearXNG-compatible search fixture unless `--searxng-url` is provided, and starts a dedicated Fabric/PuppetPlayers server in `build/e2e/server`, then drives declarative `/mina-test` scenarios. Built-in scenarios live in `agent_service/src/mina_agent/e2e/scenarios.py`; additional JSON manifests can be loaded with `--manifest path/to/scenarios.json`. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task.
 
+Latest E2E usage:
+
+- Gate command: `UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --require-live-model`
+- List selected scenarios without API key, sidecar, or server startup: `UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --list-scenarios`
+- Run one scenario after a successful build: `UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario knowledge_search_live_model --skip-build --require-live-model`
+- Run focused suites: `--suite body`, `--suite safety`, or `--suite all`. The default suite is `live`.
+- Load external scenario manifests: `--manifest path/to/scenarios.json --scenario custom_case`. The manifest can be either a list of scenario objects or `{"scenarios": [...]}`.
+- Use an external SearXNG instead of the built-in deterministic fixture: `--searxng-url http://127.0.0.1:8888`.
+- Use `--skip-build` only when `./gradlew build --no-daemon` has already passed for the current Java sources.
+
+Required live environment:
+
+- `MINA_API_KEY` must be set in `agent_service/.env` or the process environment.
+- `MINA_BASE_URL` must point at DeepSeek, not localhost or any mock endpoint.
+- `MINA_MODEL` must be a real DeepSeek model such as `deepseek-v4-flash`.
+- Missing keys fail fast; the runner never downgrades to fake DeepSeek, scripted sidecars, or offline fallback.
+
+Declarative scenario schema highlights:
+
+- Required: `name`, `fixture`, `steps`, and a human-readable `rubric`.
+- Common metadata: `tags`, `timeout`, `retry`, and `keep_artifacts`.
+- Step kinds: `request`, `companion_tick`, `world_mutate`, `actor_spawn`, `actor_leave`, `actor_tp`, and `assert`.
+- `request` and `companion_tick` steps require a unique `request_id`; `/v1/traces/{request_id}` is the trace join key.
+- Trace invariants: `expected_tools`, `forbidden_tools`, `expected_actions`, `forbidden_actions`, `forbidden_model_tools`, `expected_model`, `expected_response_contains`, and `forbidden_response_contains`.
+- World invariants: `world_asserts` run `/mina-test assert <name>` after scenario steps.
+- The runner validates selected manifests before server startup, including duplicate `request_id` values, missing request ids, unknown step kinds, and invalid `expected_model.mode` values. Supported model modes are `exact` and `at_least`.
+
 Useful suites:
 
 ```sh
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --list-scenarios
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite body
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario read_only_time_live_model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite body --require-live-model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety --require-live-model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario read_only_time_live_model --require-live-model
 ```
 
 Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `run_manifest.json`, root `summary.json`, `trace-summary.json`, root `trace.jsonl`, `scenario_summaries.jsonl`, `server.log`, `sidecar.log`, `sidecar-stdout.log`, per-scenario `manifest.json`, per-scenario `summary.json`, per-scenario `final_snapshot.json`, per-scenario `trace.json`, per-scenario `trace.jsonl`, and `model_calls.jsonl`. Use `--list-scenarios` to print selected scenario metadata, timeouts, retries, invariant names, and tag counts without a live API key or server startup. The runner validates selected manifests before server startup, including duplicate `request_id` values, request-like steps missing `request_id`, unknown step kinds, and invalid `expected_model` modes. `run_manifest.json` records the selected scenarios, tag counts, and runner options. Root `summary.json` records git context, scenario/pass/fail counts, tag counts, per-scenario duration, model call counts, and token totals; root `scenario_summaries.jsonl` preserves one compact summary per selected scenario; per-scenario `summary.json` records status, duration, event/tool/action counts, exposed/requested model tool names, model token totals, and final snapshot summary; `trace-summary.json` includes model call counts and token totals. Root `trace.jsonl` aggregates per-scenario records for whole-run audit; per-scenario `manifest.json` preserves the executed rubric and invariants; per-scenario `final_snapshot.json` stores compact final world evidence; per-scenario `trace.jsonl` includes sidecar model/tool/action records plus structured E2E harness events for scenario pass/fail/retry, server stdin commands, matched stdout lines, and poll attempts. Response-content invariants check both model traces and player-visible server output; model-facing scenarios also assert that private low-level body/Fabric tools are not exposed in model-call tool lists. Failed scenarios keep best-effort per-scenario trace artifacts; on scenario failure, `failure.json` attempts to include a compact `/mina-test snapshot` hash/summary if the server is still running. The runner waits for the matching `request_id` turn response before advancing request steps, so stale chat output from a previous command cannot satisfy the next step. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, `/v1/tasks/{task_id}/events`, and `/v1/traces/{request_id}` for focused debugging. Trace outputs compact large snapshots as `snapshot_hash` plus `snapshot_summary`, not raw world snapshots.
@@ -183,9 +210,9 @@ GRADLE_USER_HOME=$PWD/.gradle ./gradlew build --no-daemon
 4. Run the relevant headless E2E scenarios with a real DeepSeek key configured in `agent_service/.env` or the environment. At minimum, keep the live body suite passing before committing body-control changes:
 
 ```sh
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite body
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite body --require-live-model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety --require-live-model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --require-live-model
 ```
 
 5. Inspect `build/e2e/runs/<timestamp>/summary.json`, `trace-summary.json`, per-scenario `trace.jsonl`, `server.log`, and `sidecar.log` when an E2E scenario fails. The real sidecar also exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, and `/v1/tasks/{task_id}/events` for focused debugging. Fix the policy, monitor, or skill runtime first; do not compensate by letting the model directly call lower-level body primitives.
