@@ -53,6 +53,7 @@ class SkillRuntime:
                 "target": None,
                 "last_error": None,
                 "active_action_id": None,
+                "active_step_id": None,
                 "cycles": 0,
                 "latest_snapshot": turn.get("snapshot") or {},
                 "created_at": time.time(),
@@ -165,11 +166,26 @@ class SkillRuntime:
             return TurnResponse(debug={"task_status": _public_task(task)})
         action_id = str(result.get("action_id") or "")
         active_action_id = str(task.get("active_action_id") or "")
-        if action_id and active_action_id and action_id != active_action_id:
+        step_id = str(result.get("step_id") or "")
+        active_step_id = str(task.get("active_step_id") or "")
+        stale_reason = ""
+        if active_action_id and action_id and action_id != active_action_id:
+            stale_reason = "action_id_mismatch"
+        elif active_step_id and step_id and step_id != active_step_id:
+            stale_reason = "step_id_mismatch"
+        elif active_action_id and not action_id and not step_id:
+            stale_reason = "missing_action_and_step"
+        if stale_reason:
             self.memory.record_task_event(
                 task["task_id"],
                 "stale_action_result",
-                {"action_id": action_id, "active_action_id": active_action_id, "step_id": result.get("step_id")},
+                {
+                    "reason": stale_reason,
+                    "action_id": action_id,
+                    "active_action_id": active_action_id,
+                    "step_id": step_id,
+                    "active_step_id": active_step_id,
+                },
             )
             return TurnResponse(debug={"task_status": _public_task(task)})
         status = str(result.get("status") or "")
@@ -186,7 +202,6 @@ class SkillRuntime:
         if monitor_status != "success" and status not in {"completed", "success"}:
             return TurnResponse(debug={"task_status": _public_task(task)})
 
-        step_id = str(result.get("step_id") or "")
         snapshot = task.get("latest_snapshot") or {}
         if step_id.startswith("spawn"):
             if not _body_online(snapshot):
@@ -398,6 +413,7 @@ class SkillRuntime:
 
     def _mark_action(self, task: dict[str, Any], action: dict[str, Any]) -> None:
         task["active_action_id"] = action["id"]
+        task["active_step_id"] = action["step_id"]
         self.memory.record_task_event(task["task_id"], "action_scheduled", action)
 
     def _clear_current_if_terminal(self, task: dict[str, Any]) -> None:
@@ -478,6 +494,7 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
         "target": task.get("target"),
         "last_error": task.get("last_error"),
         "active_action_id": task.get("active_action_id"),
+        "active_step_id": task.get("active_step_id"),
         "cycles": task.get("cycles"),
         "updated_at": task.get("updated_at"),
     }

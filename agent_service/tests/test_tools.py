@@ -227,6 +227,52 @@ def test_stale_action_result_does_not_advance_active_task(tmp_path) -> None:
     assert '"stage": "attack_sent"' in status.content
 
 
+def test_stale_step_result_without_action_id_does_not_advance_active_task(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    assert moved.actions
+
+    stale = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "duplicate old move result"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+
+    assert stale.actions == []
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"stage": "attack_sent"' in status.content
+    assert '"active_step_id": "attack:0"' in status.content
+
+
 def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) -> None:
     runner = _runner(tmp_path)
 
