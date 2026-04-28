@@ -97,6 +97,11 @@ class ContextInspectingDeepSeek:
         )
 
 
+class UnconfiguredDeepSeek:
+    def configured(self) -> bool:
+        return False
+
+
 def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -146,3 +151,83 @@ def test_harness_injects_current_task_into_context(tmp_path) -> None:
     )
 
     assert response["messages"][0]["content"] == "当前任务是跟随玩家。"
+
+
+def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-follow",
+            "trigger": "command",
+            "message": "跟随我",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert "我开始跟随你" in response["messages"][0]["content"]
+    assert response["actions"][0]["name"] == "body_move_to_requester"
+    assert response["debug"]["offline_fallback"] is True
+
+
+def test_harness_offline_fallback_can_schedule_read_only_command(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-time",
+            "trigger": "command",
+            "message": "查询时间",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    assert response["actions"][0]["name"] == "run_read_only_command"
+    assert response["actions"][0]["args"]["command"] == "time query daytime"
+
+
+def test_harness_offline_fallback_can_return_search_results(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-search",
+            "trigger": "command",
+            "message": "查资料 diamond ore",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    assert "搜索结果" in response["messages"][0]["content"]
+    assert "Minecraft Wiki" in response["messages"][0]["content"]
+
+
+def test_harness_offline_fallback_still_reports_missing_key_for_complex_request(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-complex",
+            "trigger": "command",
+            "message": "帮我规划一个自动农场",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    assert "MINA_API_KEY is not configured" in response["messages"][0]["content"]

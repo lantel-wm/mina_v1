@@ -47,6 +47,14 @@ class AgentHarness:
             self.memory.add_conversation(request_id, player_id, "user", message)
 
         if not self.deepseek.configured():
+            offline = self._offline_fallback(turn)
+            if offline is not None:
+                for message_item in offline.messages:
+                    content = str(message_item.get("content") or "").strip()
+                    if content:
+                        self.memory.add_conversation(request_id, player_id, "assistant", content)
+                self._debug("turn fallback request_id=%s reason=missing_api_key handled=offline_rule", request_id)
+                return offline.to_dict()
             fallback = "Mina sidecar is running, but MINA_API_KEY is not configured."
             self._debug("turn fallback request_id=%s reason=missing_api_key", request_id)
             self.memory.add_conversation(request_id, player_id, "assistant", fallback)
@@ -160,6 +168,96 @@ class AgentHarness:
         self._debug("turn max_tool_turns request_id=%s actions=%s", request_id, len(actions))
         return TurnResponse(messages=[{"target": "requester", "content": content}], actions=actions, debug={"usage": usage}).to_dict()
 
+    def _offline_fallback(self, turn: dict[str, Any]) -> TurnResponse | None:
+        message = str(turn.get("message") or "").strip()
+        normalized = message.lower()
+        if not normalized:
+            return None
+
+        if _contains_any(normalized, {"状态", "status", "进度"}):
+            status = self.tools.skills.task_status(None, turn)
+            if status.get("ok") is False:
+                return TurnResponse(messages=[{"target": "requester", "content": "当前没有正在执行的身体任务。"}])
+            return TurnResponse(
+                messages=[
+                    {
+                        "target": "requester",
+                        "content": f"当前任务：{status.get('type')}，状态：{status.get('status')}，阶段：{status.get('stage')}。",
+                    }
+                ],
+                debug={"offline_fallback": True, "task_status": status},
+            )
+
+        if _contains_any(normalized, {"停止", "stop", "取消"}):
+            response = self.tools.skills.stop_task(None, turn)
+            response.debug["offline_fallback"] = True
+            return response
+
+        if _contains_any(normalized, {"跟随", "follow"}):
+            return self._offline_tool_response(
+                "start_body_task",
+                {"task_type": "follow_player", "target_hint": message},
+                turn,
+                "我开始跟随你，会根据距离变化继续调整。",
+            )
+
+        if _contains_any(normalized, {"砍树", "chop", "tree"}):
+            return self._offline_tool_response(
+                "start_body_task",
+                {"task_type": "chop_tree", "target_hint": message},
+                turn,
+                "我开始砍树，会根据实际执行结果继续调整。",
+            )
+
+        command = _offline_read_only_command(normalized)
+        if command:
+            return self._offline_tool_response(
+                "run_read_only_command",
+                {"command": command},
+                turn,
+                "我会执行这个只读查询。",
+            )
+
+        if _contains_any(normalized, {"查资料", "搜索", "search", "wiki"}):
+            result = self.tools.run("web_search", {"query": message, "max_results": 3}, turn)
+            payload = _json_object(result.content)
+            if payload.get("ok") is True:
+                lines = []
+                for item in payload.get("results") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    title = str(item.get("title") or "result")
+                    url = str(item.get("url") or "")
+                    content = str(item.get("content") or "").strip()
+                    detail = f"{title} {url}".strip()
+                    if content:
+                        detail += f" - {_truncate(content, 120)}"
+                    lines.append(detail)
+                if lines:
+                    return TurnResponse(
+                        messages=[{"target": "requester", "content": "搜索结果：\n" + "\n".join(lines)}],
+                        debug={"offline_fallback": True},
+                    )
+            error = str(payload.get("error") or "web_search unavailable")
+            return TurnResponse(messages=[{"target": "requester", "content": f"联网搜索暂不可用：{error}"}])
+
+        return None
+
+    def _offline_tool_response(self, name: str, args: dict[str, Any], turn: dict[str, Any], fallback_message: str) -> TurnResponse:
+        result = self.tools.run(name, args, turn)
+        payload = _json_object(result.content)
+        actions = []
+        if result.action:
+            actions.append(result.action)
+        actions.extend(result.actions)
+        messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+        if payload.get("ok") is False:
+            error = str(payload.get("error") or "tool unavailable")
+            messages = [{"target": "requester", "content": f"离线模式无法完成请求：{error}"}]
+        elif not messages and actions:
+            messages = [{"target": "requester", "content": fallback_message}]
+        return TurnResponse(messages=messages, actions=actions, debug={"offline_fallback": True})
+
     def _companion_tick(self, turn: dict[str, Any]) -> TurnResponse | None:
         player = turn.get("player") or {}
         player_id = str(player.get("uuid") or "unknown")
@@ -235,6 +333,30 @@ def _is_tool_error(content: str) -> bool:
     except json.JSONDecodeError:
         return False
     return isinstance(payload, dict) and payload.get("ok") is False
+
+
+def _json_object(content: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _contains_any(value: str, needles: set[str]) -> bool:
+    return any(needle in value for needle in needles)
+
+
+def _offline_read_only_command(message: str) -> str:
+    if "时间" in message or "time" in message:
+        return "time query daytime"
+    if "种子" in message or "seed" in message:
+        return "seed"
+    if "天气" in message or "weather" in message:
+        return "weather query"
+    if "在线" in message or "玩家列表" in message or message == "list" or "player list" in message:
+        return "list"
+    return ""
 
 
 def _deepseek_error_message(exc: DeepSeekError) -> str:

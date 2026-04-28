@@ -34,9 +34,10 @@ def main() -> int:
             "stop_follow",
             "replace_follow_with_chop",
             "body_unavailable",
+            "offline_follow",
         ],
     )
-    parser.add_argument("--sidecar", default="scripted", choices=["scripted"])
+    parser.add_argument("--sidecar", default="scripted", choices=["scripted", "service"])
     parser.add_argument("--port", type=int, default=18911)
     parser.add_argument("--server-port", type=int, default=25566)
     parser.add_argument("--timeout", type=float, default=180.0)
@@ -47,7 +48,8 @@ def main() -> int:
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
-    sidecar = start_sidecar(args.port)
+    sidecar_mode = "service" if args.scenario == "offline_follow" else args.sidecar
+    sidecar = start_sidecar(args.port, sidecar_mode, force_offline=args.scenario == "offline_follow")
     server = None
     try:
         wait_http(f"http://127.0.0.1:{args.port}/healthz", timeout=20, proc=sidecar)
@@ -59,7 +61,7 @@ def main() -> int:
             "chop_tree"
             if args.scenario in {"replace_follow_with_chop", "banned_command"}
             else "follow_player"
-            if args.scenario in {"read_only_command", "knowledge_query", "task_status", "stop_follow", "body_unavailable"}
+            if args.scenario in {"read_only_command", "knowledge_query", "task_status", "stop_follow", "body_unavailable", "offline_follow"}
             else args.scenario
         )
         send(server, f"mina-test setup {setup_scenario}")
@@ -90,6 +92,8 @@ def main() -> int:
             run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "body_unavailable":
             run_body_unavailable(server, output)
+        elif args.scenario == "offline_follow":
+            run_follow_player(server, output, args.timeout)
         write_trace_summary(args.port)
         return 0
     finally:
@@ -188,15 +192,19 @@ def download(url: str, target: Path) -> None:
     tmp.replace(target)
 
 
-def start_sidecar(port: int) -> subprocess.Popen[str]:
+def start_sidecar(port: int, mode: str, force_offline: bool = False) -> subprocess.Popen[str]:
     pythonpath = str(ROOT / "agent_service" / "src")
     env = {
         **os.environ,
-        "MINA_DB_PATH": str(ROOT / "build" / "e2e" / "mina-scripted.sqlite3"),
+        "MINA_DB_PATH": str(ROOT / "build" / "e2e" / f"mina-{mode}.sqlite3"),
+        "MINA_LOG_PATH": str(ROOT / "build" / "e2e" / f"mina-{mode}.log"),
         "PYTHONPATH": pythonpath + os.pathsep + os.environ.get("PYTHONPATH", ""),
     }
+    if force_offline:
+        env["MINA_API_KEY"] = ""
+    module = "mina_agent.dev.scripted_sidecar:app" if mode == "scripted" else "mina_agent.app:app"
     return subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "mina_agent.dev.scripted_sidecar:app", "--host", "127.0.0.1", "--port", str(port)],
+        [sys.executable, "-m", "uvicorn", module, "--host", "127.0.0.1", "--port", str(port)],
         cwd=ROOT,
         env=env,
         stdin=subprocess.DEVNULL,
