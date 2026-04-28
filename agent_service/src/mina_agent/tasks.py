@@ -217,7 +217,10 @@ class SkillRuntime:
         command_success = result.get("command_success")
 
         if command_success is False or status in {"command_failed", "failed"}:
-            return self._recover_or_fail(task, result.get("error") or "command failed")
+            recovered = self._recover_or_fail(task, result.get("error") or "command failed")
+            if task.get("type") == "chop_tree" and step_id.startswith("attack"):
+                return _prepend_action(recovered, _attack_release_action(task, step_id))
+            return recovered
         if monitor_status in {"failed", "timeout"} or status in {"monitor_failed", "timeout"}:
             if task.get("type") == "chop_tree" and step_id.startswith("look"):
                 snapshot = task.get("latest_snapshot") or {}

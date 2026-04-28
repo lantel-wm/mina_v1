@@ -83,6 +83,45 @@ def _allowed_turn() -> dict:
     }
 
 
+def _start_chop_until_attack(runner: ToolRunner, turn: dict) -> dict:
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    look = moved.actions[0]
+    looked = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": look["id"],
+                    "task_id": look["task_id"],
+                    "step_id": look["step_id"],
+                    "name": look["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body targeted expected block"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    return looked.actions[0]
+
+
 def _allowed_turn_for(player_id: str, name: str) -> dict:
     turn = _allowed_turn()
     turn["player"] = {"uuid": player_id, "name": name}
@@ -389,43 +428,7 @@ def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) ->
 def test_chop_tree_releases_attack_before_recovery_on_timeout(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()
-
-    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
-    move = started.actions[0]
-    moved = runner.skills.handle_action_results(
-        {
-            "action_results": [
-                {
-                    "action_id": move["id"],
-                    "task_id": move["task_id"],
-                    "step_id": move["step_id"],
-                    "name": move["name"],
-                    "status": "success",
-                    "command_success": True,
-                    "monitor_result": {"status": "success", "reason": "body reached target"},
-                    "snapshot": turn["snapshot"],
-                }
-            ]
-        }
-    )
-    look = moved.actions[0]
-    looked = runner.skills.handle_action_results(
-        {
-            "action_results": [
-                {
-                    "action_id": look["id"],
-                    "task_id": look["task_id"],
-                    "step_id": look["step_id"],
-                    "name": look["name"],
-                    "status": "success",
-                    "command_success": True,
-                    "monitor_result": {"status": "success", "reason": "body targeted expected block"},
-                    "snapshot": turn["snapshot"],
-                }
-            ]
-        }
-    )
-    attack = looked.actions[0]
+    attack = _start_chop_until_attack(runner, turn)
 
     recovered = runner.skills.handle_action_results(
         {
@@ -452,6 +455,38 @@ def test_chop_tree_releases_attack_before_recovery_on_timeout(tmp_path) -> None:
     status = runner.run("task_status", {"task_id": attack["task_id"]}, turn)
     assert '"attempts": 1' in status.content
     assert '"active_step_id": "move:1"' in status.content
+
+
+def test_chop_tree_releases_attack_before_recovery_on_command_failure(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+    attack = _start_chop_until_attack(runner, turn)
+
+    recovered = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": attack["id"],
+                    "task_id": attack["task_id"],
+                    "step_id": attack["step_id"],
+                    "name": attack["name"],
+                    "status": "failed",
+                    "command_success": False,
+                    "error": "puppet command failed",
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+
+    assert len(recovered.actions) >= 2
+    assert recovered.actions[0]["name"] == "body_attack"
+    assert recovered.actions[0]["args"]["mode"] == "release"
+    assert recovered.actions[0]["requires_permission"] is False
+    assert recovered.actions[1]["name"] == "body_move_to_position"
+    status = runner.run("task_status", {"task_id": attack["task_id"]}, turn)
+    assert '"attempts": 1' in status.content
+    assert '"last_error": "puppet command failed"' in status.content
 
 
 def test_stale_action_result_does_not_advance_active_task(tmp_path) -> None:
