@@ -46,7 +46,8 @@ public final class MinaTestCommands {
 				literal("mina-test")
 					.then(literal("setup")
 						.then(literal("chop_tree").executes(context -> setupChopTree(context.getSource())))
-						.then(literal("follow_player").executes(context -> setupFollowPlayer(context.getSource()))))
+						.then(literal("follow_player").executes(context -> setupFollowPlayer(context.getSource())))
+						.then(literal("blocked_chop_tree").executes(context -> setupBlockedChopTree(context.getSource()))))
 				.then(literal("request")
 					.then(argument("content", StringArgumentType.greedyString())
 						.executes(context -> request(context.getSource(), StringArgumentType.getString(context, "content")))))
@@ -76,6 +77,13 @@ public final class MinaTestCommands {
 	private int setupFollowPlayer(CommandSourceStack source) {
 		setupWorldAndPlayers(source);
 		source.sendSuccess(() -> Component.literal("Mina test follow_player setup complete. Poll /mina-test ready before requesting."), false);
+		return 1;
+	}
+
+	private int setupBlockedChopTree(CommandSourceStack source) {
+		setupWorldAndPlayers(source);
+		blockTreeApproaches(source.getLevel());
+		source.sendSuccess(() -> Component.literal("Mina test blocked_chop_tree setup complete. Poll /mina-test ready before requesting."), false);
 		return 1;
 	}
 
@@ -277,5 +285,15 @@ public final class MinaTestCommands {
 		level.setBlock(new BlockPos(TREE_X - 1, TREE_Y + 2, TREE_Z), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z + 1), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z - 1), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
+	}
+
+	private static void blockTreeApproaches(ServerLevel level) {
+		BlockPos[] logs = {TARGET_LOG, UPPER_LOG};
+		for (BlockPos log : logs) {
+			level.setBlock(log.north(), Blocks.COBBLESTONE.defaultBlockState(), 3);
+			level.setBlock(log.south(), Blocks.COBBLESTONE.defaultBlockState(), 3);
+			level.setBlock(log.east(), Blocks.COBBLESTONE.defaultBlockState(), 3);
+			level.setBlock(log.west(), Blocks.COBBLESTONE.defaultBlockState(), 3);
+		}
 	}
 }

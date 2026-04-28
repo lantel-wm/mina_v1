@@ -39,6 +39,7 @@ def main() -> int:
             "model_chop_tree",
             "model_chop_then_status",
             "model_chop_target_disappears",
+            "model_unreachable_chop_tree",
             "model_replace_follow_with_chop",
             "model_follow_player",
             "model_spawn_body_follow",
@@ -93,6 +94,7 @@ def main() -> int:
         "model_chop_tree",
         "model_chop_then_status",
         "model_chop_target_disappears",
+        "model_unreachable_chop_tree",
         "model_replace_follow_with_chop",
         "model_follow_player",
         "model_spawn_body_follow",
@@ -168,6 +170,8 @@ def main() -> int:
                 "offline_knowledge_query",
                 "offline_permission_denied",
             }
+            else "blocked_chop_tree"
+            if args.scenario == "model_unreachable_chop_tree"
             else args.scenario
         )
         send(server, f"mina-test setup {setup_scenario}")
@@ -206,6 +210,8 @@ def main() -> int:
             run_model_chop_then_status(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_chop_target_disappears":
             run_model_chop_target_disappears(server, output, args.timeout, args.port, args.deepseek_port)
+        elif args.scenario == "model_unreachable_chop_tree":
+            run_model_unreachable_chop_tree(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_replace_follow_with_chop":
             run_model_replace_follow_with_chop(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_follow_player":
@@ -800,6 +806,43 @@ def run_model_chop_target_disappears(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before recovered chop dispatch, got {calls!r}")
+
+
+def run_model_unreachable_chop_tree(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    send(proc, "mina-test request 砍树")
+    output.wait_for("附近没有可安全接近的原木", timeout=30)
+    send(proc, "mina-test assert target_log_present")
+    output.wait_for("Mina test target_log_present passed", timeout=10)
+    call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "start_body_task"
+        and item.get("status") == "error"
+        and "no log target" in str(item.get("result_json") or ""),
+        timeout=10,
+    )
+    if not call:
+        raise AssertionError("unreachable chop did not record a failed start_body_task tool call")
+    events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5).get("events", [])
+    if events:
+        raise AssertionError(f"unreachable chop should not schedule Fabric actions: {events!r}")
+    tasks = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tasks", timeout=5).get("tasks", [])
+    failed = [
+        task for task in tasks
+        if isinstance(task, dict)
+        and task.get("type") == "chop_tree"
+        and task.get("status") == "failed"
+        and "no log target" in str(task.get("last_error") or "")
+    ]
+    if not failed:
+        raise AssertionError(f"expected failed unreachable chop task: {tasks!r}")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 2:
+        raise AssertionError(f"fake DeepSeek should have two calls for unreachable chop tool loop, got {calls!r}")
 
 
 def run_model_replace_follow_with_chop(

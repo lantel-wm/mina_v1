@@ -53,6 +53,11 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
         content = "我没有权限控制身体任务。" if "permission denied" in tool_content else "身体任务没有成功启动。"
         message = {"role": "assistant", "content": content}
         finish_reason = "stop"
+    elif tool_messages and _is_chop_message(user_message):
+        tool_content = str(tool_messages[-1].get("content") or "")
+        content = "附近没有可安全接近的原木，我先停下。" if "no log target" in tool_content else "砍树任务没有成功启动。"
+        message = {"role": "assistant", "content": content}
+        finish_reason = "stop"
     elif tool_messages and _is_banned_command_message(user_message):
         message = {"role": "assistant", "content": "拒绝执行写命令。"}
         finish_reason = "stop"
