@@ -48,6 +48,11 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
         content = "我已经停止当前身体任务。" if '"ok": true' in tool_content else "当前没有正在执行的身体任务。"
         message = {"role": "assistant", "content": content}
         finish_reason = "stop"
+    elif tool_messages and _is_follow_message(user_message):
+        tool_content = str(tool_messages[-1].get("content") or "")
+        content = "我没有权限控制身体任务。" if "permission denied" in tool_content else "身体任务没有成功启动。"
+        message = {"role": "assistant", "content": content}
+        finish_reason = "stop"
     elif tool_messages:
         message = {"role": "assistant", "content": "错误：action barrier 未生效。"}
         finish_reason = "stop"
@@ -115,7 +120,7 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
             ],
         }
         finish_reason = "tool_calls"
-    elif "跟随" in user_message or "follow" in user_message.lower():
+    elif _is_follow_message(user_message):
         message = {
             "role": "assistant",
             "content": "",
@@ -165,3 +170,7 @@ def _is_status_message(message: str) -> bool:
 def _is_stop_message(message: str) -> bool:
     normalized = message.lower()
     return "停止" in message or "取消" in message or "stop" in normalized or "cancel" in normalized
+
+
+def _is_follow_message(message: str) -> bool:
+    return "跟随" in message or "follow" in message.lower()
