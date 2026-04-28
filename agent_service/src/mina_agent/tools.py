@@ -172,7 +172,11 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "mcp_call",
-                "description": "Call a configured non-Minecraft-write MCP tool through Mina's sidecar MCP registry.",
+                "description": (
+                    "Call a configured non-Minecraft-write MCP server through Mina's sidecar MCP registry. "
+                    "Use tool='tools/list' for discovery, tool='resources/read' with arguments.uri for resources, "
+                    "or a concrete tool name for tools/call."
+                ),
                 "parameters": _schema(
                     {
                         "server": {"type": "string"},
@@ -328,6 +332,14 @@ class ToolRunner:
             arguments = {}
         if _looks_like_minecraft_write(tool, arguments):
             result = {"ok": False, "error": "Minecraft write operations must go through Mina Fabric actions, not MCP."}
+        elif tool in {"tools/list", "list_tools"}:
+            result = self.mcp.list_tools(server)
+        elif tool in {"resources/read", "read_resource"}:
+            uri = str(arguments.get("uri") or "")
+            if not uri:
+                result = {"ok": False, "error": "MCP resources/read requires arguments.uri"}
+            else:
+                result = self.mcp.read_resource(server, uri)
         else:
             result = self.mcp.call(server, tool, arguments)
         LOGGER.info("mcp_call server=%s tool=%s ok=%s", server, tool, result.get("ok"))

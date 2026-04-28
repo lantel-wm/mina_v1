@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from mina_agent.memory import MemoryStore
 from mina_agent.mcp import McpRegistry
 from mina_agent.searxng import SearxngClient
@@ -30,6 +32,23 @@ class RecordingSearxng(SearxngClient):
         self.query = query
         self.max_results = max_results
         return [{"title": "ok", "url": "https://example.com", "content": "ok"}]
+
+
+class RecordingMcp:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def list_tools(self, server: str) -> dict:
+        self.calls.append(("tools/list", server))
+        return {"ok": True, "tools": [{"name": "echo"}]}
+
+    def read_resource(self, server: str, uri: str) -> dict:
+        self.calls.append(("resources/read", server, uri))
+        return {"ok": True, "contents": [{"uri": uri, "text": "resource text"}]}
+
+    def call(self, server: str, tool: str, arguments: dict) -> dict:
+        self.calls.append(("tools/call", server, tool, arguments))
+        return {"ok": True, "content": [{"type": "text", "text": str(arguments.get("text") or "")}]}
 
 
 def _runner(tmp_path) -> ToolRunner:
@@ -598,6 +617,33 @@ def test_mcp_call_is_explicitly_unavailable_without_config(tmp_path) -> None:
     result = runner.run("mcp_call", {"server": "local", "tool": "ping", "arguments": {}}, {})
 
     assert "not configured" in result.content
+
+
+def test_mcp_call_can_list_tools_read_resources_and_call_tools(tmp_path) -> None:
+    mcp = RecordingMcp()
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng(), mcp)  # type: ignore[arg-type]
+
+    tools = runner.run("mcp_call", {"server": "docs", "tool": "tools/list", "arguments": {}}, {})
+    resource = runner.run("mcp_call", {"server": "docs", "tool": "resources/read", "arguments": {"uri": "file:///note"}}, {})
+    called = runner.run("mcp_call", {"server": "docs", "tool": "echo", "arguments": {"text": "hello"}}, {})
+
+    assert json.loads(tools.content)["tools"][0]["name"] == "echo"
+    assert json.loads(resource.content)["contents"][0]["text"] == "resource text"
+    assert json.loads(called.content)["content"][0]["text"] == "hello"
+    assert mcp.calls == [
+        ("tools/list", "docs"),
+        ("resources/read", "docs", "file:///note"),
+        ("tools/call", "docs", "echo", {"text": "hello"}),
+    ]
+
+
+def test_mcp_resource_read_requires_uri(tmp_path) -> None:
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng(), RecordingMcp())  # type: ignore[arg-type]
+
+    result = runner.run("mcp_call", {"server": "docs", "tool": "resources/read", "arguments": {}}, {})
+
+    assert json.loads(result.content)["ok"] is False
+    assert "arguments.uri" in result.content
 
 
 def test_mcp_call_blocks_minecraft_write_operations_before_transport(tmp_path) -> None:
