@@ -611,6 +611,20 @@ def test_memory_tools_tolerate_invalid_numeric_args(tmp_path) -> None:
     assert "base near spawn" in searched.content
 
 
+def test_memory_tools_reject_empty_required_text(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    written = runner.run("memory_write", {"event_type": "note", "content": "   "}, turn)
+    searched = runner.run("memory_search", {"query": "   "}, turn)
+
+    assert '"ok": false' in written.content
+    assert "content is required" in written.content
+    assert '"ok": false' in searched.content
+    assert "query is required" in searched.content
+    assert runner.memory.search("player-1", "note", limit=5) == []
+
+
 def test_mcp_call_is_explicitly_unavailable_without_config(tmp_path) -> None:
     runner = _runner(tmp_path)
 

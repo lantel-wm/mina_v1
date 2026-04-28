@@ -248,8 +248,10 @@ class ToolRunner:
 
     def _memory_search(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         player_id = _player_id(turn)
-        query = str(args.get("query") or "")
+        query = str(args.get("query") or "").strip()
         limit = _bounded_int(args.get("limit"), fallback=8, minimum=1, maximum=12)
+        if not query:
+            return ToolResult(content=json.dumps({"ok": False, "error": "memory_search query is required"}, ensure_ascii=False))
         results = self.memory.search(player_id, query, limit=limit)
         LOGGER.info("memory_search player=%s query=%s result_count=%s", player_id, query, len(results))
         return ToolResult(content=json.dumps({"ok": True, "results": results}, ensure_ascii=False))
@@ -257,8 +259,10 @@ class ToolRunner:
     def _memory_write(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         player_id = _player_id(turn)
         event_type = str(args.get("event_type") or "note")
-        content = str(args.get("content") or "")
+        content = str(args.get("content") or "").strip()
         importance = _bounded_int(args.get("importance"), fallback=1, minimum=1, maximum=5)
+        if not content:
+            return ToolResult(content=json.dumps({"ok": False, "error": "memory_write content is required"}, ensure_ascii=False))
         self.memory.add_event(player_id, event_type, {"content": content}, importance=importance)
         LOGGER.info("memory_write player=%s event_type=%s importance=%s content=%s", player_id, event_type, importance, content[:500])
         return ToolResult(content=json.dumps({"ok": True}, ensure_ascii=False))
