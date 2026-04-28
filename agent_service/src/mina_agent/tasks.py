@@ -23,6 +23,7 @@ class SkillRuntime:
         self._lock = threading.RLock()
         self._tasks: dict[str, dict[str, Any]] = {}
         self._active_by_player: dict[str, str] = {}
+        self._active_body_task_id: str | None = None
 
     def start_task(self, task_type: str, args: dict[str, Any], turn: dict[str, Any]) -> TurnResponse:
         if task_type not in {"chop_tree", "follow_player"}:
@@ -32,15 +33,22 @@ class SkillRuntime:
         player_id = str(player.get("uuid") or player.get("id") or "unknown")
         with self._lock:
             preamble_actions: list[dict[str, Any]] = []
-            old_task_id = self._active_by_player.get(player_id)
-            if old_task_id and old_task_id in self._tasks:
+            for old_task_id in self._active_task_ids():
                 old_task = self._tasks[old_task_id]
-                if old_task.get("status") == "active":
-                    old_task["status"] = "cancelled"
-                    old_task["stage"] = "cancelled"
-                    old_task["updated_at"] = time.time()
-                    self.memory.record_task_event(old_task_id, "cancelled_by_new_task", {"player_id": player_id, "replacement_type": task_type})
-                    preamble_actions.append(_action(old_task, "body_stop", {}, step="stop:replaced", monitor=None))
+                old_task["status"] = "cancelled"
+                old_task["stage"] = "cancelled"
+                old_task["updated_at"] = time.time()
+                self.memory.record_task_event(
+                    old_task_id,
+                    "cancelled_by_new_task",
+                    {
+                        "player_id": old_task.get("player_id"),
+                        "replacement_type": task_type,
+                        "replacement_player_id": player_id,
+                    },
+                )
+                self._clear_current_if_terminal(old_task)
+                preamble_actions.append(_action(old_task, "body_stop", {}, step="stop:replaced", monitor=None))
 
             task_id = str(uuid.uuid4())
             task = {
@@ -61,6 +69,7 @@ class SkillRuntime:
             }
             self._tasks[task_id] = task
             self._active_by_player[player_id] = task_id
+            self._active_body_task_id = task_id
             self.memory.record_task_event(task_id, "started", {"task_type": task_type, "args": args})
             response = self._advance(task, turn.get("snapshot") or {})
             self._clear_current_if_terminal(task)
@@ -159,7 +168,20 @@ class SkillRuntime:
                 task = self._tasks.get(active)
                 if task is not None and task.get("status") == "active":
                     return task
+        if self._active_body_task_id:
+            task = self._tasks.get(self._active_body_task_id)
+            if task is not None and task.get("status") == "active":
+                return task
         return None
+
+    def _active_task_ids(self) -> list[str]:
+        task_ids: list[str] = []
+        if self._active_body_task_id:
+            task_ids.append(self._active_body_task_id)
+        for task_id, task in self._tasks.items():
+            if task.get("status") == "active" and task_id not in task_ids:
+                task_ids.append(task_id)
+        return task_ids
 
     def _handle_result(self, task: dict[str, Any], result: dict[str, Any]) -> TurnResponse:
         if task.get("status") != "active":
@@ -452,6 +474,8 @@ class SkillRuntime:
         player_id = str(task.get("player_id") or "")
         if self._active_by_player.get(player_id) == task.get("task_id"):
             self._active_by_player.pop(player_id, None)
+        if self._active_body_task_id == task.get("task_id"):
+            self._active_body_task_id = None
 
 
 def _action(

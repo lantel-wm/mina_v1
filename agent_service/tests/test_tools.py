@@ -83,6 +83,12 @@ def _allowed_turn() -> dict:
     }
 
 
+def _allowed_turn_for(player_id: str, name: str) -> dict:
+    turn = _allowed_turn()
+    turn["player"] = {"uuid": player_id, "name": name}
+    return turn
+
+
 def test_model_tool_specs_do_not_expose_low_level_body_tools() -> None:
     names = {spec["function"]["name"] for spec in tool_specs()}
 
@@ -480,6 +486,27 @@ def test_new_body_task_stops_replaced_active_task(tmp_path) -> None:
     assert second.actions[1]["name"] == "body_move_to_position"
 
 
+def test_new_body_task_stops_other_players_active_body_task(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    first_turn = _allowed_turn_for("player-1", "TesterOne")
+    second_turn = _allowed_turn_for("player-2", "TesterTwo")
+
+    first = runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, first_turn)
+    second = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, second_turn)
+    first_task_id = first.actions[0]["task_id"]
+
+    assert first.actions
+    assert len(second.actions) >= 2
+    assert second.actions[0]["name"] == "body_stop"
+    assert second.actions[0]["task_id"] == first_task_id
+    assert second.actions[0]["step_id"] == "stop:replaced"
+    assert second.actions[1]["name"] == "body_move_to_position"
+    assert '"status": "cancelled"' in runner.run("task_status", {"task_id": first_task_id}, first_turn).content
+    assert '"type": "chop_tree"' in runner.run("task_status", {}, first_turn).content
+    active = [task for task in runner.skills.list_tasks() if task["status"] == "active"]
+    assert [task["type"] for task in active] == ["chop_tree"]
+
+
 def test_stop_body_task_cancels_active_task(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()
@@ -491,6 +518,22 @@ def test_stop_body_task_cancels_active_task(tmp_path) -> None:
     assert stopped.actions
     assert stopped.actions[0]["name"] == "body_stop"
     assert '"status": "cancelled"' in status.content
+
+
+def test_stop_body_task_requires_permission(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    allowed_turn = _allowed_turn()
+    denied_turn = _allowed_turn()
+    denied_turn["permissions"] = {"can_use_actions": False}
+
+    started = runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, allowed_turn)
+    stopped = runner.run("stop_body_task", {}, denied_turn)
+    status = runner.run("task_status", {"task_id": started.actions[0]["task_id"]}, allowed_turn)
+
+    assert stopped.actions == []
+    assert '"ok": false' in stopped.content
+    assert "permission denied" in stopped.content
+    assert '"status": "active"' in status.content
 
 
 def test_stop_body_task_reports_error_when_no_task_is_active(tmp_path) -> None:
@@ -540,6 +583,16 @@ def test_task_status_can_use_current_active_task_without_id(tmp_path) -> None:
 
     runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, turn)
     status = runner.run("task_status", {}, turn)
+
+    assert '"type": "follow_player"' in status.content
+    assert '"status": "active"' in status.content
+
+
+def test_task_status_reports_global_body_task_to_other_player(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, _allowed_turn_for("player-1", "TesterOne"))
+    status = runner.run("task_status", {}, _allowed_turn_for("player-2", "TesterTwo"))
 
     assert '"type": "follow_player"' in status.content
     assert '"status": "active"' in status.content

@@ -52,6 +52,7 @@ def main() -> int:
             "model_memory_roundtrip",
             "model_task_status",
             "model_stop_follow",
+            "model_stop_permission_denied",
             "model_permission_denied",
             "model_body_unavailable",
             "offline_body_unavailable",
@@ -111,6 +112,7 @@ def main() -> int:
         "model_memory_roundtrip",
         "model_task_status",
         "model_stop_follow",
+        "model_stop_permission_denied",
         "model_permission_denied",
         "model_body_unavailable",
     }
@@ -168,6 +170,7 @@ def main() -> int:
                 "model_memory_roundtrip",
                 "model_task_status",
                 "model_stop_follow",
+                "model_stop_permission_denied",
                 "model_permission_denied",
                 "model_body_unavailable",
                 "model_private_body_tool",
@@ -245,6 +248,8 @@ def main() -> int:
             run_model_task_status(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_stop_follow":
             run_model_stop_follow(server, output, args.timeout, args.port, args.deepseek_port)
+        elif args.scenario == "model_stop_permission_denied":
+            run_model_stop_permission_denied(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_permission_denied":
             run_model_permission_denied(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_body_unavailable":
@@ -1164,6 +1169,45 @@ def run_model_stop_follow(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 2:
         raise AssertionError(f"fake DeepSeek should have two calls for follow plus stop, got {calls!r}")
+
+
+def run_model_stop_permission_denied(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    assert_body_task_tool_call(sidecar_port, "follow_player")
+    send(proc, "mina-test deny_actions")
+    output.wait_for("Mina test actions denied", timeout=10)
+    send(proc, "mina-test request 停止跟随")
+    output.wait_for("我没有权限停止身体任务", timeout=30)
+    call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "stop_body_task"
+        and item.get("status") == "error"
+        and "permission denied" in str(item.get("result_json") or ""),
+        timeout=10,
+    )
+    if not call:
+        raise AssertionError("model stop permission denial did not record a failed stop_body_task tool call")
+    events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5).get("events", [])
+    if any(isinstance(event, dict) and event.get("action_name") == "body_stop" for event in events):
+        raise AssertionError(f"permission denied stop should not schedule body_stop: {events!r}")
+    tasks = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tasks", timeout=5).get("tasks", [])
+    active_follow = [
+        task for task in tasks
+        if isinstance(task, dict)
+        and task.get("type") == "follow_player"
+        and task.get("status") == "active"
+    ]
+    if not active_follow:
+        raise AssertionError(f"permission denied stop should leave the active follow task visible: {tasks!r}")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 3:
+        raise AssertionError(f"fake DeepSeek should have three calls for follow plus denied stop tool loop, got {calls!r}")
 
 
 def run_model_permission_denied(

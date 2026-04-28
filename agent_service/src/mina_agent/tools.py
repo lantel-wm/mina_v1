@@ -293,6 +293,9 @@ class ToolRunner:
         return ToolResult(content=json.dumps(payload, ensure_ascii=False), actions=response.actions)
 
     def _stop_body_task(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
+        permissions = turn.get("permissions") or {}
+        if not permissions.get("can_use_actions", False):
+            return ToolResult(content=json.dumps({"ok": False, "error": "permission denied"}, ensure_ascii=False))
         response = self.skills.stop_task(str(args.get("task_id") or "") or None, turn)
         ok = bool(response.actions)
         payload: dict[str, Any] = {"ok": ok, "messages": response.messages, "actions": response.actions}

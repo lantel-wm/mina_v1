@@ -45,7 +45,10 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
         finish_reason = "stop"
     elif tool_messages and _is_stop_message(user_message):
         tool_content = str(tool_messages[-1].get("content") or "")
-        content = "我已经停止当前身体任务。" if '"ok": true' in tool_content else "当前没有正在执行的身体任务。"
+        if "permission denied" in tool_content:
+            content = "我没有权限停止身体任务。"
+        else:
+            content = "我已经停止当前身体任务。" if '"ok": true' in tool_content else "当前没有正在执行的身体任务。"
         message = {"role": "assistant", "content": content}
         finish_reason = "stop"
     elif tool_messages and _is_follow_message(user_message):
