@@ -134,6 +134,7 @@ class E2ERunner:
         self.sidecar_output: ProcessOutput | None = None
         self.search_fixture: SearxngFixtureServer | None = None
         self.model_usage: dict[str, int] = {}
+        self.harness_events: dict[str, list[dict[str, Any]]] = {}
 
     def run(self) -> list[RunResult]:
         results: list[RunResult] = []
@@ -180,11 +181,16 @@ class E2ERunner:
         assert self.server is not None
         assert self.server_output is not None
         print(f"[mina-e2e] scenario start: {scenario.name}")
-        send(self.server, f"mina-test fixture reset {scenario.fixture}")
-        self.server_output.wait_for(f"Mina test fixture {scenario.fixture} reset complete", timeout=30)
-        poll_command(
-            self.server,
-            self.server_output,
+        self._record_harness_event(scenario.name, "scenario_start", {"fixture": scenario.fixture})
+        self._send_server_command(scenario.name, f"mina-test fixture reset {scenario.fixture}")
+        self._wait_server_output(
+            scenario.name,
+            [f"Mina test fixture {scenario.fixture} reset complete"],
+            timeout=30,
+            context="fixture_reset",
+        )
+        self._poll_server_command(
+            scenario.name,
             "mina-test ready",
             success="Mina test ready",
             pending=["Mina test not ready"],
@@ -192,13 +198,28 @@ class E2ERunner:
         )
         self._cleanup_active_body_task(scenario.name)
         for step in scenario.steps:
-            self._run_step(step_kind=step.kind, value=step.value, request_id=step.request_id, wait_for=step.wait_for, timeout=step.timeout)
+            self._run_step(
+                scenario_name=scenario.name,
+                step_kind=step.kind,
+                value=step.value,
+                request_id=step.request_id,
+                wait_for=step.wait_for,
+                timeout=step.timeout,
+            )
         for assertion in scenario.world_asserts:
-            self._run_step(step_kind="assert", value=assertion, request_id="", wait_for=[], timeout=min(scenario.timeout, self.timeout))
+            self._run_step(
+                scenario_name=scenario.name,
+                step_kind="assert",
+                value=assertion,
+                request_id="",
+                wait_for=[],
+                timeout=min(scenario.timeout, self.timeout),
+            )
         self._assert_tools(scenario)
         self._assert_actions(scenario)
         self._assert_model_calls(scenario)
         self._assert_response_contains(scenario)
+        self._record_harness_event(scenario.name, "scenario_passed", {})
         self._write_scenario_artifacts(scenario)
         print(f"[mina-e2e] scenario passed: {scenario.name}")
 
@@ -206,34 +227,57 @@ class E2ERunner:
         assert self.server is not None
         assert self.server_output is not None
         request_id = "e2e-cleanup-" + scenario_name.replace("_", "-")
-        send(self.server, f"mina-test request_with_id {request_id} 停止")
-        found = self.server_output.wait_for_any(
-            ["我已经停止当前身体任务", "当前没有正在执行的身体任务", "我没有权限停止身体任务"],
+        self._send_server_command(scenario_name, f"mina-test request_with_id {request_id} 停止")
+        response_line = self._wait_request_response(
+            scenario_name,
+            request_id,
             timeout=30,
+            context="cleanup",
+        )
+        expected = ["我已经停止当前身体任务", "当前没有正在执行的身体任务", "我没有权限停止身体任务"]
+        found = next((text for text in expected if text in response_line), "")
+        self._record_harness_event(
+            scenario_name,
+            "server_output_match",
+            {
+                "context": "cleanup",
+                "expected": expected,
+                "found": found,
+                "timeout_seconds": 30,
+            },
         )
         if not found:
             raise TimeoutError(f"{scenario_name}: scenario cleanup did not stop or confirm empty body task state")
 
-    def _run_step(self, step_kind: str, value: str, request_id: str, wait_for: list[str], timeout: float) -> None:
+    def _run_step(self, scenario_name: str, step_kind: str, value: str, request_id: str, wait_for: list[str], timeout: float) -> None:
         assert self.server is not None
         assert self.server_output is not None
         if step_kind == "request":
             if not request_id:
                 raise ValueError("request steps require request_id")
-            send(self.server, f"mina-test request_with_id {request_id} {value}")
+            self._send_server_command(scenario_name, f"mina-test request_with_id {request_id} {value}")
+            response_line = self._wait_request_response(
+                scenario_name,
+                request_id,
+                timeout=timeout,
+                context="request_response",
+            )
         elif step_kind == "world_mutate":
-            send(self.server, f"mina-test world mutate {value}")
+            self._send_server_command(scenario_name, f"mina-test world mutate {value}")
+            response_line = ""
         elif step_kind == "actor_spawn":
-            send(self.server, f"mina-test actor spawn {value}")
+            self._send_server_command(scenario_name, f"mina-test actor spawn {value}")
+            response_line = ""
         elif step_kind == "actor_leave":
-            send(self.server, f"mina-test actor leave {value}")
+            self._send_server_command(scenario_name, f"mina-test actor leave {value}")
+            response_line = ""
         elif step_kind == "actor_tp":
             actor, _, position = value.partition(" ")
-            send(self.server, f"mina-test actor tp {actor} {position}")
+            self._send_server_command(scenario_name, f"mina-test actor tp {actor} {position}")
+            response_line = ""
         elif step_kind == "assert":
-            poll_command(
-                self.server,
-                self.server_output,
+            self._poll_server_command(
+                scenario_name,
                 f"mina-test assert {value}",
                 success=f"Mina test {value} passed",
                 pending=[f"Mina test {value} failed"],
@@ -244,9 +288,110 @@ class E2ERunner:
         else:
             raise ValueError(f"unknown scenario step kind: {step_kind}")
         if wait_for:
-            found = self.server_output.wait_for_any(wait_for, timeout=timeout)
+            found = next((text for text in wait_for if text in response_line), "")
+            if found:
+                self._record_harness_event(
+                    scenario_name,
+                    "server_output_match",
+                    {
+                        "context": step_kind,
+                        "expected": wait_for,
+                        "found": found,
+                        "timeout_seconds": timeout,
+                    },
+                )
+            else:
+                found = self._wait_server_output(scenario_name, wait_for, timeout=timeout, context=step_kind)
             if not found:
                 raise TimeoutError(f"step {step_kind} did not emit one of {wait_for!r}")
+
+    def _send_server_command(self, scenario_name: str, command: str) -> None:
+        assert self.server is not None
+        send(self.server, command)
+        self._record_harness_event(scenario_name, "server_command", {"command": command})
+
+    def _wait_server_output(self, scenario_name: str, texts: list[str], timeout: float, context: str) -> str:
+        assert self.server_output is not None
+        found = self.server_output.wait_for_any(texts, timeout=timeout)
+        self._record_harness_event(
+            scenario_name,
+            "server_output_match",
+            {
+                "context": context,
+                "expected": texts,
+                "found": found,
+                "timeout_seconds": timeout,
+            },
+        )
+        return found
+
+    def _wait_request_response(self, scenario_name: str, request_id: str, timeout: float, context: str) -> str:
+        assert self.server_output is not None
+        line = self.server_output.wait_for_line(
+            ["mina turn response", f"requestId={request_id}"],
+            timeout=timeout,
+        )
+        if not line:
+            raise TimeoutError(f"{context} did not receive mina turn response for requestId={request_id}")
+        self._record_harness_event(
+            scenario_name,
+            "server_output_line",
+            {
+                "context": context,
+                "required": ["mina turn response", f"requestId={request_id}"],
+                "line": line.strip(),
+                "timeout_seconds": timeout,
+            },
+        )
+        return line
+
+    def _poll_server_command(
+        self,
+        scenario_name: str,
+        command: str,
+        success: str,
+        pending: list[str],
+        timeout: float,
+        interval: float = 1.0,
+    ) -> None:
+        assert self.server_output is not None
+        deadline = time.time() + timeout
+        attempts = 0
+        while time.time() < deadline:
+            attempts += 1
+            self._send_server_command(scenario_name, command)
+            found = self._wait_server_output(
+                scenario_name,
+                [success, *pending],
+                timeout=5,
+                context="poll",
+            )
+            self._record_harness_event(
+                scenario_name,
+                "server_poll_attempt",
+                {
+                    "command": command,
+                    "attempt": attempts,
+                    "found": found,
+                    "success": found == success,
+                },
+            )
+            if found == success:
+                return
+            time.sleep(interval)
+        raise TimeoutError(f"{command} did not report {success!r} before timeout")
+
+    def _record_harness_event(self, scenario_name: str, event_type: str, payload: dict[str, Any]) -> None:
+        events = self.harness_events.setdefault(scenario_name, [])
+        events.append(
+            {
+                "trace_id": scenario_name,
+                "event_type": event_type,
+                "source": "e2e_harness",
+                "payload": payload,
+                "created_at": time.time(),
+            }
+        )
 
     def _assert_tools(self, scenario: Scenario) -> None:
         request_ids = scenario.request_ids()
@@ -348,6 +493,8 @@ class E2ERunner:
             trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
             traces[request_id] = trace
             records.extend(trace_records(request_id, trace))
+        records.extend(self.harness_events.get(scenario.name, []))
+        records.sort(key=lambda item: float(item.get("created_at") or 0))
         (scenario_dir / "trace.jsonl").write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
             encoding="utf-8",
@@ -424,6 +571,21 @@ class ProcessOutput:
             for text in texts:
                 if text in line:
                     return text
+        return ""
+
+    def wait_for_line(self, required_texts: list[str], timeout: float) -> str:
+        deadline = time.time() + timeout
+        buffered: list[str] = []
+        while time.time() < deadline:
+            try:
+                line = self.lines.get(timeout=0.25)
+            except queue.Empty:
+                if self.proc.poll() is not None:
+                    raise RuntimeError("process exited while waiting for output:\n" + "".join(buffered[-80:]))
+                continue
+            buffered.append(line)
+            if all(text in line for text in required_texts):
+                return line
         return ""
 
     def _read(self) -> None:
@@ -656,25 +818,6 @@ def send(proc: subprocess.Popen[str], command: str) -> None:
         raise RuntimeError("process stdin is unavailable")
     proc.stdin.write(command + "\n")
     proc.stdin.flush()
-
-
-def poll_command(
-    proc: subprocess.Popen[str],
-    output: ProcessOutput,
-    command: str,
-    success: str,
-    pending: list[str],
-    timeout: float,
-    interval: float = 1.0,
-) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        send(proc, command)
-        found = output.wait_for_any([success, *pending], timeout=5)
-        if found == success:
-            return
-        time.sleep(interval)
-    raise TimeoutError(f"{command} did not report {success!r} before timeout")
 
 
 def wait_until(predicate, timeout: float, interval: float = 0.5) -> bool:  # noqa: ANN001

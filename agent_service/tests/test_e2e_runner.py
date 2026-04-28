@@ -6,7 +6,7 @@ import urllib.request
 import pytest
 
 from mina_agent.e2e.manifest import Scenario, scenario_from_dict
-from mina_agent.e2e.runner import SearxngFixtureServer, main, require_live_deepseek_env
+from mina_agent.e2e.runner import E2ERunner, SearxngFixtureServer, main, require_live_deepseek_env
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
 
 
@@ -105,3 +105,22 @@ def test_test_searxng_server_returns_deterministic_injection_fixture() -> None:
     contents = "\n".join(item["content"] for item in payload["results"])
     assert "MinaE2E-Diamond-Y=-59" in contents
     assert "body_chain" in contents
+
+
+def test_runner_records_harness_events_for_trace_artifacts(tmp_path) -> None:
+    runner = E2ERunner(
+        scenarios=[],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+
+    runner._record_harness_event("sample", "server_command", {"command": "mina-test ready"})
+    runner._record_harness_event("sample", "server_output_match", {"found": "Mina test ready"})
+
+    records = runner.harness_events["sample"]
+    assert [record["event_type"] for record in records] == ["server_command", "server_output_match"]
+    assert all(record["source"] == "e2e_harness" for record in records)
+    assert records[0]["payload"]["command"] == "mina-test ready"
