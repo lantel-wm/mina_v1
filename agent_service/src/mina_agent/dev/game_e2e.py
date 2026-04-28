@@ -531,6 +531,13 @@ def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout
     if found != "Mina test follow_player failed":
         raise AssertionError("follow task still appears active after stop")
     if sidecar_port is not None:
+        call = wait_tool_call(
+            sidecar_port,
+            lambda item: item.get("tool_name") == "stop_body_task" and item.get("status") == "ok",
+            timeout=10,
+        )
+        if not call:
+            raise AssertionError("stop_follow did not record a stop_body_task tool call")
         events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5).get("events", [])
         follow_ups = [
             event for event in events

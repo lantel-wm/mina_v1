@@ -232,6 +232,27 @@ def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
     assert response["debug"]["offline_fallback"] is True
 
 
+def test_harness_offline_fallback_records_status_and_stop_tool_calls(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {"body_state": {"online": True}},
+    }
+
+    harness.run_turn({"request_id": "req-start", "message": "跟随我", **base_turn})
+    status = harness.run_turn({"request_id": "req-status", "message": "状态", **base_turn})
+    stopped = harness.run_turn({"request_id": "req-stop", "message": "停止跟随", **base_turn})
+
+    assert "当前任务：follow_player" in status["messages"][0]["content"]
+    assert "我已经停止当前身体任务" in stopped["messages"][0]["content"]
+    assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-status", limit=10)] == ["task_status"]
+    assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-stop", limit=10)] == ["stop_body_task"]
+
+
 def test_harness_offline_fallback_can_schedule_read_only_command(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

@@ -195,7 +195,10 @@ class AgentHarness:
             return None
 
         if _contains_any(normalized, {"状态", "status", "进度"}):
-            status = self.tools.skills.task_status(None, turn)
+            args: dict[str, Any] = {}
+            result = self.tools.run("task_status", args, turn)
+            self._record_tool_call(turn, "task_status", args, result, [])
+            status = _json_object(result.content)
             if status.get("ok") is False:
                 return TurnResponse(messages=[{"target": "requester", "content": "当前没有正在执行的身体任务。"}])
             return TurnResponse(
@@ -209,9 +212,7 @@ class AgentHarness:
             )
 
         if _contains_any(normalized, {"停止", "stop", "取消"}):
-            response = self.tools.skills.stop_task(None, turn)
-            response.debug["offline_fallback"] = True
-            return response
+            return self._offline_tool_response("stop_body_task", {}, turn, "我已经停止当前身体任务。")
 
         if _offline_follow_intent(normalized):
             return self._offline_tool_response(
