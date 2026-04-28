@@ -35,6 +35,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
                 + "\n".join(f"{row['role']}: {row['content']}" for row in recent),
             }
         )
+    relevant = build_relevant_memory_summary(turn, memory, player_id)
+    if relevant:
+        messages.append({"role": "system", "content": relevant})
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
     target_summary = build_target_summary(snapshot)
     if target_summary:
@@ -44,6 +47,35 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
         user_content = "This is a companion tick. If there is no important, timely reason to speak, respond with an empty string."
     messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def build_relevant_memory_summary(turn: dict[str, Any], memory: MemoryStore, player_id: str) -> str:
+    message = str(turn.get("message") or "").strip()
+    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
+    active_task = snapshot.get("active_task") if isinstance(snapshot.get("active_task"), dict) else {}
+    skill_names = {skill for skill in (_intent_skill(message), str(active_task.get("type") or "")) if skill}
+    query = " ".join(part for part in [message, *sorted(skill_names)] if part).strip()
+    lines: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    if query:
+        for item in memory.search(player_id, query, limit=6):
+            kind = str(item.get("kind") or "memory")
+            label = str(item.get("label") or "")
+            content = _compact_memory_content(item.get("content"))
+            key = (kind, label, content)
+            if content and key not in seen:
+                seen.add(key)
+                lines.append(f"- {kind}/{label}: {content}")
+    for skill_name in sorted(skill_names):
+        for reflection in memory.recent_skill_reflections(skill_name, limit=3):
+            content = _compact_memory_content(reflection.get("reflection"))
+            key = ("skill_reflection", skill_name, content)
+            if content and key not in seen:
+                seen.add(key)
+                lines.append(f"- skill_reflection/{skill_name}: {content}")
+    if not lines:
+        return ""
+    return "Relevant memory and skill reflections:\n" + "\n".join(lines[:8])
 
 
 def build_target_summary(snapshot: dict[str, Any]) -> str:
@@ -107,3 +139,23 @@ def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
             blocks.extend(_flatten_blocks(nested))
         return blocks
     return []
+
+
+def _intent_skill(message: str) -> str:
+    normalized = message.lower()
+    if any(token in normalized for token in ("砍树", "砍木头", "伐木", "chop tree", "cut tree", "chop wood")):
+        return "chop_tree"
+    if any(token in normalized for token in ("跟随", "跟着", "follow")):
+        return "follow_player"
+    return ""
+
+
+def _compact_memory_content(value: Any, limit: int = 260) -> str:
+    if isinstance(value, str):
+        content = value
+    else:
+        content = json.dumps(value, ensure_ascii=False)
+    content = " ".join(content.split())
+    if len(content) <= limit:
+        return content
+    return content[: limit - 14].rstrip() + "...<truncated>"
