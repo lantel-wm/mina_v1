@@ -897,21 +897,25 @@ def test_harness_offline_fallback_can_return_search_results(tmp_path) -> None:
     tools = ToolRunner(memory, FakeSearch())
     harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
 
-    response = harness.run_turn(
-        {
-            "request_id": "req-offline-search",
-            "trigger": "command",
-            "message": "查资料 diamond ore",
-            "player": {"uuid": "player-1", "name": "Tester"},
-            "permissions": {"can_use_actions": False},
-            "snapshot": {},
-        }
-    )
+    for request_id, message in [
+        ("req-offline-search", "查资料 diamond ore"),
+        ("req-offline-natural-search", "帮我联网查一下 diamond ore"),
+    ]:
+        response = harness.run_turn(
+            {
+                "request_id": request_id,
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": False},
+                "snapshot": {},
+            }
+        )
 
-    assert "搜索结果" in response["messages"][0]["content"]
-    assert "Minecraft Wiki" in response["messages"][0]["content"]
-    calls = memory.recent_tool_calls(request_id="req-offline-search", limit=10)
-    assert [call["tool_name"] for call in calls] == ["web_search"]
+        assert "搜索结果" in response["messages"][0]["content"]
+        assert "Minecraft Wiki" in response["messages"][0]["content"]
+        calls = memory.recent_tool_calls(request_id=request_id, limit=10)
+        assert [call["tool_name"] for call in calls] == ["web_search"]
 
 
 def test_harness_offline_fallback_still_reports_missing_key_for_complex_request(tmp_path) -> None:

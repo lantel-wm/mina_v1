@@ -295,7 +295,7 @@ class AgentHarness:
                 "我会执行这个只读查询。",
             )
 
-        if _contains_any(normalized, {"查资料", "搜索", "search", "wiki"}):
+        if _contains_any(normalized, {"查资料", "查一下", "查找", "联网", "搜索", "search", "wiki"}):
             args = {"query": message, "max_results": 3}
             result = self.tools.run("web_search", args, turn)
             self._record_tool_call(turn, "web_search", args, result, [])
