@@ -21,7 +21,11 @@ KOTLIN_VERSION = "1.13.11+kotlin.2.3.21"
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Mina headless game E2E scenarios.")
-    parser.add_argument("--scenario", default="chop_tree", choices=["chop_tree", "follow_player", "read_only_command"])
+    parser.add_argument(
+        "--scenario",
+        default="chop_tree",
+        choices=["chop_tree", "follow_player", "read_only_command", "stop_follow", "replace_follow_with_chop"],
+    )
     parser.add_argument("--sidecar", default="scripted", choices=["scripted"])
     parser.add_argument("--port", type=int, default=18911)
     parser.add_argument("--server-port", type=int, default=25566)
@@ -41,7 +45,7 @@ def main() -> int:
         output = OutputReader(server)
         output.start()
         output.wait_for("Done", timeout=args.timeout)
-        setup_scenario = "follow_player" if args.scenario == "read_only_command" else args.scenario
+        setup_scenario = "chop_tree" if args.scenario == "replace_follow_with_chop" else "follow_player" if args.scenario in {"read_only_command", "stop_follow"} else args.scenario
         send(server, f"mina-test setup {setup_scenario}")
         output.wait_for(f"Mina test {setup_scenario} setup complete", timeout=30)
         poll_command(
@@ -58,6 +62,10 @@ def main() -> int:
             run_follow_player(server, output, args.timeout)
         elif args.scenario == "read_only_command":
             run_read_only_command(server, output)
+        elif args.scenario == "stop_follow":
+            run_stop_follow(server, output, args.timeout)
+        elif args.scenario == "replace_follow_with_chop":
+            run_replace_follow_with_chop(server, output, args.timeout)
         write_trace_summary(args.port)
         return 0
     finally:
@@ -278,6 +286,38 @@ def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader") -
     send(proc, "mina-test request 查询时间")
     output.wait_for("我来查询当前游戏时间", timeout=30)
     output.wait_for("The time is", timeout=30)
+
+
+def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    output.wait_for("mina monitor start", timeout=30)
+    send(proc, "mina-test request 停止跟随")
+    output.wait_for("我已经停止当前身体任务", timeout=30)
+    output.wait_for("mina action start name=body_stop", timeout=30)
+    send(proc, "mina-test move_requester_far")
+    output.wait_for("Mina test requester moved far", timeout=10)
+    time.sleep(min(6.0, max(1.0, timeout / 20)))
+    send(proc, "mina-test assert follow_player")
+    found = output.wait_for_any(["Mina test follow_player failed", "Mina test follow_player passed"], timeout=10)
+    if found != "Mina test follow_player failed":
+        raise AssertionError("follow task still appears active after stop")
+
+
+def run_replace_follow_with_chop(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    send(proc, "mina-test request 砍树")
+    output.wait_for("mina action start name=body_stop", timeout=30)
+    poll_command(
+        proc,
+        output,
+        "mina-test assert chop_tree",
+        success="Mina test chop_tree passed",
+        pending=["Mina test chop_tree failed"],
+        timeout=timeout,
+        interval=2.0,
+    )
 
 
 def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:

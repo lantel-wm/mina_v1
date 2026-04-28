@@ -96,6 +96,33 @@ def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) ->
     assert action["step_id"].startswith("follow:")
 
 
+def test_new_body_task_stops_replaced_active_task(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    first = runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, turn)
+    second = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+
+    assert first.actions
+    assert len(second.actions) >= 2
+    assert second.actions[0]["name"] == "body_stop"
+    assert second.actions[0]["step_id"] == "stop:replaced"
+    assert second.actions[1]["name"] == "body_move_to_position"
+
+
+def test_stop_body_task_cancels_active_task(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, turn)
+    stopped = runner.run("stop_body_task", {"task_id": ""}, turn)
+    status = runner.run("task_status", {"task_id": started.actions[0]["task_id"]}, turn)
+
+    assert stopped.actions
+    assert stopped.actions[0]["name"] == "body_stop"
+    assert '"status": "cancelled"' in status.content
+
+
 def test_low_level_body_tool_is_rejected(tmp_path) -> None:
     runner = _runner(tmp_path)
 

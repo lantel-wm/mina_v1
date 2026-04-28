@@ -33,6 +33,9 @@ def turn(payload: dict[str, Any]) -> dict[str, Any]:
     player = payload.get("player") if isinstance(payload.get("player"), dict) else {}
     memory.upsert_player(player)
     message = str(payload.get("message") or "").lower()
+    if "停止" in message or "stop" in message or "取消" in message:
+        response = skills.stop_task(None, payload)
+        return response.to_dict()
     if "时间" in message or "time query" in message:
         return {
             "messages": [{"target": "requester", "content": "我来查询当前游戏时间。"}],

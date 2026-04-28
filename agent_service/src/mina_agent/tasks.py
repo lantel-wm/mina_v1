@@ -31,12 +31,16 @@ class SkillRuntime:
         player = turn.get("player") or {}
         player_id = str(player.get("uuid") or player.get("id") or "unknown")
         with self._lock:
+            preamble_actions: list[dict[str, Any]] = []
             old_task_id = self._active_by_player.get(player_id)
             if old_task_id and old_task_id in self._tasks:
                 old_task = self._tasks[old_task_id]
-                old_task["status"] = "cancelled"
-                old_task["updated_at"] = time.time()
-                self.memory.record_task_event(old_task_id, "cancelled_by_new_task", {"player_id": player_id})
+                if old_task.get("status") == "active":
+                    old_task["status"] = "cancelled"
+                    old_task["stage"] = "cancelled"
+                    old_task["updated_at"] = time.time()
+                    self.memory.record_task_event(old_task_id, "cancelled_by_new_task", {"player_id": player_id, "replacement_type": task_type})
+                    preamble_actions.append(_action(old_task, "body_stop", {}, step="stop:replaced", monitor=None))
 
             task_id = str(uuid.uuid4())
             task = {
@@ -58,6 +62,8 @@ class SkillRuntime:
             self._active_by_player[player_id] = task_id
             self.memory.record_task_event(task_id, "started", {"task_type": task_type, "args": args})
             response = self._advance(task, turn.get("snapshot") or {})
+            if preamble_actions:
+                response.actions = preamble_actions + response.actions
             if not response.messages:
                 if task_type == "follow_player":
                     response.messages.append({"target": "requester", "content": "我开始跟随你，会根据距离变化继续调整。"})
@@ -71,8 +77,11 @@ class SkillRuntime:
             if task is None:
                 return TurnResponse(messages=[{"target": "requester", "content": "当前没有正在执行的身体任务。"}])
             task["status"] = "cancelled"
+            task["stage"] = "cancelled"
             task["updated_at"] = time.time()
             self.memory.record_task_event(task["task_id"], "cancelled", {})
+            if task.get("player_id") in self._active_by_player and self._active_by_player.get(task.get("player_id")) == task["task_id"]:
+                self._active_by_player.pop(task.get("player_id"), None)
             return TurnResponse(
                 messages=[{"target": "requester", "content": "我已经停止当前身体任务。"}],
                 actions=[_action(task, "body_stop", {}, step="stop", monitor=None)],
@@ -146,6 +155,8 @@ class SkillRuntime:
         return None
 
     def _handle_result(self, task: dict[str, Any], result: dict[str, Any]) -> TurnResponse:
+        if task.get("status") != "active":
+            return TurnResponse(debug={"task_status": _public_task(task)})
         status = str(result.get("status") or "")
         monitor = result.get("monitor_result") if isinstance(result.get("monitor_result"), dict) else {}
         monitor_status = str(monitor.get("status") or "")
