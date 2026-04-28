@@ -851,11 +851,37 @@ def test_harness_offline_fallback_can_schedule_read_only_command(tmp_path) -> No
     tools = ToolRunner(memory, FakeSearch())
     harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
 
+    cases = [
+        ("req-offline-time", "查询时间", "time query daytime"),
+        ("req-offline-seed", "世界种子是多少", "seed"),
+        ("req-offline-list", "查询在线玩家列表", "list"),
+    ]
+    for request_id, message, command in cases:
+        response = harness.run_turn(
+            {
+                "request_id": request_id,
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": False},
+                "snapshot": {},
+            }
+        )
+
+        assert response["actions"][0]["name"] == "run_read_only_command"
+        assert response["actions"][0]["args"]["command"] == command
+
+
+def test_harness_offline_fallback_can_schedule_weather_query(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
     response = harness.run_turn(
         {
-            "request_id": "req-offline-time",
+            "request_id": "req-offline-weather",
             "trigger": "command",
-            "message": "查询时间",
+            "message": "查询当前天气",
             "player": {"uuid": "player-1", "name": "Tester"},
             "permissions": {"can_use_actions": False},
             "snapshot": {},
@@ -863,7 +889,7 @@ def test_harness_offline_fallback_can_schedule_read_only_command(tmp_path) -> No
     )
 
     assert response["actions"][0]["name"] == "run_read_only_command"
-    assert response["actions"][0]["args"]["command"] == "time query daytime"
+    assert response["actions"][0]["args"]["command"] == "weather query"
 
 
 def test_harness_offline_fallback_can_return_search_results(tmp_path) -> None:
