@@ -53,6 +53,9 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
         content = "我没有权限控制身体任务。" if "permission denied" in tool_content else "身体任务没有成功启动。"
         message = {"role": "assistant", "content": content}
         finish_reason = "stop"
+    elif tool_messages and _is_banned_command_message(user_message):
+        message = {"role": "assistant", "content": "拒绝执行写命令。"}
+        finish_reason = "stop"
     elif tool_messages:
         message = {"role": "assistant", "content": "错误：action barrier 未生效。"}
         finish_reason = "stop"
@@ -115,6 +118,22 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
                     "function": {
                         "name": "start_body_task",
                         "arguments": '{"task_type":"chop_tree","target_hint":"nearby tree"}',
+                    },
+                }
+            ],
+        }
+        finish_reason = "tool_calls"
+    elif _is_banned_command_message(user_message):
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-banned-command",
+                    "type": "function",
+                    "function": {
+                        "name": "run_read_only_command",
+                        "arguments": '{"command":"setblock 2 80 0 minecraft:air"}',
                     },
                 }
             ],
@@ -195,3 +214,8 @@ def _is_follow_message(message: str) -> bool:
 def _is_chop_message(message: str) -> bool:
     normalized = message.lower()
     return "砍树" in message or "chop" in normalized or "tree" in normalized
+
+
+def _is_banned_command_message(message: str) -> bool:
+    normalized = message.lower()
+    return "作弊" in message or "写命令" in message or "setblock" in normalized

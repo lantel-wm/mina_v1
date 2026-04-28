@@ -31,6 +31,7 @@ def main() -> int:
             "read_only_command",
             "knowledge_query",
             "banned_command",
+            "model_banned_command",
             "task_status",
             "stop_follow",
             "replace_follow_with_chop",
@@ -86,6 +87,7 @@ def main() -> int:
     fake_deepseek_scenarios = {
         "model_chop_tree",
         "model_replace_follow_with_chop",
+        "model_banned_command",
         "model_action_barrier",
         "model_read_only_command",
         "model_knowledge_query",
@@ -123,6 +125,7 @@ def main() -> int:
             in {
                 "replace_follow_with_chop",
                 "banned_command",
+                "model_banned_command",
                 "model_chop_tree",
                 "model_replace_follow_with_chop",
                 "offline_chop_tree",
@@ -172,6 +175,8 @@ def main() -> int:
             run_knowledge_query(server, output)
         elif args.scenario == "banned_command":
             run_banned_command(server, output)
+        elif args.scenario == "model_banned_command":
+            run_model_banned_command(server, output, args.port, args.deepseek_port)
         elif args.scenario == "task_status":
             run_task_status(server, output)
         elif args.scenario == "stop_follow":
@@ -553,6 +558,41 @@ def run_banned_command(proc: subprocess.Popen[str], output: "OutputReader") -> N
         timeout=30,
         interval=1.0,
     )
+
+
+def run_model_banned_command(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    send(proc, "mina-test request 尝试作弊 setblock")
+    output.wait_for("拒绝执行写命令", timeout=30)
+    call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "run_read_only_command"
+        and item.get("status") == "error"
+        and "setblock 2 80 0 minecraft:air" in str(item.get("args_json") or "")
+        and "Only read-only commands are allowed" in str(item.get("result_json") or ""),
+        timeout=10,
+    )
+    if not call:
+        raise AssertionError("model banned command did not record a rejected run_read_only_command tool call")
+    events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5)
+    if events.get("events"):
+        raise AssertionError(f"model banned command should not schedule Fabric actions: {events!r}")
+    poll_command(
+        proc,
+        output,
+        "mina-test assert target_log_present",
+        success="Mina test target_log_present passed",
+        pending=["Mina test target_log_present failed"],
+        timeout=30,
+        interval=1.0,
+    )
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 2:
+        raise AssertionError(f"fake DeepSeek should have two calls for rejected command tool loop, got {calls!r}")
 
 
 def run_task_status(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int | None = None) -> None:
