@@ -273,6 +273,82 @@ def test_stale_step_result_without_action_id_does_not_advance_active_task(tmp_pa
     assert '"active_step_id": "attack:0"' in status.content
 
 
+def test_chop_tree_reselects_when_target_disappears_before_attack(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    replacement = {
+        "block": "minecraft:spruce_log",
+        "category": "log",
+        "x": 4,
+        "y": 80,
+        "z": 0,
+        "center_x": 4.5,
+        "center_y": 80.5,
+        "center_z": 0.5,
+        "distance": 3.0,
+        "approach_x": 4.5,
+        "approach_y": 80,
+        "approach_z": -0.5,
+    }
+    advanced = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": [replacement]}},
+                }
+            ]
+        }
+    )
+
+    assert advanced.actions
+    assert advanced.actions[0]["name"] == "body_move_to_position"
+    assert advanced.actions[0]["step_id"] == "move:1"
+    assert advanced.actions[0]["args"]["x"] == 4.5
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"last_error": "target disappeared before attack"' in status.content
+    assert '"x": 4' in status.content
+
+
+def test_chop_tree_completes_when_target_disappears_and_no_replacement_exists(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    advanced = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": []}},
+                }
+            ]
+        }
+    )
+
+    assert advanced.actions == []
+    assert "目标原木已经不存在" in advanced.messages[0]["content"]
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"status": "completed"' in status.content
+    assert '"last_error": "target disappeared before attack"' in status.content
+
+
 def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) -> None:
     runner = _runner(tmp_path)
 

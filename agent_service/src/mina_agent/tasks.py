@@ -311,6 +311,36 @@ class SkillRuntime:
 
         if task.get("stage") == "attack":
             target = task.get("target") or {}
+            current_target = _find_block(snapshot, target)
+            if current_target is None:
+                replacement = _choose_log_target(snapshot)
+                self.memory.record_task_event(
+                    task["task_id"],
+                    "target_disappeared",
+                    {"old_target": target, "replacement": replacement},
+                )
+                if replacement is None:
+                    task["status"] = "completed"
+                    task["stage"] = "done"
+                    task["last_error"] = "target disappeared before attack"
+                    task["updated_at"] = time.time()
+                    self._clear_current_if_terminal(task)
+                    self.memory.add_skill_reflection(
+                        "chop_tree",
+                        "If the selected log disappears before attack and no other log is available, stop without attacking empty space.",
+                        {"task_id": task["task_id"], "target": target},
+                    )
+                    return TurnResponse(
+                        messages=[{"target": "requester", "content": "目标原木已经不存在，附近没有其他可砍的原木，我先停下。"}],
+                        debug={"task_status": _public_task(task)},
+                    )
+                task["attempts"] = int(task.get("attempts") or 0) + 1
+                task["target"] = replacement
+                task["last_error"] = "target disappeared before attack"
+                task["stage"] = "move"
+                return self._advance(task, snapshot)
+            target = current_target
+            task["target"] = target
             action = _action(
                 task,
                 "body_chain",
@@ -459,6 +489,21 @@ def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     logs.sort(key=lambda block: float(block.get("distance") or 9999))
     for block in logs:
         if all(key in block for key in ("approach_x", "approach_y", "approach_z")):
+            return dict(block)
+    return None
+
+
+def _find_block(snapshot: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
+    if not all(key in target for key in ("x", "y", "z")):
+        return None
+    target_pos = (int(target["x"]), int(target["y"]), int(target["z"]))
+    expected_block = str(target.get("block") or "")
+    expected_category = str(target.get("category") or "log")
+    for block in _flatten_blocks(snapshot.get("nearby_blocks")):
+        if not isinstance(block, dict) or not all(key in block for key in ("x", "y", "z")):
+            continue
+        block_pos = (int(block["x"]), int(block["y"]), int(block["z"]))
+        if block_pos == target_pos and block.get("category") == expected_category and (not expected_block or block.get("block") == expected_block):
             return dict(block)
     return None
 
