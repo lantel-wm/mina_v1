@@ -735,3 +735,19 @@ def test_mcp_call_blocks_short_and_namespaced_minecraft_write_commands(tmp_path)
     assert "Minecraft write operations" in exact.content
     assert "Minecraft write operations" in namespaced.content
     assert "Minecraft write operations" in embedded.content
+
+
+def test_mcp_call_blocks_broad_minecraft_mutation_commands(tmp_path) -> None:
+    config = tmp_path / "mcp.json"
+    config.write_text('{"servers": {"local": {"transport": "http", "url": "http://127.0.0.1:1"}}}', encoding="utf-8")
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng(), McpRegistry(config))
+
+    execute = runner.run("mcp_call", {"server": "local", "tool": "execute", "arguments": {"run": "time set day"}}, {})
+    gamerule = runner.run("mcp_call", {"server": "local", "tool": "admin", "arguments": {"command": "/gamerule doDaylightCycle false"}}, {})
+    effect = runner.run("mcp_call", {"server": "local", "tool": "minecraft:effect", "arguments": {"target": "mina"}}, {})
+    scoreboard = runner.run("mcp_call", {"server": "local", "tool": "scoreboard", "arguments": {"objective": "test"}}, {})
+
+    assert "Minecraft write operations" in execute.content
+    assert "Minecraft write operations" in gamerule.content
+    assert "Minecraft write operations" in effect.content
+    assert "Minecraft write operations" in scoreboard.content
