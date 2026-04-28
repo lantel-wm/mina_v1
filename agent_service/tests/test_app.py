@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 
 from mina_agent.app import create_app
 from mina_agent.config import Settings
+from mina_agent.memory import MemoryStore
 
 
 def test_app_records_action_events_for_read_only_command(tmp_path) -> None:
@@ -194,6 +196,41 @@ def test_app_exposes_model_call_and_trace_endpoints(tmp_path) -> None:
     assert trace["model_calls"] == []
     assert trace["tool_calls"] == []
     assert trace["action_events"] == []
+
+
+def test_trace_endpoint_filters_old_task_history(tmp_path) -> None:
+    db_path = tmp_path / "mina.sqlite3"
+    app = create_app(Settings(api_key="", db_path=db_path, log_path=tmp_path / "mina.log"))
+    action_results = _route(app, "/v1/action-results")
+    traces = _route(app, "/v1/traces/{trace_id}")
+    memory = MemoryStore(db_path)
+    task_id = "task-from-previous-request"
+
+    memory.record_task_event(task_id, "started", {"request_id": "old"})
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("update task_events set created_at = created_at - 60 where task_id = ?", (task_id,))
+
+    asyncio.run(
+        action_results(
+            {
+                "request_id": "req-replacement",
+                "action_results": [
+                    {
+                        "action_id": "stop-1",
+                        "task_id": task_id,
+                        "step_id": "stop:replaced",
+                        "name": "body_stop",
+                        "status": "success",
+                    }
+                ],
+            }
+        )
+    )
+    memory.record_task_event(task_id, "cancelled_by_new_task", {"request_id": "req-replacement"})
+
+    events = traces(trace_id="req-replacement")["task_events"]
+
+    assert [event["event_type"] for event in events] == ["cancelled_by_new_task"]
 
 
 def _route(app, path: str):  # noqa: ANN001, ANN202

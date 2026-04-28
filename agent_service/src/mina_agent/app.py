@@ -106,7 +106,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/traces/{trace_id}")
     def trace(trace_id: str) -> dict[str, Any]:
+        model_calls = memory.recent_model_calls(request_id=trace_id, limit=500)
+        tool_calls = memory.recent_tool_calls(request_id=trace_id, limit=500)
         action_events = memory.recent_action_events(request_id=trace_id, limit=500)
+        trace_start = _trace_start(model_calls, tool_calls, action_events)
         task_ids = {
             str(event.get("task_id") or "")
             for event in action_events
@@ -114,12 +117,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         task_events = []
         for task_id in sorted(task_ids):
-            task_events.extend(memory.recent_task_events(task_id, limit=200))
+            for event in memory.recent_task_events(task_id, limit=200):
+                if _event_created_at(event) >= trace_start - 5.0:
+                    task_events.append(event)
         return {
             "ok": True,
             "trace_id": trace_id,
-            "model_calls": memory.recent_model_calls(request_id=trace_id, limit=500),
-            "tool_calls": memory.recent_tool_calls(request_id=trace_id, limit=500),
+            "model_calls": model_calls,
+            "tool_calls": tool_calls,
             "action_events": action_events,
             "task_events": task_events,
             "tasks": skills.list_tasks(),
@@ -141,3 +146,21 @@ def _action_result_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if single.get("action_id") or single.get("task_id") or single.get("name"):
         return [single]
     return []
+
+
+def _trace_start(*event_groups: list[dict[str, Any]]) -> float:
+    created_at = [
+        value
+        for events in event_groups
+        for event in events
+        for value in [_event_created_at(event)]
+        if value > 0
+    ]
+    return min(created_at) if created_at else 0.0
+
+
+def _event_created_at(event: dict[str, Any]) -> float:
+    try:
+        return float(event.get("created_at") or 0)
+    except (TypeError, ValueError):
+        return 0.0
