@@ -162,7 +162,26 @@ public final class MinaActionExecutor {
 			MinaMod.LOGGER.info("mina read-only command refused command={}", command);
 			throw new IllegalArgumentException("Only read-only Minecraft commands are allowed.");
 		}
+		if ("weather query".equalsIgnoreCase(normalized)) {
+			reportWeatherQuery(server, requester);
+			return;
+		}
 		runCommand(server, requester, normalized);
+	}
+
+	private void reportWeatherQuery(MinecraftServer server, ServerPlayer requester) {
+		var level = requester == null ? server.overworld() : requester.level();
+		String weather = level.isThundering() ? "thunder" : level.isRaining() ? "rain" : "clear";
+		String output = "Weather: " + weather;
+		CommandExecution execution = new CommandExecution("weather query");
+		execution.addOutput(output);
+		execution.setResult(true, 1);
+		commandLog.get().add(execution);
+		MinaMod.LOGGER.info("mina command output command={} message={}", execution.command(), output);
+		MinaMod.LOGGER.info("mina command callback command={} success={} result={}", execution.command(), true, 1);
+		if (requester != null) {
+			requester.sendSystemMessage(Component.literal("[Mina command] " + output));
+		}
 	}
 
 	private void locateStructure(MinecraftServer server, ServerPlayer requester, String structure) {
