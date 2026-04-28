@@ -148,6 +148,16 @@ public final class MinaActionMonitor {
 					if (actualPos.equals(expectedPos) && (expectedBlock.isBlank() || expectedBlock.equals(actualBlock))) {
 						success = result("success", "body targeted expected block");
 						success.addProperty("actual_block", actualBlock);
+					} else if (booleanValue(monitor, "allow_same_column", false)
+						&& actualPos.getX() == expectedPos.getX()
+						&& actualPos.getZ() == expectedPos.getZ()
+						&& !expectedBlock.isBlank()
+						&& expectedBlock.equals(actualBlock)) {
+						success = result("retarget", "body targeted related block");
+						success.addProperty("actual_x", actualPos.getX());
+						success.addProperty("actual_y", actualPos.getY());
+						success.addProperty("actual_z", actualPos.getZ());
+						success.addProperty("actual_block", actualBlock);
 					}
 				}
 			}
@@ -206,6 +216,13 @@ public final class MinaActionMonitor {
 			return fallback;
 		}
 		return object.get(key).getAsDouble();
+	}
+
+	private static boolean booleanValue(JsonObject object, String key, boolean fallback) {
+		if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
+			return fallback;
+		}
+		return object.get(key).getAsBoolean();
 	}
 
 	private static double round(double value) {

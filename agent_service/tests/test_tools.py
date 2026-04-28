@@ -327,6 +327,84 @@ def test_chop_tree_look_targets_exposed_side_face(tmp_path) -> None:
     assert look["args"] == {"x": 2.5, "y": 80.65, "z": 0.02}
     assert look["monitor"]["type"] == "body_targeted_block"
     assert look["monitor"]["y"] == 80
+    assert look["monitor"]["allow_same_column"] is True
+
+
+def test_chop_tree_retargets_same_column_log_from_look_monitor(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    look = moved.actions[0]
+    retargeted = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": look["id"],
+                    "task_id": look["task_id"],
+                    "step_id": look["step_id"],
+                    "name": look["name"],
+                    "status": "monitor_pending",
+                    "command_success": True,
+                    "monitor_result": {
+                        "status": "retarget",
+                        "reason": "body targeted related block",
+                        "actual_x": 2,
+                        "actual_y": 81,
+                        "actual_z": 0,
+                        "actual_block": "minecraft:spruce_log",
+                    },
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+
+    attack = retargeted.actions[0]
+    assert attack["name"] == "body_attack"
+    assert attack["step_id"] == "attack:0"
+    assert attack["monitor"]["y"] == 81
+
+    lower_log = dict(turn["snapshot"]["nearby_blocks"]["requester"][0])
+    continued = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": attack["id"],
+                    "task_id": attack["task_id"],
+                    "step_id": attack["step_id"],
+                    "name": attack["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "target block is absent"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": [lower_log]}},
+                }
+            ]
+        }
+    )
+
+    assert continued.actions[0]["name"] == "body_attack"
+    assert continued.actions[0]["args"]["mode"] == "release"
+    lower_look = continued.actions[1]
+    assert lower_look["name"] == "body_look_at_position"
+    assert lower_look["monitor"]["y"] == 80
 
 
 def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) -> None:

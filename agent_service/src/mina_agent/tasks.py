@@ -231,6 +231,22 @@ class SkillRuntime:
             if task.get("type") == "chop_tree" and step_id.startswith("attack"):
                 return _prepend_action(recovered, _attack_release_action(task, step_id))
             return recovered
+        if monitor_status == "retarget" and task.get("type") == "chop_tree" and step_id.startswith("look"):
+            retarget = _retarget_from_monitor(task.get("target") or {}, monitor)
+            if retarget is not None:
+                old_target = task.get("target")
+                task["target"] = retarget
+                task["stage"] = "attack"
+                task["last_error"] = None
+                task["target_verified_by_monitor"] = True
+                self.memory.record_task_event(
+                    task["task_id"],
+                    "look_retargeted",
+                    {"old_target": old_target, "new_target": retarget, "monitor": monitor},
+                )
+                return self._advance(task, task.get("latest_snapshot") or {})
+            recovered = self._recover_or_fail(task, monitor.get("reason") or "retarget missing block coordinates")
+            return recovered
         if task.get("type") == "follow_player":
             return self._handle_follow_result(task, result, status, monitor_status)
         if monitor_status != "success" and status not in {"completed", "success"}:
@@ -249,7 +265,7 @@ class SkillRuntime:
             task["stage"] = "attack"
             return self._advance(task, snapshot)
         if step_id.startswith("attack"):
-            next_target = _choose_stacked_log_target(snapshot, task.get("target") or {})
+            next_target = _choose_same_column_log_target(snapshot, task.get("target") or {})
             if next_target is not None:
                 previous_target = task.get("target")
                 task["target"] = next_target
@@ -386,6 +402,7 @@ class SkillRuntime:
                     "y": int(target["y"]),
                     "z": int(target["z"]),
                     "block": str(target.get("block") or ""),
+                    "allow_same_column": True,
                     "deadline_ticks": 50,
                 },
             )
@@ -396,11 +413,14 @@ class SkillRuntime:
         if task.get("stage") == "attack":
             target = task.get("target") or {}
             step_suffix = _step_suffix(task)
-            current_target = self._current_or_replacement_target(task, snapshot, target)
-            if isinstance(current_target, TurnResponse):
-                return current_target
-            target = current_target
-            task["target"] = target
+            if task.pop("target_verified_by_monitor", False):
+                target = dict(target)
+            else:
+                current_target = self._current_or_replacement_target(task, snapshot, target)
+                if isinstance(current_target, TurnResponse):
+                    return current_target
+                target = current_target
+                task["target"] = target
             action = _action(
                 task,
                 "body_attack",
@@ -659,6 +679,50 @@ def _choose_stacked_log_target(snapshot: dict[str, Any], previous: dict[str, Any
     return replacement
 
 
+def _choose_same_column_log_target(snapshot: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any] | None:
+    if not all(key in previous for key in ("x", "y", "z", "approach_x", "approach_y", "approach_z")):
+        return None
+    previous_x = int(previous["x"])
+    previous_y = int(previous["y"])
+    previous_z = int(previous["z"])
+    candidates: list[dict[str, Any]] = []
+    for block in _log_candidates(snapshot):
+        same_column = int(block["x"]) == previous_x and int(block["z"]) == previous_z
+        if same_column and int(block["y"]) != previous_y:
+            candidates.append(dict(block))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda block: int(block["y"]))
+    replacement = candidates[0]
+    replacement["approach_x"] = previous["approach_x"]
+    replacement["approach_y"] = previous["approach_y"]
+    replacement["approach_z"] = previous["approach_z"]
+    return replacement
+
+
+def _retarget_from_monitor(previous: dict[str, Any], monitor: dict[str, Any]) -> dict[str, Any] | None:
+    actual_x = _int_value(monitor.get("actual_x"))
+    actual_y = _int_value(monitor.get("actual_y"))
+    actual_z = _int_value(monitor.get("actual_z"))
+    actual_block = str(monitor.get("actual_block") or previous.get("block") or "")
+    if actual_x is None or actual_y is None or actual_z is None or not actual_block:
+        return None
+    retarget = dict(previous)
+    retarget.update(
+        {
+            "block": actual_block,
+            "category": str(previous.get("category") or "log"),
+            "x": actual_x,
+            "y": actual_y,
+            "z": actual_z,
+            "center_x": actual_x + 0.5,
+            "center_y": actual_y + 0.5,
+            "center_z": actual_z + 0.5,
+        }
+    )
+    return retarget
+
+
 def _step_suffix(task: dict[str, Any]) -> str:
     attempts = int(task.get("attempts") or 0)
     target_ordinal = int(task.get("target_ordinal") or 0)
@@ -700,6 +764,13 @@ def _snapshot_actor_ys(snapshot: dict[str, Any]) -> list[float]:
 def _float_value(value: Any) -> float | None:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_value(value: Any) -> int | None:
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
 
