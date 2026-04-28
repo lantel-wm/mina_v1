@@ -168,6 +168,28 @@ def test_validate_scenarios_rejects_duplicate_request_ids() -> None:
     assert "duplicate-request" in str(exc.value)
 
 
+def test_validate_scenarios_rejects_invalid_manifest_before_runtime() -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "invalid_manifest_case",
+            "fixture": "follow_player",
+            "steps": [
+                {"kind": "request", "value": "状态"},
+                {"kind": "unsupported_step", "value": "x"},
+            ],
+            "expected_model": {"mode": "eventually", "count": 1},
+        }
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        validate_scenarios([scenario])
+
+    message = str(exc.value)
+    assert "requires request_id" in message
+    assert "unknown kind" in message
+    assert "invalid expected_model mode" in message
+
+
 def test_live_runner_requires_api_key_by_default(monkeypatch) -> None:
     monkeypatch.setattr("mina_agent.e2e.runner.load_dotenv_defaults", lambda: None)
     monkeypatch.delenv("MINA_API_KEY", raising=False)

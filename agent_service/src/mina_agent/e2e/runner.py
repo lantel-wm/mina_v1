@@ -113,19 +113,38 @@ def select_scenarios(args: argparse.Namespace) -> list[Scenario]:
 
 
 def validate_scenarios(scenarios: list[Scenario]) -> None:
+    allowed_step_kinds = {
+        "request",
+        "companion_tick",
+        "world_mutate",
+        "actor_spawn",
+        "actor_leave",
+        "actor_tp",
+        "assert",
+    }
     seen: dict[str, str] = {}
     duplicates: list[str] = []
+    errors: list[str] = []
     for scenario in scenarios:
+        if scenario.expected_model is not None and scenario.expected_model.mode not in {"exact", "at_least"}:
+            errors.append(f"{scenario.name}: invalid expected_model mode {scenario.expected_model.mode!r}")
         for request_id in scenario.request_ids():
             if request_id in seen:
                 duplicates.append(request_id)
             else:
                 seen[request_id] = scenario.name
+        for index, step in enumerate(scenario.steps, start=1):
+            if step.kind not in allowed_step_kinds:
+                errors.append(f"{scenario.name}: step {index} has unknown kind {step.kind!r}")
+            if step.kind in {"request", "companion_tick"} and not step.request_id:
+                errors.append(f"{scenario.name}: step {index} kind {step.kind!r} requires request_id")
     if duplicates:
-        raise SystemExit(
+        errors.append(
             "Mina E2E request_id values must be unique across the selected run: "
             + ", ".join(sorted(set(duplicates)))
         )
+    if errors:
+        raise SystemExit("\n".join(errors))
 
 
 def suite_names(suite: str, scenarios: dict[str, Scenario]) -> list[str]:
