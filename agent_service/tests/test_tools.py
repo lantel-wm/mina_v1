@@ -258,6 +258,125 @@ def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> 
     assert "当前没有正在执行的身体任务" in stopped.content
 
 
+def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    task_id = move["task_id"]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": task_id,
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    look = moved.actions[0]
+    looked = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": look["id"],
+                    "task_id": task_id,
+                    "step_id": look["step_id"],
+                    "name": look["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body targeted expected block"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    first_attack = looked.actions[0]
+    upper_log = {
+        "block": "minecraft:spruce_log",
+        "category": "log",
+        "x": 2,
+        "y": 81,
+        "z": 0,
+        "center_x": 2.5,
+        "center_y": 81.5,
+        "center_z": 0.5,
+        "distance": 3.2,
+    }
+    continued = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": first_attack["id"],
+                    "task_id": task_id,
+                    "step_id": first_attack["step_id"],
+                    "name": first_attack["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "target block is absent"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": [upper_log]}},
+                }
+            ]
+        }
+    )
+
+    assert continued.messages == []
+    assert continued.actions
+    upper_look = continued.actions[0]
+    assert upper_look["name"] == "body_look_at_position"
+    assert upper_look["step_id"] == "look:1.0"
+    assert upper_look["monitor"]["y"] == 81
+    status = runner.run("task_status", {"task_id": task_id}, turn)
+    assert '"target_ordinal": 1' in status.content
+    assert '"y": 81' in status.content
+
+    upper_looked = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": upper_look["id"],
+                    "task_id": task_id,
+                    "step_id": upper_look["step_id"],
+                    "name": upper_look["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body targeted expected block"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": [upper_log]}},
+                }
+            ]
+        }
+    )
+    upper_attack = upper_looked.actions[0]
+    completed = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": upper_attack["id"],
+                    "task_id": task_id,
+                    "step_id": upper_attack["step_id"],
+                    "name": upper_attack["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "target block is absent"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": []}},
+                }
+            ]
+        }
+    )
+
+    assert completed.actions == []
+    assert completed.messages[0]["content"] == "砍树完成。"
+    assert '"task not found"' in runner.run("task_status", {}, turn).content
+    assert '"status": "completed"' in runner.run("task_status", {"task_id": task_id}, turn).content
+
+
 def test_stale_action_result_does_not_advance_active_task(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()

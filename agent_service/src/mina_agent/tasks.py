@@ -59,6 +59,7 @@ class SkillRuntime:
                 "stage": "new",
                 "attempts": 0,
                 "target": None,
+                "target_ordinal": 0,
                 "last_error": None,
                 "active_action_id": None,
                 "active_step_id": None,
@@ -242,6 +243,19 @@ class SkillRuntime:
             task["stage"] = "attack"
             return self._advance(task, snapshot)
         if step_id.startswith("attack"):
+            next_target = _choose_stacked_log_target(snapshot, task.get("target") or {})
+            if next_target is not None:
+                previous_target = task.get("target")
+                task["target"] = next_target
+                task["target_ordinal"] = int(task.get("target_ordinal") or 0) + 1
+                task["stage"] = "look"
+                task["last_error"] = None
+                self.memory.record_task_event(
+                    task["task_id"],
+                    "target_completed_continue",
+                    {"old_target": previous_target, "next_target": next_target},
+                )
+                return self._advance(task, snapshot)
             task["status"] = "completed"
             task["stage"] = "done"
             task["updated_at"] = time.time()
@@ -314,6 +328,7 @@ class SkillRuntime:
 
         if task.get("stage") == "move":
             target = task.get("target") or {}
+            step_suffix = _step_suffix(task)
             args = {
                 "x": float(target["approach_x"]),
                 "y": float(target["approach_y"]),
@@ -325,7 +340,7 @@ class SkillRuntime:
                 task,
                 "body_move_to_position",
                 args,
-                step=f"move:{task.get('attempts', 0)}",
+                step=f"move:{step_suffix}",
                 monitor={
                     "type": "body_near",
                     "x": args["x"],
@@ -341,6 +356,7 @@ class SkillRuntime:
 
         if task.get("stage") == "look":
             target = task.get("target") or {}
+            step_suffix = _step_suffix(task)
             current_target = self._current_or_replacement_target(task, snapshot, target)
             if isinstance(current_target, TurnResponse):
                 return current_target
@@ -354,7 +370,7 @@ class SkillRuntime:
                     "y": float(target["center_y"]),
                     "z": float(target["center_z"]),
                 },
-                step=f"look:{task.get('attempts', 0)}",
+                step=f"look:{step_suffix}",
                 monitor={
                     "type": "body_targeted_block",
                     "x": int(target["x"]),
@@ -370,6 +386,7 @@ class SkillRuntime:
 
         if task.get("stage") == "attack":
             target = task.get("target") or {}
+            step_suffix = _step_suffix(task)
             current_target = self._current_or_replacement_target(task, snapshot, target)
             if isinstance(current_target, TurnResponse):
                 return current_target
@@ -389,7 +406,7 @@ class SkillRuntime:
                         {"type": "attack", "mode": "release"},
                     ],
                 },
-                step=f"attack:{task.get('attempts', 0)}",
+                step=f"attack:{step_suffix}",
                 monitor={
                     "type": "block_absent",
                     "x": int(target["x"]),
@@ -571,18 +588,40 @@ def _with_previous_approach(current: dict[str, Any], previous: dict[str, Any]) -
 def _choose_replacement_log_target(snapshot: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any] | None:
     if not all(key in previous for key in ("x", "y", "z", "approach_x", "approach_y", "approach_z")):
         return _choose_log_target(snapshot)
+    stacked = _choose_stacked_log_target(snapshot, previous)
+    if stacked is not None:
+        return stacked
+    return _choose_log_target(snapshot)
+
+
+def _choose_stacked_log_target(snapshot: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any] | None:
+    if not all(key in previous for key in ("x", "y", "z", "approach_x", "approach_y", "approach_z")):
+        return None
     previous_x = int(previous["x"])
     previous_z = int(previous["z"])
     previous_y = int(previous["y"])
+    candidates: list[dict[str, Any]] = []
     for block in _log_candidates(snapshot):
         same_column = int(block["x"]) == previous_x and int(block["z"]) == previous_z
-        if same_column and 0 < int(block["y"]) - previous_y <= 3:
-            replacement = dict(block)
-            replacement["approach_x"] = previous["approach_x"]
-            replacement["approach_y"] = previous["approach_y"]
-            replacement["approach_z"] = previous["approach_z"]
-            return replacement
-    return _choose_log_target(snapshot)
+        vertical_delta = int(block["y"]) - previous_y
+        if same_column and 0 < vertical_delta <= 4:
+            candidates.append(dict(block))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda block: int(block["y"]))
+    replacement = candidates[0]
+    replacement["approach_x"] = previous["approach_x"]
+    replacement["approach_y"] = previous["approach_y"]
+    replacement["approach_z"] = previous["approach_z"]
+    return replacement
+
+
+def _step_suffix(task: dict[str, Any]) -> str:
+    attempts = int(task.get("attempts") or 0)
+    target_ordinal = int(task.get("target_ordinal") or 0)
+    if target_ordinal <= 0:
+        return str(attempts)
+    return f"{target_ordinal}.{attempts}"
 
 
 def _is_reachable_log_candidate(block: dict[str, Any], snapshot: dict[str, Any]) -> bool:
@@ -677,6 +716,7 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
         "status": task.get("status"),
         "stage": task.get("stage"),
         "attempts": task.get("attempts"),
+        "target_ordinal": task.get("target_ordinal"),
         "target": task.get("target"),
         "last_error": task.get("last_error"),
         "active_action_id": task.get("active_action_id"),

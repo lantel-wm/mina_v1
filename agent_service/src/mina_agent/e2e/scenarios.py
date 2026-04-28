@@ -147,6 +147,7 @@ SCENARIO_DATA = [
                 "wait_for": ["我开始砍树"],
             },
             {"kind": "assert", "value": "chop_tree", "timeout": 180},
+            {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
         ],
         "expected_tools": [
             {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
@@ -157,8 +158,8 @@ SCENARIO_DATA = [
             {"name": "body_chain"},
         ],
         "expected_model": {"mode": "exact", "count": 0},
-        "world_asserts": ["chop_tree"],
-        "rubric": "Explicit chop intent must stay high-level and complete through observed Fabric monitor results.",
+        "world_asserts": ["chop_tree", "upper_log_absent"],
+        "rubric": "Explicit chop intent must stay high-level and clear the reachable stacked trunk through observed Fabric monitor results.",
     },
     {
         "name": "body_chop_target_disappears_router",
