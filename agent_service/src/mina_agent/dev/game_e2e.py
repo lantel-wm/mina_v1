@@ -36,6 +36,7 @@ def main() -> int:
             "body_unavailable",
             "model_action_barrier",
             "model_read_only_command",
+            "model_knowledge_query",
             "offline_body_unavailable",
             "offline_knowledge_query",
             "offline_read_only_command",
@@ -63,9 +64,9 @@ def main() -> int:
         "offline_chop_tree",
         "offline_body_unavailable",
     }
-    fake_deepseek_scenarios = {"model_action_barrier", "model_read_only_command"}
+    fake_deepseek_scenarios = {"model_action_barrier", "model_read_only_command", "model_knowledge_query"}
     service_scenarios = {*offline_service_scenarios, *fake_deepseek_scenarios}
-    fake_search = start_fake_search(args.search_port) if args.scenario == "offline_knowledge_query" else None
+    fake_search = start_fake_search(args.search_port) if args.scenario in {"offline_knowledge_query", "model_knowledge_query"} else None
     fake_deepseek = start_fake_deepseek(args.deepseek_port) if args.scenario in fake_deepseek_scenarios else None
     sidecar_mode = "service" if args.scenario in service_scenarios else args.sidecar
     sidecar = start_sidecar(
@@ -98,6 +99,7 @@ def main() -> int:
                 "body_unavailable",
                 "model_action_barrier",
                 "model_read_only_command",
+                "model_knowledge_query",
                 "offline_body_unavailable",
                 "offline_follow",
                 "offline_read_only_command",
@@ -137,6 +139,8 @@ def main() -> int:
             run_model_action_barrier(server, output, args.timeout, args.deepseek_port)
         elif args.scenario == "model_read_only_command":
             run_model_read_only_command(server, output, args.deepseek_port)
+        elif args.scenario == "model_knowledge_query":
+            run_model_knowledge_query(server, output, args.deepseek_port)
         elif args.scenario == "offline_body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "offline_knowledge_query":
@@ -522,6 +526,13 @@ def run_model_read_only_command(proc: subprocess.Popen[str], output: "OutputRead
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before read-only command dispatch, got {calls!r}")
+
+
+def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader", deepseek_port: int) -> None:
+    run_knowledge_query(proc, output)
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 2:
+        raise AssertionError(f"fake DeepSeek should have two calls for web_search tool loop, got {calls!r}")
 
 
 def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:

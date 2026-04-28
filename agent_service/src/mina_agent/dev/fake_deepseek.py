@@ -33,9 +33,28 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
-    if tool_messages:
+    if tool_messages and _is_search_message(user_message):
+        message = {"role": "assistant", "content": "联网知识查询链路可用：Minecraft Wiki"}
+        finish_reason = "stop"
+    elif tool_messages:
         message = {"role": "assistant", "content": "错误：action barrier 未生效。"}
         finish_reason = "stop"
+    elif _is_search_message(user_message):
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-search",
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "arguments": '{"query":"Minecraft Wiki","max_results":3}',
+                    },
+                }
+            ],
+        }
+        finish_reason = "tool_calls"
     elif "时间" in user_message or "time" in user_message.lower():
         message = {
             "role": "assistant",
@@ -87,3 +106,8 @@ def _last_user_message(messages: list[Any]) -> str:
         if isinstance(message, dict) and message.get("role") == "user":
             return str(message.get("content") or "")
     return ""
+
+
+def _is_search_message(message: str) -> bool:
+    normalized = message.lower()
+    return "查资料" in message or "搜索" in message or "wiki" in normalized or "search" in normalized
