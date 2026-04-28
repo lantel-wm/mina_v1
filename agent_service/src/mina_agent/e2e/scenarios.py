@@ -162,6 +162,35 @@ SCENARIO_DATA = [
         "rubric": "Negative follow phrasing such as '别跟着我' must stop the active body task instead of matching the follow keyword and starting another task.",
     },
     {
+        "name": "body_negative_continued_follow_stop_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "body", "router", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-negative-cont-follow-start",
+                "value": "跟随我",
+                "wait_for": ["我开始跟随你"],
+            },
+            {
+                "kind": "request",
+                "request_id": "body-negative-cont-follow-stop",
+                "value": "别再跟着我",
+                "wait_for": ["我已经停止当前身体任务"],
+            },
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "follow_player"'},
+            {"name": "stop_body_task", "status": "ok"},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_requester"},
+            {"name": "body_stop"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Continuation-negative follow phrasing such as '别再跟着我' must stop the active body task instead of matching the embedded follow command.",
+    },
+    {
         "name": "body_replace_follow_with_chop_router",
         "fixture": "chop_tree",
         "tags": ["live", "core", "body", "router"],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -268,7 +269,7 @@ def is_body_instructional_request(message: str) -> bool:
 
 
 def is_body_negative_stop_request(message: str) -> bool:
-    return any(
+    return _contains_chinese_negative_body_action(message) or _contains_english_negative_body_action(message) or any(
         token in message
         for token in (
             "别跟",
@@ -316,5 +317,52 @@ def is_body_negative_stop_request(message: str) -> bool:
             "stop harvesting wood",
             "don't control body",
             "do not control body",
+        )
+    )
+
+
+def _contains_chinese_negative_body_action(message: str) -> bool:
+    negative_matches = re.finditer(r"别|不要|不用|不必", message)
+    action_terms = (
+        "跟",
+        "过来",
+        "来我这",
+        "到我这",
+        "砍",
+        "挖",
+        "撸",
+        "伐",
+        "采",
+        "打树",
+        "动身体",
+        "控制身体",
+    )
+    for match in negative_matches:
+        window = message[match.start():match.start() + 12]
+        if any(action in window for action in action_terms):
+            return True
+    return False
+
+
+def _contains_english_negative_body_action(message: str) -> bool:
+    if not any(token in message for token in ("don't", "do not", "dont", "never", "no longer")):
+        return False
+    return any(
+        token in message
+        for token in (
+            "follow",
+            "following",
+            "come",
+            "coming",
+            "chop",
+            "chopping",
+            "cut tree",
+            "cutting tree",
+            "break log",
+            "breaking log",
+            "harvest wood",
+            "harvesting wood",
+            "control body",
+            "move body",
         )
     )
