@@ -34,7 +34,9 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     if tool_messages and _is_search_message(user_message):
-        message = {"role": "assistant", "content": "联网知识查询链路可用：Minecraft Wiki"}
+        tool_content = str(tool_messages[-1].get("content") or "")
+        content = "联网知识查询链路可用：Minecraft Wiki" if "Minecraft Wiki" in tool_content else "搜索结果缺失。"
+        message = {"role": "assistant", "content": content}
         finish_reason = "stop"
     elif tool_messages:
         message = {"role": "assistant", "content": "错误：action barrier 未生效。"}
