@@ -242,8 +242,11 @@ The local reference project at `/Users/zhaozhiyu/Projects/caster/chatbot` contai
 The sidecar includes an MCP registry boundary at `agent_service/src/mina_agent/mcp.py`.
 
 - Default config path: `agent_service/config/mcp.json`
+- Override config path with `MINA_MCP_CONFIG_PATH`.
 - Default state: no MCP servers configured.
-- The `mcp_call` tool returns an explicit unavailable/error result until transport execution is enabled.
+- Config may use either `{"servers": {...}}` or the common `{"mcpServers": {...}}` shape.
+- Supported transports are one-request stdio and simple JSON-RPC HTTP/streamable HTTP. Stdio servers are initialized, called, and terminated per request with `timeout_seconds` protection.
+- `mcp_call` is model-facing for configured non-Minecraft-write tools; registry helpers also support `tools/list` and `resources/read` for sidecar code.
 - Do not grant MCP tools Minecraft write permissions directly; route Minecraft mutations through Fabric actions.
 
 ## Commands

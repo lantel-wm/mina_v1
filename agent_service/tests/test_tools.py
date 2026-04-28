@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from mina_agent.memory import MemoryStore
+from mina_agent.mcp import McpRegistry
 from mina_agent.searxng import SearxngClient
 from mina_agent.tools import ToolRunner, tool_specs
 
@@ -211,3 +212,13 @@ def test_mcp_call_is_explicitly_unavailable_without_config(tmp_path) -> None:
     result = runner.run("mcp_call", {"server": "local", "tool": "ping", "arguments": {}}, {})
 
     assert "not configured" in result.content
+
+
+def test_mcp_call_blocks_minecraft_write_operations_before_transport(tmp_path) -> None:
+    config = tmp_path / "mcp.json"
+    config.write_text('{"servers": {"local": {"transport": "http", "url": "http://127.0.0.1:1"}}}', encoding="utf-8")
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng(), McpRegistry(config))
+
+    result = runner.run("mcp_call", {"server": "local", "tool": "setblock", "arguments": {"x": 0}}, {})
+
+    assert "Minecraft write operations" in result.content

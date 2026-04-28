@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import subprocess
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -12,8 +14,8 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 
 
 class McpRegistry:
-    def __init__(self, config_path: Path = Path("agent_service/config/mcp.json")):
-        self.config_path = config_path
+    def __init__(self, config_path: Path | None = None):
+        self.config_path = config_path or Path(os.getenv("MINA_MCP_CONFIG_PATH", "agent_service/config/mcp.json"))
         self.servers = self._load()
 
     def health(self) -> dict[str, Any]:
@@ -42,7 +44,7 @@ class McpRegistry:
             if transport in {"http", "streamable_http"}:
                 return self._http_request(config, method, params)
             return {"ok": False, "error": f"Unsupported MCP transport: {transport}"}
-        except (OSError, subprocess.SubprocessError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        except (OSError, TimeoutError, subprocess.SubprocessError, urllib.error.URLError, json.JSONDecodeError) as exc:
             return {"ok": False, "error": str(exc)}
 
     def _stdio_request(self, config: dict[str, Any], method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -55,6 +57,7 @@ class McpRegistry:
         env = config.get("env")
         if env is not None and not isinstance(env, dict):
             return {"ok": False, "error": "MCP stdio env must be an object"}
+        timeout_seconds = float(config.get("timeout_seconds") or 15)
         proc = subprocess.Popen(
             [command, *args],
             stdin=subprocess.PIPE,
@@ -69,12 +72,12 @@ class McpRegistry:
                 "capabilities": {},
                 "clientInfo": {"name": "mina-agent", "version": "0.1.0"},
             })
-            init = self._read_jsonrpc(proc)
+            init = self._read_jsonrpc(proc, timeout_seconds)
             if "error" in init:
                 return {"ok": False, "error": init["error"]}
             self._write_notification(proc, "notifications/initialized", {})
             self._write_jsonrpc(proc, 2, method, params)
-            response = self._read_jsonrpc(proc)
+            response = self._read_jsonrpc(proc, timeout_seconds)
             return _normalize_response(response)
         finally:
             proc.terminate()
@@ -93,14 +96,15 @@ class McpRegistry:
             headers["Authorization"] = f"Bearer {token}"
         body = json.dumps(_jsonrpc(1, method, params), ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        with urllib.request.urlopen(request, timeout=float(config.get("timeout_seconds") or 15)) as response:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(request, timeout=float(config.get("timeout_seconds") or 15)) as response:
             return _normalize_response(json.loads(response.read().decode("utf-8")))
 
     def _load(self) -> dict[str, dict[str, Any]]:
         if not self.config_path.exists():
             return {}
         payload = json.loads(self.config_path.read_text(encoding="utf-8"))
-        servers = payload.get("servers", {})
+        servers = payload.get("servers") or payload.get("mcpServers") or {}
         if not isinstance(servers, dict):
             return {}
         return {str(name): value for name, value in servers.items() if isinstance(value, dict)}
@@ -118,9 +122,18 @@ class McpRegistry:
         proc.stdin.flush()
 
     @staticmethod
-    def _read_jsonrpc(proc: subprocess.Popen[str]) -> dict[str, Any]:
+    def _read_jsonrpc(proc: subprocess.Popen[str], timeout_seconds: float) -> dict[str, Any]:
         assert proc.stdout is not None
-        line = proc.stdout.readline()
+        lines: queue.Queue[str] = queue.Queue(maxsize=1)
+
+        def read_line() -> None:
+            lines.put(proc.stdout.readline())
+
+        threading.Thread(target=read_line, daemon=True).start()
+        try:
+            line = lines.get(timeout=timeout_seconds)
+        except queue.Empty as exc:
+            raise TimeoutError(f"MCP server did not respond within {timeout_seconds:.1f}s") from exc
         if not line:
             stderr = proc.stderr.read() if proc.stderr is not None else ""
             raise OSError(f"MCP server closed stdout: {stderr}")
