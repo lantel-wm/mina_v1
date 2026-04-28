@@ -244,6 +244,7 @@ def test_failed_scenario_attempt_is_recorded_for_trace_artifacts(tmp_path, monke
 
     assert not result.ok
     assert result.error == "expected failure"
+    assert result.duration_seconds >= 0
     assert events[0]["event_type"] == "scenario_failed"
     assert events[0]["payload"] == {"attempt": 1, "error": "expected failure", "will_retry": False}
 

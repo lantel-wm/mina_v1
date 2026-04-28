@@ -43,6 +43,7 @@ class RunResult:
     scenario: str
     ok: bool
     attempts: int
+    duration_seconds: float
     error: str = ""
 
 
@@ -199,10 +200,16 @@ class E2ERunner:
 
     def _run_with_retries(self, scenario: Scenario) -> RunResult:
         last_error = ""
+        started_at = time.monotonic()
         for attempt in range(1, scenario.retry + 2):
             try:
                 self._run_scenario(scenario)
-                return RunResult(scenario=scenario.name, ok=True, attempts=attempt)
+                return RunResult(
+                    scenario=scenario.name,
+                    ok=True,
+                    attempts=attempt,
+                    duration_seconds=round(time.monotonic() - started_at, 3),
+                )
             except Exception as exc:  # noqa: BLE001 - runner must preserve scenario failure in summary.
                 last_error = str(exc)
                 will_retry = attempt <= scenario.retry
@@ -215,8 +222,20 @@ class E2ERunner:
                 if will_retry:
                     self._record_harness_event(scenario.name, "scenario_retry", {"next_attempt": attempt + 1})
                     continue
-                return RunResult(scenario=scenario.name, ok=False, attempts=attempt, error=last_error)
-        return RunResult(scenario=scenario.name, ok=False, attempts=scenario.retry + 1, error=last_error)
+                return RunResult(
+                    scenario=scenario.name,
+                    ok=False,
+                    attempts=attempt,
+                    duration_seconds=round(time.monotonic() - started_at, 3),
+                    error=last_error,
+                )
+        return RunResult(
+            scenario=scenario.name,
+            ok=False,
+            attempts=scenario.retry + 1,
+            duration_seconds=round(time.monotonic() - started_at, 3),
+            error=last_error,
+        )
 
     def _run_scenario(self, scenario: Scenario) -> None:
         assert self.server is not None
