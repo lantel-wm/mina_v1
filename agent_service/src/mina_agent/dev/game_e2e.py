@@ -38,6 +38,7 @@ def main() -> int:
             "body_unavailable",
             "model_chop_tree",
             "model_chop_then_status",
+            "model_chop_target_disappears",
             "model_replace_follow_with_chop",
             "model_action_barrier",
             "model_read_only_command",
@@ -89,6 +90,7 @@ def main() -> int:
     fake_deepseek_scenarios = {
         "model_chop_tree",
         "model_chop_then_status",
+        "model_chop_target_disappears",
         "model_replace_follow_with_chop",
         "model_banned_command",
         "model_action_barrier",
@@ -132,6 +134,7 @@ def main() -> int:
                 "model_banned_command",
                 "model_chop_tree",
                 "model_chop_then_status",
+                "model_chop_target_disappears",
                 "model_replace_follow_with_chop",
                 "offline_chop_tree",
                 "offline_replace_follow_with_chop",
@@ -195,6 +198,8 @@ def main() -> int:
             run_model_chop_tree(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_chop_then_status":
             run_model_chop_then_status(server, output, args.timeout, args.port, args.deepseek_port)
+        elif args.scenario == "model_chop_target_disappears":
+            run_model_chop_target_disappears(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_replace_follow_with_chop":
             run_model_replace_follow_with_chop(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_action_barrier":
@@ -737,6 +742,54 @@ def run_model_chop_then_status(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 3:
         raise AssertionError(f"fake DeepSeek should have three calls for chop then status tool loop, got {calls!r}")
+
+
+def run_model_chop_target_disappears(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    timeout: float,
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    send(proc, "mina-test move_body_far")
+    output.wait_for("Mina test body moved far", timeout=10)
+    send(proc, "mina-test request 砍树")
+    output.wait_for("我开始砍树", timeout=30)
+    assert_body_task_tool_call(sidecar_port, "chop_tree")
+    output.wait_for("mina action start name=body_move_to_position", timeout=30)
+    send(proc, "mina-test remove_target_log")
+    output.wait_for("Mina test target log removed", timeout=10)
+    poll_command(
+        proc,
+        output,
+        "mina-test assert upper_log_absent",
+        success="Mina test upper_log_absent passed",
+        pending=["Mina test upper_log_absent failed"],
+        timeout=timeout,
+        interval=2.0,
+    )
+    tasks = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tasks", timeout=5).get("tasks", [])
+    completed = [
+        task for task in tasks
+        if isinstance(task, dict)
+        and task.get("type") == "chop_tree"
+        and task.get("status") == "completed"
+        and task.get("last_error") == "target disappeared before attack"
+    ]
+    if not completed:
+        raise AssertionError(f"expected completed recovered chop task after target disappearance: {tasks!r}")
+    task_id = str(completed[0].get("task_id") or "")
+    events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tasks/{task_id}/events", timeout=5).get("events", [])
+    disappeared = [
+        event for event in events
+        if isinstance(event, dict)
+        and event.get("event_type") == "target_disappeared"
+    ]
+    if not disappeared:
+        raise AssertionError(f"expected target_disappeared task event for recovered chop task: {events!r}")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 1:
+        raise AssertionError(f"fake DeepSeek should have one call before recovered chop dispatch, got {calls!r}")
 
 
 def run_model_replace_follow_with_chop(

@@ -23,6 +23,7 @@ public final class MinaTestCommands {
 	private static final int TREE_Y = 80;
 	private static final int TREE_Z = 0;
 	private static final BlockPos TARGET_LOG = new BlockPos(TREE_X, TREE_Y, TREE_Z);
+	private static final BlockPos UPPER_LOG = new BlockPos(TREE_X, TREE_Y + 1, TREE_Z);
 	private static final BlockPos SETUP_MARKER = new BlockPos(0, TREE_Y - 1, 0);
 
 	private final MinaConfig config;
@@ -53,11 +54,14 @@ public final class MinaTestCommands {
 				.then(literal("deny_actions").executes(context -> denyActions(context.getSource())))
 				.then(literal("allow_actions").executes(context -> allowActions(context.getSource())))
 				.then(literal("move_requester_far").executes(context -> moveRequesterFar(context.getSource())))
+				.then(literal("move_body_far").executes(context -> moveBodyFar(context.getSource())))
+				.then(literal("remove_target_log").executes(context -> removeTargetLog(context.getSource())))
 				.then(literal("snapshot").executes(context -> snapshot(context.getSource())))
 				.then(literal("assert")
 					.then(literal("chop_tree").executes(context -> assertChopTree(context.getSource())))
 					.then(literal("follow_player").executes(context -> assertFollowPlayer(context.getSource())))
-					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource()))))
+					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource())))
+					.then(literal("upper_log_absent").executes(context -> assertUpperLogAbsent(context.getSource()))))
 				.then(literal("stop").executes(context -> stop(context.getSource())))
 		));
 	}
@@ -143,6 +147,23 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
+	private int moveBodyFar(CommandSourceStack source) {
+		ServerPlayer body = source.getServer().getPlayerList().getPlayer(config.bodyUsername);
+		if (body == null) {
+			source.sendFailure(Component.literal("Mina body is not online."));
+			return 0;
+		}
+		run(source.getServer(), "tp " + config.bodyUsername + " -4.5 " + TREE_Y + " -4.5 0 0");
+		source.sendSuccess(() -> Component.literal("Mina test body moved far."), false);
+		return 1;
+	}
+
+	private int removeTargetLog(CommandSourceStack source) {
+		source.getLevel().setBlock(TARGET_LOG, Blocks.AIR.defaultBlockState(), 3);
+		source.sendSuccess(() -> Component.literal("Mina test target log removed."), false);
+		return 1;
+	}
+
 	private int snapshot(CommandSourceStack source) {
 		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
 		if (requester == null) {
@@ -177,6 +198,17 @@ public final class MinaTestCommands {
 			return 0;
 		}
 		source.sendSuccess(() -> Component.literal("Mina test target_log_present passed."), false);
+		return 1;
+	}
+
+	private int assertUpperLogAbsent(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		boolean absent = level.getBlockState(UPPER_LOG).is(Blocks.AIR);
+		if (!absent) {
+			source.sendFailure(Component.literal("Mina test upper_log_absent failed: replacement log still exists."));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("Mina test upper_log_absent passed."), false);
 		return 1;
 	}
 
@@ -232,7 +264,7 @@ public final class MinaTestCommands {
 			}
 		}
 		level.setBlock(TARGET_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
-		level.setBlock(new BlockPos(TREE_X, TREE_Y + 1, TREE_Z), Blocks.SPRUCE_LOG.defaultBlockState(), 3);
+		level.setBlock(UPPER_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X + 1, TREE_Y + 2, TREE_Z), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X - 1, TREE_Y + 2, TREE_Z), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);

@@ -313,7 +313,7 @@ class SkillRuntime:
             target = task.get("target") or {}
             current_target = _find_block(snapshot, target)
             if current_target is None:
-                replacement = _choose_log_target(snapshot)
+                replacement = _choose_replacement_log_target(snapshot, target)
                 self.memory.record_task_event(
                     task["task_id"],
                     "target_disappeared",
@@ -479,6 +479,33 @@ def _action(
 
 
 def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    for block in _log_candidates(snapshot):
+        if all(key in block for key in ("approach_x", "approach_y", "approach_z")):
+            return dict(block)
+    return None
+
+
+def _choose_replacement_log_target(snapshot: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any] | None:
+    replacement = _choose_log_target(snapshot)
+    if replacement is not None:
+        return replacement
+    if not all(key in previous for key in ("x", "y", "z", "approach_x", "approach_y", "approach_z")):
+        return None
+    previous_x = int(previous["x"])
+    previous_z = int(previous["z"])
+    previous_y = int(previous["y"])
+    for block in _log_candidates(snapshot):
+        same_column = int(block["x"]) == previous_x and int(block["z"]) == previous_z
+        if same_column and 0 < int(block["y"]) - previous_y <= 4:
+            replacement = dict(block)
+            replacement["approach_x"] = previous["approach_x"]
+            replacement["approach_y"] = previous["approach_y"]
+            replacement["approach_z"] = previous["approach_z"]
+            return replacement
+    return None
+
+
+def _log_candidates(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
     logs = [
         block for block in blocks
@@ -487,10 +514,7 @@ def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
         and all(key in block for key in ("x", "y", "z", "center_x", "center_y", "center_z"))
     ]
     logs.sort(key=lambda block: float(block.get("distance") or 9999))
-    for block in logs:
-        if all(key in block for key in ("approach_x", "approach_y", "approach_z")):
-            return dict(block)
-    return None
+    return logs
 
 
 def _find_block(snapshot: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:

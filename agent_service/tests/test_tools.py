@@ -319,6 +319,50 @@ def test_chop_tree_reselects_when_target_disappears_before_attack(tmp_path) -> N
     assert '"x": 4' in status.content
 
 
+def test_chop_tree_reselects_same_column_log_without_new_approach(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    replacement = {
+        "block": "minecraft:spruce_log",
+        "category": "log",
+        "x": 2,
+        "y": 81,
+        "z": 0,
+        "center_x": 2.5,
+        "center_y": 81.5,
+        "center_z": 0.5,
+        "distance": 3.2,
+    }
+    advanced = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": [replacement]}},
+                }
+            ]
+        }
+    )
+
+    assert advanced.actions
+    assert advanced.actions[0]["name"] == "body_move_to_position"
+    assert advanced.actions[0]["step_id"] == "move:1"
+    assert advanced.actions[0]["args"]["x"] == 2.5
+    assert advanced.actions[0]["args"]["z"] == -0.5
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"last_error": "target disappeared before attack"' in status.content
+    assert '"y": 81' in status.content
+
+
 def test_chop_tree_completes_when_target_disappears_and_no_replacement_exists(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()
