@@ -588,6 +588,20 @@ SCENARIO_DATA = [
                 "wait_for": ["Gunpowder"],
                 "timeout": 30,
             },
+            {
+                "kind": "request",
+                "request_id": "local-environment-observation",
+                "value": "我在哪个生物群系？周围环境怎么样？",
+                "wait_for": ["当前生物群系"],
+                "timeout": 30,
+            },
+            {
+                "kind": "request",
+                "request_id": "local-nearby-observation",
+                "value": "附近有什么生物和方块？",
+                "wait_for": ["附近方块"],
+                "timeout": 30,
+            },
         ],
         "forbidden_tools": [
             {"name": "web_search"},
@@ -608,7 +622,16 @@ SCENARIO_DATA = [
             "run_read_only_command",
         },
         "expected_model": {"mode": "exact", "count": 0},
-        "expected_response_contains": ["生命", "饥饿", "坐标", "Mina body 当前在线", "距离你", "Gunpowder"],
+        "expected_response_contains": [
+            "生命",
+            "饥饿",
+            "坐标",
+            "Mina body 当前在线",
+            "距离你",
+            "Gunpowder",
+            "当前生物群系",
+            "附近方块",
+        ],
         "rubric": "Simple local observation questions must be answered from the Fabric snapshot without model calls, tools, or body actions.",
     },
     {

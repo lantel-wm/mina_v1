@@ -698,6 +698,16 @@ def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: b
             messages=[{"target": "requester", "content": _player_inventory_observation_message(snapshot)}],
             debug={"local_observation": True, "intent": "player_inventory_observation"},
         )
+    if _environment_observation_intent(normalized):
+        return TurnResponse(
+            messages=[{"target": "requester", "content": _environment_observation_message(snapshot)}],
+            debug={"local_observation": True, "intent": "environment_observation"},
+        )
+    if _nearby_observation_intent(normalized):
+        return TurnResponse(
+            messages=[{"target": "requester", "content": _nearby_observation_message(snapshot)}],
+            debug={"local_observation": True, "intent": "nearby_observation"},
+        )
     if _body_observation_intent(normalized):
         return TurnResponse(
             messages=[{"target": "requester", "content": _body_observation_message(snapshot)}],
@@ -769,6 +779,53 @@ def _player_inventory_observation_intent(message: str) -> bool:
         )
     )
     return has_player_subject and has_item_question
+
+
+def _environment_observation_intent(message: str) -> bool:
+    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
+        return False
+    return any(
+        token in message
+        for token in (
+            "生物群系",
+            "群系",
+            "环境",
+            "脚下",
+            "亮度",
+            "biome",
+            "environment",
+            "light level",
+            "block below",
+        )
+    )
+
+
+def _nearby_observation_intent(message: str) -> bool:
+    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
+        return False
+    if is_body_chop_tree_request(message) or is_body_follow_request(message) or is_body_stop_request(message):
+        return False
+    return any(
+        token in message
+        for token in (
+            "附近有什么",
+            "周围有什么",
+            "身边有什么",
+            "附近有啥",
+            "周围有啥",
+            "附近方块",
+            "附近生物",
+            "附近实体",
+            "周围方块",
+            "周围生物",
+            "nearby",
+            "around me",
+            "what is near",
+            "what's near",
+            "what is around",
+            "what's around",
+        )
+    )
 
 
 def _body_observation_intent(message: str) -> bool:
@@ -856,6 +913,49 @@ def _player_inventory_observation_message(snapshot: dict[str, Any]) -> str:
     return "我还没有拿到你的背包快照，或当前快照里没有可见物品。"
 
 
+def _environment_observation_message(snapshot: dict[str, Any]) -> str:
+    environment = snapshot.get("environment") if isinstance(snapshot.get("environment"), dict) else {}
+    world = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
+    if not environment and not world:
+        return "我还没有拿到你周围的环境快照。"
+    parts: list[str] = []
+    biome = _id_tail(environment.get("biome"))
+    if biome:
+        parts.append(f"当前生物群系：{biome}")
+    block_at_feet = _id_tail(environment.get("block_at_feet"))
+    if block_at_feet:
+        parts.append(f"脚下：{block_at_feet}")
+    block_below = _id_tail(environment.get("block_below"))
+    if block_below:
+        parts.append(f"下方：{block_below}")
+    light = _number_phrase(environment.get("light"))
+    if light:
+        parts.append(f"亮度 {light}")
+    if "sky_visible" in environment:
+        parts.append("可见天空" if environment.get("sky_visible") else "看不到天空")
+    weather = _weather_phrase(world)
+    if weather:
+        parts.append(f"天气：{weather}")
+    return "；".join(parts) + "。" if parts else "我还没有拿到你周围的环境快照。"
+
+
+def _nearby_observation_message(snapshot: dict[str, Any]) -> str:
+    entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    blocks = _flatten_observation_blocks(snapshot.get("nearby_blocks"))
+    parts: list[str] = []
+    entity_lines = _nearby_entity_lines(entities)
+    if entity_lines:
+        parts.append("附近实体：" + "，".join(entity_lines))
+    else:
+        parts.append("附近实体：没有显著实体")
+    block_lines = _nearby_block_lines(blocks)
+    if block_lines:
+        parts.append("附近方块：" + "，".join(block_lines))
+    else:
+        parts.append("附近方块：没有记录到原木、树叶、作物或矿石")
+    return "；".join(parts) + "。"
+
+
 def _item_phrase(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
@@ -869,6 +969,94 @@ def _item_phrase(value: Any) -> str:
     if count:
         return f"{name} x{count}"
     return name
+
+
+def _weather_phrase(world: dict[str, Any]) -> str:
+    if not world:
+        return ""
+    if world.get("thundering"):
+        return "雷暴"
+    if world.get("raining"):
+        return "下雨"
+    return "晴朗"
+
+
+def _nearby_entity_lines(entities: list[Any]) -> list[str]:
+    lines: list[str] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        name = str(entity.get("name") or "").strip() or _id_tail(entity.get("type"))
+        if not name:
+            continue
+        distance = _number_phrase(entity.get("distance"))
+        if distance:
+            lines.append(f"{name}({distance}格)")
+        else:
+            lines.append(name)
+        if len(lines) >= 5:
+            break
+    return lines
+
+
+def _nearby_block_lines(blocks: list[dict[str, Any]]) -> list[str]:
+    category_counts: dict[str, int] = {}
+    closest: dict[str, str] = {}
+    seen: set[tuple[str, str, str, str, str]] = set()
+    for block in blocks:
+        category = str(block.get("category") or "").strip()
+        if not category:
+            continue
+        key = (
+            str(block.get("block") or ""),
+            category,
+            str(block.get("x", "")),
+            str(block.get("y", "")),
+            str(block.get("z", "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        category_counts[category] = category_counts.get(category, 0) + 1
+        if category not in closest:
+            block_name = _id_tail(block.get("block")) or category
+            distance = _number_phrase(block.get("distance"))
+            closest[category] = f"{block_name}" + (f"({distance}格)" if distance else "")
+    lines = []
+    for category, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0])):
+        label = _block_category_label(category)
+        detail = closest.get(category, category)
+        lines.append(f"{label} x{count}，最近 {detail}")
+        if len(lines) >= 4:
+            break
+    return lines
+
+
+def _block_category_label(category: str) -> str:
+    return {
+        "log": "原木",
+        "leaves": "树叶",
+        "crop": "作物",
+        "ore": "矿石",
+    }.get(category, category)
+
+
+def _flatten_observation_blocks(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        blocks: list[dict[str, Any]] = []
+        for nested in value.values():
+            blocks.extend(_flatten_observation_blocks(nested))
+        return blocks
+    return []
+
+
+def _id_tail(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text.removeprefix("minecraft:").replace("_", " ")
 
 
 def _position_phrase(state: dict[str, Any]) -> str:

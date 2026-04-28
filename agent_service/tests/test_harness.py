@@ -553,6 +553,83 @@ def test_harness_answers_player_inventory_from_snapshot_without_model_or_tools(t
     assert memory.recent_tool_calls(request_id="req-player-inventory-observation", limit=10) == []
 
 
+def test_harness_answers_environment_from_snapshot_without_model_or_tools(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-environment-observation",
+            "trigger": "command",
+            "message": "我在哪个生物群系？周围环境怎么样？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "environment": {
+                    "biome": "minecraft:plains",
+                    "block_at_feet": "minecraft:air",
+                    "block_below": "minecraft:grass_block",
+                    "light": 15,
+                    "sky_visible": True,
+                },
+                "world_state": {"raining": False, "thundering": False},
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "当前生物群系：plains" in content
+    assert "下方：grass block" in content
+    assert "亮度 15" in content
+    assert "天气：晴朗" in content
+    assert response["debug"]["intent"] == "environment_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-environment-observation", limit=10) == []
+
+
+def test_harness_answers_nearby_snapshot_summary_without_model_or_tools(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-nearby-observation",
+            "trigger": "command",
+            "message": "附近有什么生物和方块？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "nearby_entities": [
+                    {"type": "minecraft:cow", "name": "Cow", "category": "passive", "distance": 3.25},
+                    {"type": "minecraft:zombie", "name": "Zombie", "category": "hostile", "distance": 9},
+                ],
+                "nearby_blocks": {
+                    "requester": [
+                        {"block": "minecraft:oak_log", "category": "log", "x": 1, "y": 64, "z": 1, "distance": 4},
+                        {"block": "minecraft:oak_log", "category": "log", "x": 1, "y": 65, "z": 1, "distance": 5},
+                        {"block": "minecraft:oak_leaves", "category": "leaves", "x": 2, "y": 66, "z": 1, "distance": 6},
+                    ],
+                    "body": [
+                        {"block": "minecraft:oak_log", "category": "log", "x": 1, "y": 64, "z": 1, "distance": 4},
+                    ]
+                },
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "附近实体：Cow(3.25格)，Zombie(9格)" in content
+    assert "附近方块：原木 x2，最近 oak log(4格)" in content
+    assert "树叶 x1" in content
+    assert response["debug"]["intent"] == "nearby_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-nearby-observation", limit=10) == []
+
+
 def test_harness_answers_body_held_item_from_snapshot_without_model_or_tools(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
