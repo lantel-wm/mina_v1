@@ -44,13 +44,8 @@ FABRIC_ACTION_TOOLS = {
     "body_stop",
 }
 
-READ_ONLY_COMMAND_PREFIXES = {
-    "seed",
-    "time query",
-    "weather query",
-    "list",
-    "locate structure",
-}
+READ_ONLY_TIME_QUERIES = {"daytime", "gametime", "day"}
+READ_ONLY_LOCATE_TARGET = re.compile(r"^[a-z0-9_:.\-/#]+$")
 
 MINECRAFT_WRITE_COMMANDS = {
     "advancement",
@@ -188,7 +183,8 @@ def tool_specs() -> list[dict[str, Any]]:
                 "name": "run_read_only_command",
                 "description": (
                     "Run a tightly constrained read-only Minecraft command and show its output to the requester. "
-                    "Allowed prefixes: seed, time query, weather query, list, locate structure."
+                    "Allowed forms: seed; time query daytime|gametime|day; weather query; list [uuids]; "
+                    "locate structure <identifier>."
                 ),
                 "strict": True,
                 "parameters": _schema({"command": {"type": "string"}}, ["command"]),
@@ -343,7 +339,10 @@ class ToolRunner:
                 content=json.dumps(
                     {
                         "ok": False,
-                        "error": "Only read-only commands are allowed: seed, time query, weather query, list, locate structure.",
+                        "error": (
+                            "Only read-only commands are allowed: seed; time query daytime|gametime|day; "
+                            "weather query; list [uuids]; locate structure <identifier>."
+                        ),
                     },
                     ensure_ascii=False,
                 )
@@ -418,9 +417,20 @@ def _bounded_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
 
 def _is_read_only_command(command: str) -> bool:
     normalized = _strip_slash(command).lower()
-    if not normalized:
+    parts = normalized.split()
+    if not parts:
         return False
-    for prefix in READ_ONLY_COMMAND_PREFIXES:
-        if normalized == prefix or normalized.startswith(prefix + " "):
-            return True
-    return False
+    if parts == ["seed"]:
+        return True
+    if len(parts) == 3 and parts[0] == "time" and parts[1] == "query" and parts[2] in READ_ONLY_TIME_QUERIES:
+        return True
+    if parts == ["weather", "query"]:
+        return True
+    if parts == ["list"] or parts == ["list", "uuids"]:
+        return True
+    return (
+        len(parts) == 3
+        and parts[0] == "locate"
+        and parts[1] == "structure"
+        and bool(READ_ONLY_LOCATE_TARGET.fullmatch(parts[2]))
+    )

@@ -929,6 +929,39 @@ def test_read_only_command_schedules_fabric_action(tmp_path) -> None:
     assert result.action["args"]["command"] == "time query daytime"
 
 
+def test_read_only_command_allows_precise_safe_forms(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    for command in (
+        "seed",
+        "time query gametime",
+        "weather query",
+        "list uuids",
+        "locate structure minecraft:village_plains",
+        "locate structure #minecraft:village",
+    ):
+        result = runner.run("run_read_only_command", {"command": command}, _allowed_turn())
+
+        assert result.action is not None, command
+        assert result.action["args"]["command"] == command
+
+
+def test_read_only_command_rejects_extra_tokens_after_allowed_form(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    for command in (
+        "time query daytime setblock 0 80 0 minecraft:air",
+        "weather query clear",
+        "list @a",
+        "locate structure minecraft:village_plains setblock 0 80 0 minecraft:air",
+        "locate structure minecraft:village plains",
+    ):
+        result = runner.run("run_read_only_command", {"command": command}, _allowed_turn())
+
+        assert result.action is None, command
+        assert "Only read-only commands" in result.content
+
+
 def test_write_command_is_rejected(tmp_path) -> None:
     runner = _runner(tmp_path)
 

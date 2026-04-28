@@ -26,7 +26,7 @@ public final class MinaActionExecutor {
 	private static final Pattern SELECTOR = Pattern.compile("[A-Za-z0-9_:@\\[\\]=,.!\\-]+");
 	private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9_:.\\-/#]+");
 	private static final double BODY_EYE_HEIGHT = 1.62D;
-	private static final Set<String> READ_ONLY_COMMAND_PREFIXES = Set.of("seed", "time query", "weather query", "list", "locate structure");
+	private static final Set<String> READ_ONLY_TIME_QUERIES = Set.of("daytime", "gametime", "day");
 	private final ThreadLocal<List<CommandExecution>> commandLog = ThreadLocal.withInitial(ArrayList::new);
 
 	public JsonArray executeResponse(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject response) {
@@ -525,12 +525,23 @@ public final class MinaActionExecutor {
 
 	private static boolean isReadOnlyCommand(String command) {
 		String normalized = stripSlash(command).toLowerCase(Locale.ROOT);
-		for (String prefix : READ_ONLY_COMMAND_PREFIXES) {
-			if (normalized.equals(prefix) || normalized.startsWith(prefix + " ")) {
-				return true;
-			}
+		String[] parts = normalized.isBlank() ? new String[0] : normalized.split("\\s+");
+		if (parts.length == 1 && parts[0].equals("seed")) {
+			return true;
 		}
-		return false;
+		if (parts.length == 3 && parts[0].equals("time") && parts[1].equals("query") && READ_ONLY_TIME_QUERIES.contains(parts[2])) {
+			return true;
+		}
+		if (parts.length == 2 && parts[0].equals("weather") && parts[1].equals("query")) {
+			return true;
+		}
+		if (parts.length == 1 && parts[0].equals("list")) {
+			return true;
+		}
+		if (parts.length == 2 && parts[0].equals("list") && parts[1].equals("uuids")) {
+			return true;
+		}
+		return parts.length == 3 && parts[0].equals("locate") && parts[1].equals("structure") && IDENTIFIER.matcher(parts[2]).matches();
 	}
 
 	private static String string(JsonObject object, String key, String fallback) {
