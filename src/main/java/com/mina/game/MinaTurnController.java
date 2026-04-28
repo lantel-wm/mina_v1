@@ -12,6 +12,7 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -64,6 +65,10 @@ public final class MinaTurnController {
 			activeTurns.remove(playerId, future);
 			server.executeIfPossible(() -> {
 				if (throwable != null) {
+					if (isCancellation(throwable)) {
+						MinaMod.LOGGER.info("Mina sidecar turn cancelled requestId={} player={}", requestId, player.getGameProfile().name());
+						return;
+					}
 					MinaMod.LOGGER.warn("Mina sidecar turn failed", throwable);
 					player.sendSystemMessage(Component.literal("[Mina] sidecar request failed: " + rootMessage(throwable)));
 					return;
@@ -206,6 +211,17 @@ public final class MinaTurnController {
 			return fallback;
 		}
 		return object.get(key).getAsBoolean();
+	}
+
+	private static boolean isCancellation(Throwable throwable) {
+		Throwable current = throwable;
+		while (current != null) {
+			if (current instanceof CancellationException) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
 	}
 
 	private static String rootMessage(Throwable throwable) {
