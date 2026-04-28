@@ -23,6 +23,26 @@ from .tools import MINECRAFT_WRITE_COMMANDS, ToolRunner, is_read_only_command, t
 
 LOGGER = logging.getLogger("mina_agent.harness")
 
+MINECRAFT_KNOWLEDGE_MARKERS = (
+    "minecraft",
+    "我的世界",
+    "钻石矿",
+    "铁矿",
+    "煤矿",
+    "红石矿",
+    "青金石矿",
+    "金矿",
+    "绿宝石矿",
+    "远古残骸",
+    "下界合金",
+    "矿石高度",
+    "矿物高度",
+    "村民交易",
+    "附魔",
+    "史莱姆区块",
+    "种子地图",
+)
+
 
 class AgentHarness:
     def __init__(self, settings: Settings, memory: MemoryStore, deepseek: DeepSeekClient, tools: ToolRunner):
@@ -1622,8 +1642,7 @@ def _local_web_search_intent(message: str) -> bool:
 
 def _fresh_or_reference_lookup_query(message: str) -> bool:
     subject_markers = (
-        "minecraft",
-        "我的世界",
+        *MINECRAFT_KNOWLEDGE_MARKERS,
         "fabric",
         "puppetplayers",
         "puppet players",
@@ -1679,8 +1698,7 @@ def _natural_external_lookup_query(message: str) -> bool:
     return any(
         token in message
         for token in (
-            "minecraft",
-            "我的世界",
+            *MINECRAFT_KNOWLEDGE_MARKERS,
             "fabric",
             "fabric api",
             "puppetplayers",
