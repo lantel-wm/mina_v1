@@ -723,6 +723,36 @@ SCENARIO_DATA = [
         "rubric": "High-confidence weather queries must use the constrained weather command without a main-model call.",
     },
     {
+        "name": "read_only_weather_player_variants_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "world_tool", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "read-only-rain-status-router",
+                "value": "现在下雨了吗？",
+                "wait_for": ["Weather:", "我会执行这个只读查询"],
+                "timeout": 120,
+            },
+            {
+                "kind": "request",
+                "request_id": "read-only-online-players-en-router",
+                "value": "who is online right now?",
+                "wait_for": ["There are"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "weather query"},
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "list"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Natural rain and English online-player questions should map to constrained read-only commands without model calls.",
+    },
+    {
         "name": "read_only_literal_command_router",
         "fixture": "follow_player",
         "tags": ["live", "core", "world_tool", "router"],
@@ -945,6 +975,36 @@ SCENARIO_DATA = [
             "run setblock",
         ],
         "rubric": "Natural language web lookup requests must use web_search directly even when the player does not name the tool.",
+    },
+    {
+        "name": "knowledge_weather_search_not_world_weather",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "knowledge", "search", "router", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "knowledge-weather-search-not-world-weather",
+                "value": "帮我联网查一下北京天气 Mina E2E weather fixture，回答查到的结果。",
+                "wait_for": ["mina turn response requestId=knowledge-weather-search-not-world-weather"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "web_search", "status": "ok", "args_contains": "北京天气"},
+        ],
+        "forbidden_tools": [
+            {"name": "run_read_only_command", "args_contains": "weather query"},
+        ],
+        "forbidden_actions": {
+            "run_read_only_command",
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["Deterministic Mina E2E result for query"],
+        "rubric": "Explicit online weather lookups must use web_search and must not be hijacked by the Minecraft world-weather router.",
     },
     {
         "name": "memory_roundtrip_live_model",

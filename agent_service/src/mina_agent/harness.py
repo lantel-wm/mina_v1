@@ -835,18 +835,12 @@ def _local_read_only_command(message: str) -> str:
         return time_command
     if "种子" in normalized or "seed" in normalized or "world seed" in normalized:
         return "seed"
-    if "天气" in normalized or "weather" in normalized:
-        return "weather query"
-    if (
-        "在线玩家" in normalized
-        or "玩家列表" in normalized
-        or "谁在线" in normalized
-        or "哪些玩家在线" in normalized
-        or normalized == "list"
-        or "list players" in normalized
-        or "player list" in normalized
-    ):
-        return "list"
+    weather_command = _natural_weather_command(normalized)
+    if weather_command:
+        return weather_command
+    player_list_command = _natural_player_list_command(normalized)
+    if player_list_command:
+        return player_list_command
     return ""
 
 
@@ -892,6 +886,97 @@ def _natural_time_command(message: str) -> str:
         )
     ):
         return "time query daytime"
+    return ""
+
+
+def _natural_weather_command(message: str) -> str:
+    if _local_web_search_intent(message) or _external_weather_query(message) or _weather_instructional_request(message):
+        return ""
+    if any(
+        token in message
+        for token in (
+            "天气",
+            "下雨",
+            "在下雨",
+            "打雷",
+            "雷暴",
+            "晴天",
+            "雨天",
+            "weather",
+            "raining",
+            "is it raining",
+            "storming",
+            "thunder",
+        )
+    ):
+        return "weather query"
+    return ""
+
+
+def _external_weather_query(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "现实天气",
+            "现实世界天气",
+            "天气预报",
+            "北京天气",
+            "上海天气",
+            "广州天气",
+            "深圳天气",
+            "杭州天气",
+            "成都天气",
+            "纽约天气",
+            "东京天气",
+            "weather forecast",
+            "weather in ",
+            "today's weather",
+            "tomorrow's weather",
+        )
+    )
+
+
+def _weather_instructional_request(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "怎么",
+            "如何",
+            "怎样",
+            "教程",
+            "攻略",
+            "解释",
+            "介绍",
+            "生成机制",
+            "机制",
+            "how to",
+            "guide",
+            "tutorial",
+            "explain",
+            "weather cycle",
+            "weather mechanics",
+        )
+    )
+
+
+def _natural_player_list_command(message: str) -> str:
+    if _local_web_search_intent(message):
+        return ""
+    if (
+        "在线玩家" in message
+        or "玩家列表" in message
+        or "谁在线" in message
+        or "哪些玩家在线" in message
+        or message == "list"
+        or "list players" in message
+        or "player list" in message
+        or "online players" in message
+        or "players online" in message
+        or "who is online" in message
+        or "who's online" in message
+        or "server players" in message
+    ):
+        return "list"
     return ""
 
 
