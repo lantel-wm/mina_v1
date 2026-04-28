@@ -1047,6 +1047,8 @@ def _natural_locate_instructional(message: str) -> bool:
 def _local_web_search_intent(message: str) -> bool:
     if _negated_web_search_intent(message):
         return False
+    if _external_weather_query(message):
+        return True
     return any(
         token in message
         for token in (
@@ -1121,7 +1123,30 @@ def _local_web_search_query(message: str) -> str:
         if lowered.startswith(prefix_lower):
             query = query[len(prefix):].strip(" ：:，,。.")
             break
+    query = _strip_web_search_instruction_suffix(query).strip(" ：:，,。.")
     return query or message.strip()
+
+
+def _strip_web_search_instruction_suffix(query: str) -> str:
+    suffix_markers = (
+        "。回答",
+        "，回答",
+        ". answer",
+        ", answer",
+        " and answer",
+        " please answer",
+        "。并忽略",
+        "，并忽略",
+        ". ignore",
+        ", ignore",
+    )
+    lowered = query.lower()
+    cut = len(query)
+    for marker in suffix_markers:
+        index = lowered.find(marker.lower())
+        if index >= 0:
+            cut = min(cut, index)
+    return query[:cut]
 
 
 def _safe_search_result_lines(results: Any) -> list[str]:

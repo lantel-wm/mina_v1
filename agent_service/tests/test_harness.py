@@ -609,7 +609,7 @@ def test_harness_routes_explicit_weather_web_search_without_world_weather_hijack
         {
             "request_id": "req-weather-web-search",
             "trigger": "command",
-            "message": "帮我联网查一下北京天气 Mina E2E weather fixture。",
+            "message": "帮我联网查一下北京天气 Mina E2E weather fixture，回答查到的结果。",
             "player": {"uuid": "player-1", "name": "Tester"},
             "permissions": {"can_use_actions": True},
             "snapshot": {},
@@ -624,6 +624,7 @@ def test_harness_routes_explicit_weather_web_search_without_world_weather_hijack
     calls = memory.recent_tool_calls(request_id="req-weather-web-search", limit=10)
     assert [call["tool_name"] for call in calls] == ["web_search"]
     assert "北京天气" in calls[0]["args_json"]
+    assert "回答查到" not in calls[0]["args_json"]
 
 
 def test_harness_does_not_route_negated_search_request(tmp_path) -> None:
@@ -1304,10 +1305,10 @@ def test_harness_local_read_only_router_maps_weather_and_player_list_variants(tm
     assert deepseek.calls == 0
 
 
-def test_harness_does_not_route_external_weather_to_world_command(tmp_path) -> None:
+def test_harness_routes_external_weather_to_web_search_without_model(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
-    deepseek = DirectAnswerDeepSeek("我需要联网或实时数据才能准确回答现实天气。")
+    deepseek = FailIfCalledDeepSeek()
     harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
 
     response = harness.run_turn(
@@ -1321,10 +1322,13 @@ def test_harness_does_not_route_external_weather_to_world_command(tmp_path) -> N
         }
     )
 
-    assert response["messages"][0]["content"] == "我需要联网或实时数据才能准确回答现实天气。"
+    assert "Result for 北京天气怎么样" in response["messages"][0]["content"]
     assert response["actions"] == []
-    assert deepseek.calls == 1
-    assert memory.recent_tool_calls(request_id="req-external-weather", limit=10) == []
+    assert response["debug"]["local_web_search"] is True
+    assert deepseek.calls == 0
+    calls = memory.recent_tool_calls(request_id="req-external-weather", limit=10)
+    assert [call["tool_name"] for call in calls] == ["web_search"]
+    assert "weather query" not in calls[0]["args_json"]
 
 
 def test_harness_local_read_only_router_maps_natural_structure_queries(tmp_path) -> None:

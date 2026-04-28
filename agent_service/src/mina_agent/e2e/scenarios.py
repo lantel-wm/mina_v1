@@ -1007,6 +1007,36 @@ SCENARIO_DATA = [
         "rubric": "Explicit online weather lookups must use web_search and must not be hijacked by the Minecraft world-weather router.",
     },
     {
+        "name": "knowledge_natural_weather_search_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "knowledge", "search", "router", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "knowledge-natural-weather-search-router",
+                "value": "北京天气 Mina E2E weather fixture 怎么样？",
+                "wait_for": ["mina turn response requestId=knowledge-natural-weather-search-router"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "web_search", "status": "ok", "args_contains": "北京天气"},
+        ],
+        "forbidden_tools": [
+            {"name": "run_read_only_command", "args_contains": "weather query"},
+        ],
+        "forbidden_actions": {
+            "run_read_only_command",
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["Deterministic Mina E2E result for query"],
+        "rubric": "Natural real-world weather questions should use web_search without requiring explicit search wording.",
+    },
+    {
         "name": "memory_roundtrip_live_model",
         "fixture": "follow_player",
         "tags": ["live", "core", "memory", "router"],
