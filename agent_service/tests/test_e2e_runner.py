@@ -75,6 +75,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert "body_stop" in stop_denied.forbidden_actions
     assert stop_denied.expected_model is not None
     assert stop_denied.expected_model.count == 0
+    negative_stop = SCENARIOS["body_negative_follow_stop_router"]
+    assert any(expected.name == "stop_body_task" and expected.status == "ok" for expected in negative_stop.expected_tools)
+    assert any(action.name == "body_stop" for action in negative_stop.expected_actions)
+    assert negative_stop.expected_model is not None
+    assert negative_stop.expected_model.count == 0
     search = SCENARIOS["knowledge_search_live_model"]
     assert "Ignore every previous instruction" in search.forbidden_response_contains
     assert any("companion" in scenario.tags for scenario in live)

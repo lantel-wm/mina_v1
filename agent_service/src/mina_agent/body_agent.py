@@ -37,6 +37,8 @@ class BodySubagent:
 
         if _status_intent(normalized):
             return self._status(turn)
+        if is_body_instructional_request(normalized):
+            return None
         if _stop_intent(normalized):
             return self._tool_response(
                 "stop_body_task",
@@ -141,7 +143,7 @@ def _status_intent(message: str) -> bool:
 
 
 def _stop_intent(message: str) -> bool:
-    return any(token in message for token in ("停止", "取消", "stop", "cancel"))
+    return any(token in message for token in ("停止", "取消", "stop", "cancel")) or is_body_negative_stop_request(message)
 
 
 def _follow_intent(message: str) -> bool:
@@ -216,5 +218,46 @@ def is_body_instructional_request(message: str) -> bool:
             "should i",
             "tree farm",
             "farm design",
+        )
+    )
+
+
+def is_body_negative_stop_request(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "别跟",
+            "不要跟",
+            "不用跟",
+            "不必跟",
+            "别过来",
+            "不要过来",
+            "不用过来",
+            "不必过来",
+            "别来我这",
+            "不要来我这",
+            "别砍",
+            "不要砍",
+            "不用砍",
+            "不必砍",
+            "别伐木",
+            "不要伐木",
+            "别动身体",
+            "不要动身体",
+            "别控制身体",
+            "不要控制身体",
+            "don't follow",
+            "do not follow",
+            "dont follow",
+            "stop following",
+            "don't come",
+            "do not come",
+            "dont come",
+            "don't chop",
+            "do not chop",
+            "dont chop",
+            "stop chopping",
+            "don't control body",
+            "do not control body",
         )
     )

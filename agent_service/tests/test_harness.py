@@ -576,6 +576,28 @@ def test_harness_body_subagent_handles_configured_follow_without_model_call(tmp_
     assert [call["tool_name"] for call in calls] == ["start_body_task"]
 
 
+def test_harness_body_subagent_treats_negative_follow_as_stop(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {"body_state": {"online": True}},
+    }
+
+    harness.run_turn({"request_id": "req-negative-start-follow", "message": "跟随我", **base_turn})
+    response = harness.run_turn({"request_id": "req-negative-stop-follow", "message": "别跟着我", **base_turn})
+
+    assert deepseek.calls == 0
+    assert "我已经停止当前身体任务" in response["messages"][0]["content"]
+    assert response["actions"][0]["name"] == "body_stop"
+    calls = memory.recent_tool_calls(request_id="req-negative-stop-follow", limit=10)
+    assert [call["tool_name"] for call in calls] == ["stop_body_task"]
+
+
 def test_harness_body_subagent_does_not_intercept_tree_planning_request(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -598,6 +620,30 @@ def test_harness_body_subagent_does_not_intercept_tree_planning_request(tmp_path
     assert "砍树时" in response["messages"][0]["content"]
     assert "body_subagent" not in response.get("debug", {})
     assert memory.recent_tool_calls(request_id="req-body-tree-planning", limit=10) == []
+
+
+def test_harness_body_subagent_does_not_intercept_stop_instruction_question(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DirectAnswerDeepSeek("可以说“停止跟随”或“别跟着我”。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-body-stop-instruction",
+            "trigger": "command",
+            "message": "请告诉我怎么停止跟随。",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert deepseek.calls == 1
+    assert response.get("actions", []) == []
+    assert "停止跟随" in response["messages"][0]["content"]
+    assert "body_subagent" not in response.get("debug", {})
+    assert memory.recent_tool_calls(request_id="req-body-stop-instruction", limit=10) == []
 
 
 def test_harness_body_subagent_replaces_follow_with_chop_in_one_turn(tmp_path) -> None:
@@ -713,6 +759,25 @@ def test_harness_offline_fallback_records_status_and_stop_tool_calls(tmp_path) -
     assert "我已经停止当前身体任务" in stopped["messages"][0]["content"]
     assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-status", limit=10)] == ["task_status"]
     assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-stop", limit=10)] == ["stop_body_task"]
+
+
+def test_harness_offline_fallback_treats_negative_follow_as_stop(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {"body_state": {"online": True}},
+    }
+
+    harness.run_turn({"request_id": "req-offline-negative-start", "message": "跟随我", **base_turn})
+    stopped = harness.run_turn({"request_id": "req-offline-negative-stop", "message": "不要跟着我", **base_turn})
+
+    assert "我已经停止当前身体任务" in stopped["messages"][0]["content"]
+    assert stopped["actions"][0]["name"] == "body_stop"
+    assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-offline-negative-stop", limit=10)] == ["stop_body_task"]
 
 
 def test_harness_offline_fallback_can_schedule_read_only_command(tmp_path) -> None:
