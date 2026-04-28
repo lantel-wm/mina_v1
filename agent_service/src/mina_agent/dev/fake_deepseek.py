@@ -36,6 +36,22 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
     if tool_messages:
         message = {"role": "assistant", "content": "错误：action barrier 未生效。"}
         finish_reason = "stop"
+    elif "时间" in user_message or "time" in user_message.lower():
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-time",
+                    "type": "function",
+                    "function": {
+                        "name": "run_read_only_command",
+                        "arguments": '{"command":"time query daytime"}',
+                    },
+                }
+            ],
+        }
+        finish_reason = "tool_calls"
     elif "跟随" in user_message or "follow" in user_message.lower():
         message = {
             "role": "assistant",
