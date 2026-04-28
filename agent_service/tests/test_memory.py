@@ -24,3 +24,23 @@ def test_memory_search_can_return_reusable_skill_reflections(tmp_path) -> None:
 
     assert any(result.get("kind") == "skill_reflection" for result in results)
     assert any("movement stalls" in str(result.get("content") or "") for result in results)
+
+
+def test_action_event_journal_records_non_task_actions(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.record_action_event(
+        "req-1",
+        "action_result",
+        {
+            "action_id": "action-1",
+            "name": "run_read_only_command",
+            "command_results": [{"outputs": ["The time is 1200"]}],
+        },
+    )
+
+    events = memory.recent_action_events(limit=10)
+
+    assert events[0]["request_id"] == "req-1"
+    assert events[0]["action_id"] == "action-1"
+    assert events[0]["action_name"] == "run_read_only_command"
+    assert "The time is 1200" in events[0]["payload_json"]

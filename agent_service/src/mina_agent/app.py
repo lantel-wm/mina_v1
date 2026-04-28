@@ -48,10 +48,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/turn")
     async def turn(payload: dict[str, Any]) -> dict[str, Any]:
-        return await asyncio.to_thread(harness.run_turn, payload)
+        data = await asyncio.to_thread(harness.run_turn, payload)
+        request_id = str(payload.get("request_id") or "")
+        for action in data.get("actions") or []:
+            if isinstance(action, dict):
+                await asyncio.to_thread(memory.record_action_event, request_id, "action_scheduled", action)
+        return data
 
     @app.post("/v1/action-results")
     async def action_results(payload: dict[str, Any]) -> dict[str, Any]:
+        request_id = str(payload.get("request_id") or "")
+        results = payload.get("action_results") if isinstance(payload.get("action_results"), list) else []
+        for result in results:
+            if isinstance(result, dict):
+                await asyncio.to_thread(memory.record_action_event, request_id, "action_result", result)
         response = await asyncio.to_thread(skills.handle_action_results, payload)
         data = response.to_dict()
         data["ok"] = True
@@ -77,6 +87,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/tasks")
     def tasks() -> dict[str, Any]:
         return {"ok": True, "tasks": skills.list_tasks()}
+
+    @app.get("/v1/action-events")
+    def action_events(request_id: str | None = None) -> dict[str, Any]:
+        return {"ok": True, "events": memory.recent_action_events(request_id=request_id, limit=500)}
 
     return app
 

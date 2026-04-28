@@ -138,7 +138,7 @@ def main() -> int:
         elif args.scenario == "model_action_barrier":
             run_model_action_barrier(server, output, args.timeout, args.deepseek_port)
         elif args.scenario == "model_read_only_command":
-            run_model_read_only_command(server, output, args.deepseek_port)
+            run_model_read_only_command(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_knowledge_query":
             run_model_knowledge_query(server, output, args.deepseek_port)
         elif args.scenario == "offline_body_unavailable":
@@ -521,11 +521,20 @@ def run_model_action_barrier(proc: subprocess.Popen[str], output: "OutputReader"
         raise AssertionError(f"fake DeepSeek should have one call before Fabric dispatch, got {calls!r}")
 
 
-def run_model_read_only_command(proc: subprocess.Popen[str], output: "OutputReader", deepseek_port: int) -> None:
+def run_model_read_only_command(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int, deepseek_port: int) -> None:
     run_read_only_command(proc, output)
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before read-only command dispatch, got {calls!r}")
+    event = wait_action_event(
+        sidecar_port,
+        lambda item: item.get("event_type") == "action_result"
+        and item.get("action_name") == "run_read_only_command"
+        and "The time is" in str(item.get("payload_json") or ""),
+        timeout=10,
+    )
+    if not event:
+        raise AssertionError("read-only command action_result was not recorded in the sidecar action journal")
 
 
 def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader", deepseek_port: int) -> None:
@@ -558,6 +567,10 @@ def write_trace_summary(port: int) -> None:
             payload: dict[str, Any] = json.loads(response.read().decode("utf-8"))
     except OSError:
         return
+    try:
+        payload["action_events"] = read_json(f"http://127.0.0.1:{port}/v1/action-events", timeout=5).get("events", [])
+    except OSError:
+        payload["action_events"] = []
     trace = ROOT / "build" / "e2e" / "trace-summary.json"
     trace.parent.mkdir(parents=True, exist_ok=True)
     trace.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -570,9 +583,46 @@ def read_json(url: str, timeout: float) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def wait_action_event(port: int, predicate, timeout: float) -> dict[str, Any]:  # noqa: ANN001
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        payload = read_json(f"http://127.0.0.1:{port}/v1/action-events", timeout=5)
+        for event in payload.get("events") or []:
+            if isinstance(event, dict) and predicate(event):
+                return event
+        time.sleep(0.5)
+    return {}
+
+
 def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:
     trace_id = f"e2e-{int(time.time())}"
     records: list[dict[str, Any]] = []
+    try:
+        action_events_payload = read_json(f"http://127.0.0.1:{port}/v1/action-events", timeout=5)
+    except OSError:
+        action_events_payload = {}
+    for event in action_events_payload.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        payload = event.get("payload_json")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                pass
+        records.append(
+            {
+                "trace_id": trace_id,
+                "request_id": event.get("request_id"),
+                "task_id": event.get("task_id"),
+                "step_id": event.get("step_id"),
+                "action_id": event.get("action_id"),
+                "action_name": event.get("action_name"),
+                "event_type": event.get("event_type"),
+                "created_at": event.get("created_at"),
+                "payload": payload,
+            }
+        )
     for task in tasks_payload.get("tasks") or []:
         task_id = task.get("task_id")
         if not task_id:
