@@ -181,7 +181,26 @@ def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> 
             ]
         }
     )
-    attack = moved.actions[0]
+    look = moved.actions[0]
+    assert look["name"] == "body_look_at_position"
+    assert look["monitor"]["type"] == "body_targeted_block"
+    looked = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "task_id": task_id,
+                    "step_id": look["step_id"],
+                    "name": look["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body targeted expected block"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    attack = looked.actions[0]
+    assert attack["name"] == "body_chain"
     runner.skills.handle_action_results(
         {
             "action_results": [
@@ -249,7 +268,7 @@ def test_stale_action_result_does_not_advance_active_task(tmp_path) -> None:
 
     assert stale.actions == []
     status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
-    assert '"stage": "attack_sent"' in status.content
+    assert '"stage": "look_sent"' in status.content
 
 
 def test_stale_step_result_without_action_id_does_not_advance_active_task(tmp_path) -> None:
@@ -294,8 +313,8 @@ def test_stale_step_result_without_action_id_does_not_advance_active_task(tmp_pa
 
     assert stale.actions == []
     status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
-    assert '"stage": "attack_sent"' in status.content
-    assert '"active_step_id": "attack:0"' in status.content
+    assert '"stage": "look_sent"' in status.content
+    assert '"active_step_id": "look:0"' in status.content
 
 
 def test_chop_tree_reselects_when_target_disappears_before_attack(tmp_path) -> None:
@@ -385,6 +404,68 @@ def test_chop_tree_reselects_same_column_log_without_new_approach(tmp_path) -> N
     assert advanced.actions[0]["args"]["z"] == -0.5
     status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
     assert '"last_error": "target disappeared before attack"' in status.content
+    assert '"y": 81' in status.content
+
+
+def test_chop_tree_reselects_when_target_disappears_after_look_sent(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    look = moved.actions[0]
+    replacement = {
+        "block": "minecraft:spruce_log",
+        "category": "log",
+        "x": 2,
+        "y": 81,
+        "z": 0,
+        "center_x": 2.5,
+        "center_y": 81.5,
+        "center_z": 0.5,
+        "distance": 3.2,
+    }
+
+    advanced = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": look["id"],
+                    "task_id": look["task_id"],
+                    "step_id": look["step_id"],
+                    "name": look["name"],
+                    "status": "timeout",
+                    "command_success": True,
+                    "monitor_result": {"status": "timeout", "reason": "monitor deadline reached"},
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": [replacement]}},
+                }
+            ]
+        }
+    )
+
+    assert advanced.actions
+    assert advanced.actions[0]["name"] == "body_move_to_position"
+    assert advanced.actions[0]["step_id"] == "move:1"
+    assert advanced.actions[0]["args"]["x"] == 2.5
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"last_error": "target disappeared before attack"' in status.content
+    assert '"active_step_id": "move:1"' in status.content
     assert '"y": 81' in status.content
 
 

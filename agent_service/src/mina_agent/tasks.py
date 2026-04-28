@@ -218,6 +218,11 @@ class SkillRuntime:
         if command_success is False or status in {"command_failed", "failed"}:
             return self._recover_or_fail(task, result.get("error") or "command failed")
         if monitor_status in {"failed", "timeout"} or status in {"monitor_failed", "timeout"}:
+            if task.get("type") == "chop_tree" and step_id.startswith("look"):
+                snapshot = task.get("latest_snapshot") or {}
+                current_target = self._current_or_replacement_target(task, snapshot, task.get("target") or {})
+                if isinstance(current_target, TurnResponse):
+                    return current_target
             return self._recover_or_fail(task, monitor.get("reason") or result.get("error") or "monitor failed")
         if task.get("type") == "follow_player":
             return self._handle_follow_result(task, result, status, monitor_status)
@@ -231,6 +236,9 @@ class SkillRuntime:
                 return TurnResponse(debug={"task_status": _public_task(task)})
             return self._advance(task, snapshot)
         if step_id.startswith("move"):
+            task["stage"] = "look"
+            return self._advance(task, snapshot)
+        if step_id.startswith("look"):
             task["stage"] = "attack"
             return self._advance(task, snapshot)
         if step_id.startswith("attack"):
@@ -323,7 +331,7 @@ class SkillRuntime:
                     "x": args["x"],
                     "y": args["y"],
                     "z": args["z"],
-                    "radius": 2.25,
+                    "radius": 0.9,
                     "deadline_ticks": 160,
                 },
             )
@@ -331,36 +339,40 @@ class SkillRuntime:
             task["stage"] = "move_sent"
             return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
 
+        if task.get("stage") == "look":
+            target = task.get("target") or {}
+            current_target = self._current_or_replacement_target(task, snapshot, target)
+            if isinstance(current_target, TurnResponse):
+                return current_target
+            target = current_target
+            task["target"] = target
+            action = _action(
+                task,
+                "body_look_at_position",
+                {
+                    "x": float(target["center_x"]),
+                    "y": float(target["center_y"]),
+                    "z": float(target["center_z"]),
+                },
+                step=f"look:{task.get('attempts', 0)}",
+                monitor={
+                    "type": "body_targeted_block",
+                    "x": int(target["x"]),
+                    "y": int(target["y"]),
+                    "z": int(target["z"]),
+                    "block": str(target.get("block") or ""),
+                    "deadline_ticks": 50,
+                },
+            )
+            self._mark_action(task, action)
+            task["stage"] = "look_sent"
+            return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
+
         if task.get("stage") == "attack":
             target = task.get("target") or {}
-            current_target = _find_block(snapshot, target)
-            if current_target is None:
-                replacement = _choose_replacement_log_target(snapshot, target)
-                self.memory.record_task_event(
-                    task["task_id"],
-                    "target_disappeared",
-                    {"old_target": target, "replacement": replacement},
-                )
-                if replacement is None:
-                    task["status"] = "completed"
-                    task["stage"] = "done"
-                    task["last_error"] = "target disappeared before attack"
-                    task["updated_at"] = time.time()
-                    self._clear_current_if_terminal(task)
-                    self.memory.add_skill_reflection(
-                        "chop_tree",
-                        "If the selected log disappears before attack and no other log is available, stop without attacking empty space.",
-                        {"task_id": task["task_id"], "target": target},
-                    )
-                    return TurnResponse(
-                        messages=[{"target": "requester", "content": "目标原木已经不存在，附近没有其他可砍的原木，我先停下。"}],
-                        debug={"task_status": _public_task(task)},
-                    )
-                task["attempts"] = int(task.get("attempts") or 0) + 1
-                task["target"] = replacement
-                task["last_error"] = "target disappeared before attack"
-                task["stage"] = "move"
-                return self._advance(task, snapshot)
+            current_target = self._current_or_replacement_target(task, snapshot, target)
+            if isinstance(current_target, TurnResponse):
+                return current_target
             target = current_target
             task["target"] = target
             action = _action(
@@ -371,14 +383,9 @@ class SkillRuntime:
                     "loop": False,
                     "restart": True,
                     "actions": [
-                        {
-                            "type": "look_at_position",
-                            "x": float(target["center_x"]),
-                            "y": float(target["center_y"]),
-                            "z": float(target["center_z"]),
-                        },
+                        {"type": "delay", "seconds": 0.2},
                         {"type": "attack", "mode": "hold"},
-                        {"type": "delay", "seconds": 5.5},
+                        {"type": "delay", "seconds": 7.0},
                         {"type": "attack", "mode": "release"},
                     ],
                 },
@@ -389,7 +396,7 @@ class SkillRuntime:
                     "y": int(target["y"]),
                     "z": int(target["z"]),
                     "block": str(target.get("block") or ""),
-                    "deadline_ticks": 180,
+                    "deadline_ticks": 240,
                 },
                 expected_effect={
                     "type": "block_removed",
@@ -422,6 +429,42 @@ class SkillRuntime:
         self._mark_action(task, action)
         task["stage"] = "follow_sent"
         return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
+
+    def _current_or_replacement_target(
+        self,
+        task: dict[str, Any],
+        snapshot: dict[str, Any],
+        target: dict[str, Any],
+    ) -> dict[str, Any] | TurnResponse:
+        current_target = _find_block(snapshot, target)
+        if current_target is not None:
+            return _with_previous_approach(current_target, target)
+        replacement = _choose_replacement_log_target(snapshot, target)
+        self.memory.record_task_event(
+            task["task_id"],
+            "target_disappeared",
+            {"old_target": target, "replacement": replacement},
+        )
+        if replacement is None:
+            task["status"] = "completed"
+            task["stage"] = "done"
+            task["last_error"] = "target disappeared before attack"
+            task["updated_at"] = time.time()
+            self._clear_current_if_terminal(task)
+            self.memory.add_skill_reflection(
+                "chop_tree",
+                "If the selected log disappears before attack and no other log is available, stop without attacking empty space.",
+                {"task_id": task["task_id"], "target": target},
+            )
+            return TurnResponse(
+                messages=[{"target": "requester", "content": "目标原木已经不存在，附近没有其他可砍的原木，我先停下。"}],
+                debug={"task_status": _public_task(task)},
+            )
+        task["attempts"] = int(task.get("attempts") or 0) + 1
+        task["target"] = replacement
+        task["last_error"] = "target disappeared before attack"
+        task["stage"] = "move"
+        return self._advance(task, snapshot)
 
     def _recover_or_fail(self, task: dict[str, Any], reason: Any) -> TurnResponse:
         task["attempts"] = int(task.get("attempts") or 0) + 1
@@ -460,7 +503,11 @@ class SkillRuntime:
             task["stage"] = "follow"
             return self._advance(task, snapshot)
         task["target"] = _choose_log_target(snapshot) or task.get("target")
-        task["stage"] = "move" if task.get("target") else "new"
+        target = task.get("target") if isinstance(task.get("target"), dict) else {}
+        if target:
+            task["stage"] = "move" if _has_approach(target) else "look"
+        else:
+            task["stage"] = "new"
         return self._advance(task, snapshot)
 
     def _mark_action(self, task: dict[str, Any], action: dict[str, Any]) -> None:
@@ -504,9 +551,21 @@ def _action(
 
 def _choose_log_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     for block in _log_candidates(snapshot):
-        if all(key in block for key in ("approach_x", "approach_y", "approach_z")):
+        if _has_approach(block):
             return dict(block)
     return None
+
+
+def _has_approach(block: dict[str, Any]) -> bool:
+    return all(key in block for key in ("approach_x", "approach_y", "approach_z"))
+
+
+def _with_previous_approach(current: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(current)
+    for key in ("approach_x", "approach_y", "approach_z"):
+        if key not in merged and key in previous:
+            merged[key] = previous[key]
+    return merged
 
 
 def _choose_replacement_log_target(snapshot: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any] | None:

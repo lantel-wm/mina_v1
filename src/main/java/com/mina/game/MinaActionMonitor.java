@@ -9,6 +9,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 import java.util.Iterator;
 import java.util.UUID;
@@ -133,6 +135,27 @@ public final class MinaActionMonitor {
 					success.addProperty("actual_block", actual);
 				}
 			}
+		} else if ("body_targeted_block".equals(type)) {
+			ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
+			if (body != null) {
+				BlockPos expectedPos = new BlockPos(intValue(monitor, "x", 0), intValue(monitor, "y", 0), intValue(monitor, "z", 0));
+				HitResult hit = body.pick(5.0D, 0.0F, false);
+				if (hit instanceof BlockHitResult blockHit && hit.getType() == HitResult.Type.BLOCK) {
+					BlockPos actualPos = blockHit.getBlockPos();
+					BlockState state = body.level().getBlockState(actualPos);
+					String actualBlock = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+					String expectedBlock = string(monitor, "block");
+					if (actualPos.equals(expectedPos) && (expectedBlock.isBlank() || expectedBlock.equals(actualBlock))) {
+						success = result("success", "body targeted expected block");
+						success.addProperty("actual_block", actualBlock);
+					}
+				}
+				if (success == null && bodyAimMatches(body, monitor, expectedPos)) {
+					success = result("success", "body aimed at expected block");
+					success.addProperty("yaw", round(body.getYRot()));
+					success.addProperty("pitch", round(body.getXRot()));
+				}
+			}
 		} else if ("follow_requester".equals(type)) {
 			ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
 			if (body != null && requester != null) {
@@ -192,6 +215,34 @@ public final class MinaActionMonitor {
 
 	private static double round(double value) {
 		return Math.round(value * 100.0D) / 100.0D;
+	}
+
+	private static boolean bodyAimMatches(ServerPlayer body, JsonObject monitor, BlockPos expectedPos) {
+		double targetX = expectedPos.getX() + 0.5D;
+		double targetY = expectedPos.getY() + 0.5D;
+		double targetZ = expectedPos.getZ() + 0.5D;
+		double dx = targetX - body.getX();
+		double dy = targetY - body.getEyeY();
+		double dz = targetZ - body.getZ();
+		double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+		double expectedYaw = wrapDegrees(Math.toDegrees(Math.atan2(dz, dx)) - 90.0D);
+		double expectedPitch = -Math.toDegrees(Math.atan2(dy, horizontalDistance));
+		expectedPitch = Math.max(-90.0D, Math.min(90.0D, expectedPitch));
+		double yawTolerance = doubleValue(monitor, "yaw_tolerance", 8.0D);
+		double pitchTolerance = doubleValue(monitor, "pitch_tolerance", 8.0D);
+		return Math.abs(wrapDegrees(body.getYRot() - expectedYaw)) <= yawTolerance
+			&& Math.abs(body.getXRot() - expectedPitch) <= pitchTolerance;
+	}
+
+	private static double wrapDegrees(double degrees) {
+		double wrapped = degrees % 360.0D;
+		if (wrapped >= 180.0D) {
+			wrapped -= 360.0D;
+		}
+		if (wrapped < -180.0D) {
+			wrapped += 360.0D;
+		}
+		return wrapped;
 	}
 
 	private record ActiveMonitor(

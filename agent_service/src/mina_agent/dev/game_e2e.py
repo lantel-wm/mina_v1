@@ -763,9 +763,7 @@ def run_model_chop_tree(
     deepseek_port: int,
 ) -> None:
     run_chop_tree(proc, output, timeout, sidecar_port)
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before chop_tree dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent chop_tree dispatch")
 
 
 def run_model_chop_then_status(
@@ -798,9 +796,7 @@ def run_model_chop_then_status(
     active = [task for task in tasks if isinstance(task, dict) and task.get("status") == "active"]
     if not completed or active:
         raise AssertionError(f"expected completed chop_tree and no active tasks after chop status query: {tasks!r}")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 3:
-        raise AssertionError(f"fake DeepSeek should have three calls for chop then status tool loop, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent chop then status")
 
 
 def run_model_chop_target_disappears(
@@ -846,9 +842,7 @@ def run_model_chop_target_disappears(
     ]
     if not disappeared:
         raise AssertionError(f"expected target_disappeared task event for recovered chop task: {events!r}")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before recovered chop dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent recovered chop dispatch")
 
 
 def run_model_unreachable_chop_tree(
@@ -883,9 +877,7 @@ def run_model_unreachable_chop_tree(
     ]
     if not failed:
         raise AssertionError(f"expected failed unreachable chop task: {tasks!r}")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 2:
-        raise AssertionError(f"fake DeepSeek should have two calls for unreachable chop tool loop, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent unreachable chop")
 
 
 def run_model_replace_follow_with_chop(
@@ -898,9 +890,7 @@ def run_model_replace_follow_with_chop(
     run_replace_follow_with_chop(proc, output, timeout)
     assert_body_task_tool_call(sidecar_port, "follow_player")
     assert_body_task_tool_call(sidecar_port, "chop_tree")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 2:
-        raise AssertionError(f"fake DeepSeek should have two calls for follow then chop_tree, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent follow then chop_tree")
 
 
 def run_model_action_barrier(
@@ -922,9 +912,7 @@ def run_model_action_barrier(
         timeout=timeout,
         interval=2.0,
     )
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before Fabric dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent follow action dispatch")
 
 
 def run_model_follow_player(
@@ -935,9 +923,7 @@ def run_model_follow_player(
     deepseek_port: int,
 ) -> None:
     run_follow_player(proc, output, timeout, sidecar_port)
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before follow_player dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent follow_player dispatch")
 
 
 def run_model_spawn_body_follow(
@@ -986,9 +972,7 @@ def run_model_spawn_body_follow(
         timeout=timeout,
         interval=2.0,
     )
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before spawn-and-follow dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent spawn-and-follow dispatch")
 
 
 def run_model_follow_heartbeat(
@@ -1029,9 +1013,7 @@ def run_model_follow_heartbeat(
     ]
     if not active:
         raise AssertionError(f"expected active follow task with at least two cycles: {tasks!r}")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before follow heartbeat dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent follow heartbeat dispatch")
 
 
 def run_model_multi_body_action_barrier(
@@ -1067,9 +1049,7 @@ def run_model_multi_body_action_barrier(
     chop_tasks = [task for task in tasks if isinstance(task, dict) and task.get("type") == "chop_tree"]
     if not active_follow or chop_tasks:
         raise AssertionError(f"expected only an active follow task after multi body call barrier: {tasks!r}")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before multi body action barrier dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent multi body action barrier dispatch")
 
 
 def assert_body_task_tool_call(sidecar_port: int | None, task_type: str) -> None:
@@ -1153,9 +1133,7 @@ def run_model_task_status(
     )
     if not call:
         raise AssertionError("model status request did not record an active task_status tool call")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 3:
-        raise AssertionError(f"fake DeepSeek should have three calls for follow plus task_status tool loop, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent follow plus task_status")
 
 
 def run_model_stop_follow(
@@ -1166,9 +1144,7 @@ def run_model_stop_follow(
     deepseek_port: int,
 ) -> None:
     run_stop_follow(proc, output, timeout, sidecar_port)
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 2:
-        raise AssertionError(f"fake DeepSeek should have two calls for follow plus stop, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent follow plus stop")
 
 
 def run_model_stop_permission_denied(
@@ -1205,9 +1181,7 @@ def run_model_stop_permission_denied(
     ]
     if not active_follow:
         raise AssertionError(f"permission denied stop should leave the active follow task visible: {tasks!r}")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 3:
-        raise AssertionError(f"fake DeepSeek should have three calls for follow plus denied stop tool loop, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent follow plus denied stop")
 
 
 def run_model_permission_denied(
@@ -1235,9 +1209,7 @@ def run_model_permission_denied(
     events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5)
     if events.get("events"):
         raise AssertionError(f"permission denied request should not schedule Fabric actions: {events!r}")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 2:
-        raise AssertionError(f"fake DeepSeek should have two calls for denied follow tool loop, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent denied follow")
 
 
 def run_model_body_unavailable(
@@ -1248,9 +1220,7 @@ def run_model_body_unavailable(
 ) -> None:
     run_body_unavailable(proc, output)
     assert_body_task_tool_call(sidecar_port, "follow_player")
-    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
-    if calls.get("count") != 1:
-        raise AssertionError(f"fake DeepSeek should have one call before body unavailable dispatch, got {calls!r}")
+    assert_fake_deepseek_calls(deepseek_port, 0, "body subagent body unavailable dispatch")
 
 
 def run_permission_denied(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int) -> None:
@@ -1309,6 +1279,12 @@ def read_json(url: str, timeout: float) -> dict[str, Any]:
     with urlopen_no_proxy(url, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return payload if isinstance(payload, dict) else {}
+
+
+def assert_fake_deepseek_calls(port: int, expected: int, reason: str) -> None:
+    calls = read_json(f"http://127.0.0.1:{port}/calls", timeout=5)
+    if calls.get("count") != expected:
+        raise AssertionError(f"fake DeepSeek should have {expected} calls for {reason}, got {calls!r}")
 
 
 def wait_action_event(port: int, predicate, timeout: float) -> dict[str, Any]:  # noqa: ANN001

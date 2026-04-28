@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Any
 
+from .body_agent import BodySubagent
 from .config import Settings
 from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
@@ -21,6 +22,7 @@ class AgentHarness:
         self.memory = memory
         self.deepseek = deepseek
         self.tools = tools
+        self.body_subagent = BodySubagent(tools)
         self._last_companion_message: dict[str, float] = {}
 
     def run_turn(self, turn: dict[str, Any]) -> dict[str, Any]:
@@ -45,6 +47,25 @@ class AgentHarness:
         message = str(turn.get("message") or "")
         if message:
             self.memory.add_conversation(request_id, player_id, "user", message)
+
+        body_response = self.body_subagent.handle(turn)
+        if body_response is not None:
+            result_actions = []
+            if body_response.tool_result.action:
+                result_actions.append(body_response.tool_result.action)
+            result_actions.extend(body_response.tool_result.actions)
+            self._record_tool_call(turn, body_response.tool_name, body_response.args, body_response.tool_result, result_actions)
+            for message_item in body_response.response.messages:
+                content = str(message_item.get("content") or "").strip()
+                if content:
+                    self.memory.add_conversation(request_id, player_id, "assistant", content)
+            self._debug(
+                "turn body_subagent request_id=%s intent=%s actions=%s",
+                request_id,
+                body_response.response.debug.get("intent"),
+                len(body_response.response.actions),
+            )
+            return body_response.response.to_dict()
 
         if not self.deepseek.configured():
             offline = self._offline_fallback(turn)

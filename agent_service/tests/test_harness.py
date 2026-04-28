@@ -224,6 +224,18 @@ class EmptyDeepSeek:
         )
 
 
+class FailIfCalledDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        raise AssertionError("body subagent should handle this request before the main model")
+
+
 class UnconfiguredDeepSeek:
     def configured(self) -> bool:
         return False
@@ -263,7 +275,7 @@ def test_harness_dispatches_fabric_action_before_next_model_subturn(tmp_path) ->
         {
             "request_id": "req-action-barrier",
             "trigger": "command",
-            "message": "跟随我",
+            "message": "model dispatch test",
             "player": {"uuid": "player-1", "name": "Tester"},
             "permissions": {"can_use_actions": True},
             "snapshot": {"body_state": {"online": True}},
@@ -286,7 +298,7 @@ def test_harness_action_barrier_ignores_later_action_tool_calls(tmp_path) -> Non
         {
             "request_id": "req-multi-action-barrier",
             "trigger": "command",
-            "message": "同时跟随并砍树",
+            "message": "model multi dispatch test",
             "player": {"uuid": "player-1", "name": "Tester"},
             "permissions": {"can_use_actions": True},
             "snapshot": {
@@ -367,7 +379,7 @@ def test_harness_injects_current_task_into_context(tmp_path) -> None:
         {
             "request_id": "req-status",
             "trigger": "command",
-            "message": "现在状态如何",
+            "message": "model context inspect",
             "player": {"uuid": "player-1", "name": "Tester"},
             "permissions": {"can_use_actions": True},
             "snapshot": {"body_state": {"online": True}},
@@ -397,7 +409,7 @@ def test_harness_records_model_status_tool_result_as_ok(tmp_path) -> None:
         {
             "request_id": "req-model-status",
             "trigger": "command",
-            "message": "状态",
+            "message": "model inspection check",
             "player": {"uuid": "player-1", "name": "Tester"},
             "permissions": {"can_use_actions": True},
             "snapshot": {"body_state": {"online": True}},
@@ -409,6 +421,78 @@ def test_harness_records_model_status_tool_result_as_ok(tmp_path) -> None:
     calls = memory.recent_tool_calls(request_id="req-model-status", limit=10)
     assert [call["tool_name"] for call in calls] == ["task_status"]
     assert calls[0]["status"] == "ok"
+
+
+def test_harness_body_subagent_handles_configured_follow_without_model_call(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-body-subagent-follow",
+            "trigger": "command",
+            "message": "跟着我",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert deepseek.calls == 0
+    assert "我开始跟随你" in response["messages"][0]["content"]
+    assert response["actions"][0]["name"] == "body_move_to_requester"
+    assert response["debug"]["body_subagent"] is True
+    calls = memory.recent_tool_calls(request_id="req-body-subagent-follow", limit=10)
+    assert [call["tool_name"] for call in calls] == ["start_body_task"]
+
+
+def test_harness_body_subagent_replaces_follow_with_chop_in_one_turn(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {
+            "body_state": {"online": True},
+            "nearby_blocks": {
+                "requester": [
+                    {
+                        "block": "minecraft:oak_log",
+                        "category": "log",
+                        "x": 2,
+                        "y": 80,
+                        "z": 0,
+                        "center_x": 2.5,
+                        "center_y": 80.5,
+                        "center_z": 0.5,
+                        "distance": 3.0,
+                        "approach_x": 2.5,
+                        "approach_y": 80,
+                        "approach_z": -0.5,
+                    }
+                ]
+            },
+        },
+    }
+
+    harness.run_turn({"request_id": "req-start-follow", "message": "跟随我", **base_turn})
+    response = harness.run_turn({"request_id": "req-chop-replaces-follow", "message": "帮我砍树", **base_turn})
+
+    assert deepseek.calls == 0
+    assert "我开始砍树" in response["messages"][0]["content"]
+    assert [action["name"] for action in response["actions"][:2]] == ["body_stop", "body_move_to_position"]
+    calls = memory.recent_tool_calls(request_id="req-chop-replaces-follow", limit=10)
+    assert [call["tool_name"] for call in calls] == ["start_body_task"]
+    tasks = tools.skills.list_tasks()
+    active = [task for task in tasks if task["status"] == "active"]
+    cancelled = [task for task in tasks if task["status"] == "cancelled"]
+    assert [task["type"] for task in active] == ["chop_tree"]
+    assert [task["type"] for task in cancelled] == ["follow_player"]
 
 
 def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
@@ -429,7 +513,7 @@ def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
 
     assert "我开始跟随你" in response["messages"][0]["content"]
     assert response["actions"][0]["name"] == "body_move_to_requester"
-    assert response["debug"]["offline_fallback"] is True
+    assert response["debug"]["body_subagent"] is True
 
 
 def test_harness_offline_fallback_records_status_and_stop_tool_calls(tmp_path) -> None:

@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any
+
+from .schemas import ToolResult, TurnResponse
+from .tools import ToolRunner
+
+
+@dataclass(frozen=True)
+class BodySubagentResult:
+    response: TurnResponse
+    tool_name: str
+    args: dict[str, Any]
+    tool_result: ToolResult
+
+
+class BodySubagent:
+    """Deterministic body-control subagent.
+
+    The main agent handles conversation and knowledge. Explicit body-control
+    intents are routed here so the model does not micromanage stop/move/attack
+    sequencing or split task replacement across multiple turns.
+    """
+
+    def __init__(self, tools: ToolRunner):
+        self.tools = tools
+
+    def handle(self, turn: dict[str, Any]) -> BodySubagentResult | None:
+        if turn.get("trigger") != "command":
+            return None
+        message = str(turn.get("message") or "").strip()
+        normalized = message.lower()
+        if not normalized:
+            return None
+
+        if _status_intent(normalized):
+            return self._status(turn)
+        if _stop_intent(normalized):
+            return self._tool_response(
+                "stop_body_task",
+                {},
+                turn,
+                intent="stop_body_task",
+                fallback_message="我已经停止当前身体任务。",
+            )
+        if _follow_intent(normalized):
+            return self._tool_response(
+                "start_body_task",
+                {"task_type": "follow_player", "target_hint": message},
+                turn,
+                intent="follow_player",
+                fallback_message="我开始跟随你，会根据距离变化继续调整。",
+            )
+        if _chop_tree_intent(normalized):
+            return self._tool_response(
+                "start_body_task",
+                {"task_type": "chop_tree", "target_hint": message},
+                turn,
+                intent="chop_tree",
+                fallback_message="我开始砍树，会根据实际执行结果继续调整。",
+            )
+        return None
+
+    def _status(self, turn: dict[str, Any]) -> BodySubagentResult:
+        args: dict[str, Any] = {}
+        result = self.tools.run("task_status", args, turn)
+        status = _json_object(result.content)
+        if status.get("ok") is False:
+            content = "当前没有正在执行的身体任务。"
+        else:
+            content = f"当前任务：{status.get('type')}，状态：{status.get('status')}，阶段：{status.get('stage')}。"
+        response = TurnResponse(
+            messages=[{"target": "requester", "content": content}],
+            debug={"body_subagent": True, "intent": "task_status", "task_status": status},
+        )
+        return BodySubagentResult(response=response, tool_name="task_status", args=args, tool_result=result)
+
+    def _tool_response(
+        self,
+        name: str,
+        args: dict[str, Any],
+        turn: dict[str, Any],
+        intent: str,
+        fallback_message: str,
+    ) -> BodySubagentResult:
+        result = self.tools.run(name, args, turn)
+        payload = _json_object(result.content)
+        actions = _result_actions(result)
+        messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+        if payload.get("ok") is False and not messages:
+            messages = [
+                {
+                    "target": "requester",
+                    "content": _permission_or_error_message(name, str(payload.get("error") or "tool unavailable")),
+                }
+            ]
+        elif not messages and actions:
+            messages = [{"target": "requester", "content": fallback_message}]
+        response = TurnResponse(
+            messages=messages,
+            actions=actions,
+            debug={"body_subagent": True, "intent": intent, "task_status": _task_status(payload)},
+        )
+        return BodySubagentResult(response=response, tool_name=name, args=args, tool_result=result)
+
+
+def _result_actions(result: ToolResult) -> list[dict[str, Any]]:
+    actions = []
+    if result.action:
+        actions.append(result.action)
+    actions.extend(result.actions)
+    return actions
+
+
+def _json_object(content: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _task_status(payload: dict[str, Any]) -> dict[str, Any]:
+    debug = payload.get("debug") if isinstance(payload.get("debug"), dict) else {}
+    task_status = debug.get("task_status") if isinstance(debug.get("task_status"), dict) else {}
+    return task_status
+
+
+def _permission_or_error_message(tool_name: str, error: str) -> str:
+    if error == "permission denied":
+        if tool_name == "stop_body_task":
+            return "我没有权限停止身体任务。"
+        return "我没有权限控制身体任务。"
+    return f"身体任务无法执行：{error}"
+
+
+def _status_intent(message: str) -> bool:
+    return any(token in message for token in ("状态", "进度", "当前任务", "status"))
+
+
+def _stop_intent(message: str) -> bool:
+    return any(token in message for token in ("停止", "取消", "stop", "cancel"))
+
+
+def _follow_intent(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "跟随我",
+            "跟着我",
+            "跟我",
+            "过来",
+            "来我这",
+            "来我这边",
+            "到我这",
+            "follow me",
+            "follow player",
+            "come here",
+            "come to me",
+        )
+    )
+
+
+def _chop_tree_intent(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "砍树",
+            "砍木头",
+            "伐木",
+            "chop tree",
+            "chop a tree",
+            "cut tree",
+            "cut down tree",
+            "cut down a tree",
+            "chop wood",
+        )
+    )
