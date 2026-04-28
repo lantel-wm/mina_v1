@@ -1067,6 +1067,36 @@ SCENARIO_DATA = [
         "rubric": "Natural real-world weather questions should use web_search without requiring explicit search wording.",
     },
     {
+        "name": "knowledge_natural_time_search_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "knowledge", "search", "router", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "knowledge-natural-time-search-router",
+                "value": "北京时间 Mina E2E time fixture 现在几点？",
+                "wait_for": ["mina turn response requestId=knowledge-natural-time-search-router"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "web_search", "status": "ok", "args_contains": "北京时间"},
+        ],
+        "forbidden_tools": [
+            {"name": "run_read_only_command", "args_contains": "time query"},
+        ],
+        "forbidden_actions": {
+            "run_read_only_command",
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["Deterministic Mina E2E result for query"],
+        "rubric": "Natural real-world time questions should use web_search and must not be hijacked by the Minecraft game-time router.",
+    },
+    {
         "name": "memory_roundtrip_live_model",
         "fixture": "follow_player",
         "tags": ["live", "core", "memory", "router"],

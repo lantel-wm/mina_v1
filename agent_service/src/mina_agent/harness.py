@@ -846,6 +846,8 @@ def _local_read_only_command(message: str) -> str:
 
 
 def _natural_time_command(message: str) -> str:
+    if _local_web_search_intent(message) or _external_time_query(message):
+        return ""
     if any(
         token in message
         for token in (
@@ -888,6 +890,49 @@ def _natural_time_command(message: str) -> str:
     ):
         return "time query daytime"
     return ""
+
+
+def _external_time_query(message: str) -> bool:
+    if any(
+        token in message
+        for token in (
+            "现实时间",
+            "现实世界时间",
+            "当地时间",
+            "北京时间",
+            "上海时间",
+            "纽约时间",
+            "东京时间",
+            "伦敦时间",
+            "洛杉矶时间",
+            "巴黎时间",
+            "utc 时间",
+            "utc时间",
+            "gmt 时间",
+            "gmt时间",
+            "beijing time",
+            "shanghai time",
+            "new york time",
+            "tokyo time",
+            "london time",
+            "los angeles time",
+            "paris time",
+            "utc time",
+            "gmt time",
+        )
+    ):
+        return True
+    cn_cities = ("北京", "上海", "纽约", "东京", "伦敦", "洛杉矶", "巴黎")
+    if any(city in message for city in cn_cities) and any(
+        token in message for token in ("几点", "时间", "现在几点")
+    ):
+        return True
+    en_cities = ("beijing", "shanghai", "new york", "tokyo", "london", "los angeles", "paris")
+    if any(city in message for city in en_cities) and any(
+        token in message for token in ("what time", "current time", "local time", " time")
+    ):
+        return True
+    return False
 
 
 def _natural_seed_command(message: str) -> str:
@@ -1127,7 +1172,7 @@ def _natural_locate_instructional(message: str) -> bool:
 def _local_web_search_intent(message: str) -> bool:
     if _negated_web_search_intent(message):
         return False
-    if _external_weather_query(message):
+    if _external_weather_query(message) or _external_time_query(message):
         return True
     return any(
         token in message

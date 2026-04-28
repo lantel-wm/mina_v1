@@ -1414,6 +1414,32 @@ def test_harness_routes_external_weather_to_web_search_without_model(tmp_path) -
     assert "weather query" not in calls[0]["args_json"]
 
 
+def test_harness_routes_external_time_to_web_search_without_model(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-external-time",
+            "trigger": "command",
+            "message": "北京时间现在几点？",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    assert "Result for 北京时间现在几点" in response["messages"][0]["content"]
+    assert response["actions"] == []
+    assert response["debug"]["local_web_search"] is True
+    assert deepseek.calls == 0
+    calls = memory.recent_tool_calls(request_id="req-external-time", limit=10)
+    assert [call["tool_name"] for call in calls] == ["web_search"]
+    assert "time query" not in calls[0]["args_json"]
+
+
 def test_harness_local_read_only_router_maps_natural_structure_queries(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
