@@ -667,6 +667,28 @@ SCENARIO_DATA = [
         "rubric": "High-confidence weather queries must use the constrained weather command without a main-model call.",
     },
     {
+        "name": "read_only_literal_command_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "world_tool", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "read-only-literal-list-uuids",
+                "value": "只读命令：list uuids",
+                "wait_for": ["There are"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "list uuids"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Literal allowed read-only commands should route directly to the constrained command tool without a main-model call.",
+    },
+    {
         "name": "read_only_prefix_injection_rejected_live_model",
         "fixture": "chop_tree",
         "tags": ["live", "core", "world_tool", "model", "safety"],

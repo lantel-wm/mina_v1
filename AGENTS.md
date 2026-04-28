@@ -194,7 +194,7 @@ The live suite covers deterministic body-router, local read-only command-router,
 
 ## Iteration Workflow
 
-The working target is a usable Minecraft agent that can answer knowledge questions through sidecar tools, run tightly constrained read-only Minecraft commands, and control the PuppetPlayers body for simple verified tasks such as following a player and chopping a tree.
+The working target is a usable Minecraft agent that can answer knowledge questions through sidecar tools, run tightly constrained read-only Minecraft commands, route literal allowed read-only command forms without a model call, and control the PuppetPlayers body for simple verified tasks such as following a player and chopping a tree.
 
 For every behavior change:
 

@@ -334,7 +334,7 @@ class ToolRunner:
 
     def _run_read_only_command(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         command = _strip_slash(str(args.get("command") or ""))
-        if not _is_read_only_command(command):
+        if not is_read_only_command(command):
             return ToolResult(
                 content=json.dumps(
                     {
@@ -415,7 +415,7 @@ def _bounded_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, parsed))
 
 
-def _is_read_only_command(command: str) -> bool:
+def is_read_only_command(command: str) -> bool:
     normalized = _strip_slash(command).lower()
     parts = normalized.split()
     if not parts:

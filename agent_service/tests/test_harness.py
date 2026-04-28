@@ -1016,6 +1016,65 @@ def test_harness_local_read_only_router_schedules_without_model_when_configured(
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
+def test_harness_local_read_only_router_accepts_literal_allowed_commands(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    cases = [
+        ("req-literal-time", "time query gametime", "time query gametime"),
+        ("req-literal-weather", "/weather query", "weather query"),
+        ("req-literal-list-uuids", "只读命令：list uuids", "list uuids"),
+        (
+            "req-literal-locate",
+            "请执行只读命令 locate structure minecraft:village_plains",
+            "locate structure minecraft:village_plains",
+        ),
+    ]
+    for request_id, message, command in cases:
+        response = harness.run_turn(
+            {
+                "request_id": request_id,
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": False},
+                "snapshot": {},
+            }
+        )
+
+        assert response["actions"][0]["name"] == "run_read_only_command"
+        assert response["actions"][0]["args"]["command"] == command
+        assert response["debug"]["command"] == command
+        calls = memory.recent_tool_calls(request_id=request_id, limit=10)
+        assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+    assert deepseek.calls == 0
+
+
+def test_harness_local_read_only_router_rejects_invalid_literal_command(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DirectAnswerDeepSeek("这个 locate 命令格式不符合只读白名单。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-invalid-literal-locate",
+            "trigger": "command",
+            "message": "请执行只读命令 locate structure minecraft:village plains",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": False},
+            "snapshot": {},
+        }
+    )
+
+    assert deepseek.calls == 1
+    assert response["actions"] == []
+    assert response["messages"][0]["content"] == "这个 locate 命令格式不符合只读白名单。"
+    assert memory.recent_tool_calls(request_id="req-invalid-literal-locate", limit=10) == []
+
+
 def test_harness_local_read_only_router_does_not_treat_chat_about_online_as_player_list(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

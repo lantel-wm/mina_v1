@@ -19,7 +19,7 @@ from .context import build_messages, is_memory_recall_request
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .schemas import TurnResponse
-from .tools import MINECRAFT_WRITE_COMMANDS, ToolRunner, tool_specs
+from .tools import MINECRAFT_WRITE_COMMANDS, ToolRunner, is_read_only_command, tool_specs
 
 LOGGER = logging.getLogger("mina_agent.harness")
 
@@ -745,6 +745,9 @@ def _local_read_only_command(message: str) -> str:
     normalized = message.strip().lower()
     if not normalized or _mentions_minecraft_write_command(normalized):
         return ""
+    literal = _literal_read_only_command(normalized)
+    if literal:
+        return literal
     if "时间" in normalized or "几点" in normalized or "game time" in normalized or "server time" in normalized:
         return "time query daytime"
     if "种子" in normalized or "seed" in normalized or "world seed" in normalized:
@@ -762,6 +765,59 @@ def _local_read_only_command(message: str) -> str:
     ):
         return "list"
     return ""
+
+
+def _literal_read_only_command(message: str) -> str:
+    compact = _strip_read_only_command_prefix(message)
+    candidate = _normalize_read_only_command(compact)
+    if is_read_only_command(candidate):
+        return candidate
+    match = _READ_ONLY_COMMAND_AT_END_RE.search(compact)
+    if not match:
+        return ""
+    candidate = _normalize_read_only_command(match.group("command"))
+    return candidate if is_read_only_command(candidate) else ""
+
+
+def _strip_read_only_command_prefix(message: str) -> str:
+    compact = message.strip()
+    for prefix in (
+        "只读命令",
+        "只读查询",
+        "查询命令",
+        "执行命令",
+        "运行命令",
+        "执行",
+        "运行",
+        "run_read_only_command",
+        "read-only command",
+        "readonly command",
+        "run command",
+        "command",
+    ):
+        if compact.startswith(prefix):
+            compact = compact[len(prefix) :].strip()
+            break
+    return compact.lstrip("：:，,。.!！?？/ ").strip()
+
+
+def _normalize_read_only_command(command: str) -> str:
+    normalized = command.strip().lower()
+    normalized = normalized.rstrip("。.!！?？")
+    while normalized.startswith("/"):
+        normalized = normalized[1:].strip()
+    return " ".join(normalized.split())
+
+
+_READ_ONLY_COMMAND_AT_END_RE = re.compile(
+    r"(?:^|[\s:：])/?(?P<command>"
+    r"seed|"
+    r"weather\s+query|"
+    r"list(?:\s+uuids)?|"
+    r"time\s+query\s+(?:daytime|gametime|day)|"
+    r"locate\s+structure\s+[a-z0-9_:.\-/#]+"
+    r")\s*[。.!！?？]?$"
+)
 
 
 def _mentions_minecraft_write_command(message: str) -> bool:
