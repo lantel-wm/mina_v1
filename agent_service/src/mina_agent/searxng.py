@@ -7,23 +7,27 @@ from typing import Any
 
 
 class SearxngClient:
-    def __init__(self, base_url: str, timeout_seconds: float = 8.0):
+    def __init__(self, base_url: str, timeout_seconds: float = 8.0, health_timeout_seconds: float = 1.0):
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.health_timeout_seconds = health_timeout_seconds
         self._opener = _build_opener(self.base_url)
 
     def health(self) -> dict[str, Any]:
         try:
-            self.search("minecraft", max_results=1)
+            self._search("minecraft", max_results=1, timeout_seconds=min(self.timeout_seconds, self.health_timeout_seconds))
             return {"ok": True}
         except Exception as exc:  # noqa: BLE001 - health endpoint should report all failures.
             return {"ok": False, "error": str(exc)}
 
     def search(self, query: str, max_results: int = 5) -> list[dict[str, str]]:
+        return self._search(query, max_results=max_results, timeout_seconds=self.timeout_seconds)
+
+    def _search(self, query: str, max_results: int, timeout_seconds: float) -> list[dict[str, str]]:
         params = urllib.parse.urlencode({"q": query, "format": "json"})
         url = f"{self.base_url}/search?{params}"
         request = urllib.request.Request(url, headers={"User-Agent": "mina-agent/0.1"})
-        with self._opener.open(request, timeout=self.timeout_seconds) as response:
+        with self._opener.open(request, timeout=timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))
         seen: set[str] = set()
         results: list[dict[str, str]] = []
