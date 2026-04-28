@@ -534,7 +534,7 @@ class E2ERunner:
             traces[request_id] = trace
             records.extend(trace_records(request_id, trace))
         records.extend(self.harness_events.get(scenario.name, []))
-        records.sort(key=lambda item: float(item.get("created_at") or 0))
+        records.sort(key=_record_created_at)
         (scenario_dir / "trace.jsonl").write_text(
             "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
             encoding="utf-8",
@@ -564,6 +564,7 @@ class E2ERunner:
             "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in payload["model_calls"]),
             encoding="utf-8",
         )
+        aggregate_run_trace_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
 
     def _write_failure_snapshot(self, scenario: Scenario, error: str) -> None:
         failure_dir = self.artifact_dir / scenario.name
@@ -937,6 +938,36 @@ def scenario_artifact_payload(scenario: Scenario) -> dict[str, Any]:
     payload["tags"] = sorted(scenario.tags)
     payload["forbidden_actions"] = sorted(scenario.forbidden_actions)
     return payload
+
+
+def aggregate_run_trace_jsonl(artifact_dir: Path, scenario_names: list[str]) -> None:
+    records: list[dict[str, Any]] = []
+    for scenario_name in scenario_names:
+        trace_path = artifact_dir / scenario_name / "trace.jsonl"
+        if not trace_path.exists():
+            continue
+        for line in trace_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                record = {"event_type": "invalid_trace_line", "trace_id": scenario_name, "raw": line}
+            if isinstance(record, dict):
+                record.setdefault("scenario", scenario_name)
+                records.append(record)
+    records.sort(key=_record_created_at)
+    (artifact_dir / "trace.jsonl").write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+def _record_created_at(record: dict[str, Any]) -> float:
+    try:
+        return float(record.get("created_at") or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def urlopen_no_proxy(url: str, timeout: float):

@@ -9,6 +9,7 @@ from mina_agent.e2e.manifest import Scenario, scenario_from_dict
 from mina_agent.e2e.runner import (
     E2ERunner,
     SearxngFixtureServer,
+    aggregate_run_trace_jsonl,
     compact_snapshot_from_server_line,
     main,
     parse_args,
@@ -209,3 +210,27 @@ def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
     assert payload["tags"] == ["core", "safety"]
     assert payload["forbidden_actions"] == ["body_attack", "body_chain"]
     json.dumps(payload)
+
+
+def test_aggregate_run_trace_jsonl_preserves_scenario_and_time_order(tmp_path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "trace.jsonl").write_text(
+        json.dumps({"event_type": "late", "created_at": 20}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (second / "trace.jsonl").write_text(
+        json.dumps({"event_type": "early", "created_at": 10}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    aggregate_run_trace_jsonl(tmp_path, ["first", "second"])
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [record["event_type"] for record in records] == ["early", "late"]
+    assert [record["scenario"] for record in records] == ["second", "first"]
