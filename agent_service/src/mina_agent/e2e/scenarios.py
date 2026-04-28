@@ -388,7 +388,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "body-status-empty",
-                "value": "状态",
+                "value": "任务状态",
                 "wait_for": ["当前没有正在执行的身体任务"],
             },
             {
@@ -534,6 +534,13 @@ SCENARIO_DATA = [
         "fixture": "follow_player",
         "tags": ["live", "core", "observation", "safety"],
         "steps": [
+            {
+                "kind": "request",
+                "request_id": "local-bare-status-observation",
+                "value": "状态",
+                "wait_for": ["生命"],
+                "timeout": 30,
+            },
             {
                 "kind": "request",
                 "request_id": "local-player-observation",

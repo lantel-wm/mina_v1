@@ -55,7 +55,7 @@ class AgentHarness:
         if message:
             self.memory.add_conversation(request_id, player_id, "user", message)
 
-        local_observation = _local_observation_response(turn)
+        local_observation = _local_observation_response(turn, has_active_body_task=self._has_active_body_task(turn))
         if local_observation is not None:
             for message_item in local_observation.messages:
                 content = str(message_item.get("content") or "").strip()
@@ -461,6 +461,13 @@ class AgentHarness:
         enriched["snapshot"] = snapshot
         return enriched
 
+    def _has_active_body_task(self, turn: dict[str, Any]) -> bool:
+        try:
+            status = self.tools.skills.task_status(None, turn)
+        except Exception:  # noqa: BLE001 - observation routing should never break a turn.
+            return False
+        return status.get("ok") is not False and status.get("status") == "active"
+
     def _debug(self, message: str, *args: Any) -> None:
         if self.settings.debug_tool_calls:
             LOGGER.info(message, *args)
@@ -546,25 +553,32 @@ def _action_ack(tool_name: str) -> str:
     return "我开始执行。"
 
 
-def _local_observation_response(turn: dict[str, Any]) -> TurnResponse | None:
+def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: bool = False) -> TurnResponse | None:
     if turn.get("trigger") != "command":
         return None
     message = str(turn.get("message") or "").strip()
     normalized = message.lower()
-    if not normalized or is_body_task_status_request(normalized):
+    if not normalized:
         return None
     snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
+    task_status_request = is_body_task_status_request(normalized)
+    if task_status_request and (has_active_body_task or not _ambiguous_player_status_intent(normalized)):
+        return None
     if _body_observation_intent(normalized):
         return TurnResponse(
             messages=[{"target": "requester", "content": _body_observation_message(snapshot)}],
             debug={"local_observation": True, "intent": "body_observation"},
         )
-    if _player_observation_intent(normalized):
+    if _player_observation_intent(normalized) or (task_status_request and _ambiguous_player_status_intent(normalized)):
         return TurnResponse(
             messages=[{"target": "requester", "content": _player_observation_message(snapshot)}],
             debug={"local_observation": True, "intent": "player_observation"},
         )
     return None
+
+
+def _ambiguous_player_status_intent(message: str) -> bool:
+    return message.strip(" ?？。.!！") in {"状态", "status"}
 
 
 def _player_observation_intent(message: str) -> bool:
@@ -576,6 +590,9 @@ def _player_observation_intent(message: str) -> bool:
             "我的状态",
             "我状态",
             "我现在状态",
+            "当前状态",
+            "现在状态",
+            "状态怎么样",
             "我在哪",
             "我在什么位置",
             "我的位置",

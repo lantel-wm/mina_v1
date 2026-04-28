@@ -430,6 +430,43 @@ def test_harness_answers_player_state_from_snapshot_without_model_or_tools(tmp_p
     assert memory.recent_tool_calls(request_id="req-player-observation", limit=10) == []
 
 
+def test_harness_answers_bare_status_from_snapshot_when_no_body_task(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-bare-status-player-observation",
+            "trigger": "command",
+            "message": "状态",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "player_state": {
+                    "health": 19,
+                    "max_health": 20,
+                    "food": 18,
+                    "game_mode": "survival",
+                    "dimension": "minecraft:overworld",
+                    "x": 0.5,
+                    "y": 80,
+                    "z": -2.5,
+                }
+            },
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "生命 19/20" in content
+    assert "饥饿 18" in content
+    assert "坐标 (0.5, 80, -2.5)" in content
+    assert response["debug"]["intent"] == "player_observation"
+    assert deepseek.calls == 0
+    assert memory.recent_tool_calls(request_id="req-bare-status-player-observation", limit=10) == []
+
+
 def test_harness_answers_body_position_from_snapshot_without_model_or_tools(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
