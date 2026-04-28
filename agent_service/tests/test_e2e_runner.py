@@ -8,9 +8,11 @@ import pytest
 from mina_agent.e2e.manifest import Scenario, scenario_from_dict
 from mina_agent.e2e.runner import (
     E2ERunner,
+    ROOT,
     SearxngFixtureServer,
     aggregate_run_trace_jsonl,
     compact_snapshot_from_server_line,
+    git_metadata,
     main,
     parse_args,
     require_live_deepseek_env,
@@ -234,3 +236,11 @@ def test_aggregate_run_trace_jsonl_preserves_scenario_and_time_order(tmp_path) -
     ]
     assert [record["event_type"] for record in records] == ["early", "late"]
     assert [record["scenario"] for record in records] == ["second", "first"]
+
+
+def test_git_metadata_is_model_visible_run_context() -> None:
+    metadata = git_metadata(ROOT)
+
+    assert metadata["branch"]
+    assert len(metadata["commit"]) >= 7
+    assert isinstance(metadata["dirty"], bool)

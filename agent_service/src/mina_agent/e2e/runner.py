@@ -76,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         "artifact_dir": str(artifact_dir),
         "deepseek": live_model,
         "model_usage": runner.model_usage,
+        "git": git_metadata(ROOT),
     }
     (artifact_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -864,6 +865,21 @@ def download(url: str, target: Path) -> None:
 def run_checked(cmd: list[str], cwd: Path) -> None:
     env = {**os.environ, "GRADLE_USER_HOME": str(ROOT / ".gradle")}
     subprocess.run(cmd, cwd=cwd, env=env, check=True)
+
+
+def git_metadata(cwd: Path) -> dict[str, Any]:
+    return {
+        "branch": _git_output(cwd, ["git", "branch", "--show-current"]),
+        "commit": _git_output(cwd, ["git", "rev-parse", "HEAD"]),
+        "dirty": bool(_git_output(cwd, ["git", "status", "--short"])),
+    }
+
+
+def _git_output(cwd: Path, cmd: list[str]) -> str:
+    try:
+        return subprocess.check_output(cmd, cwd=cwd, text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
 
 def wait_http(url: str, timeout: float, proc: subprocess.Popen[str] | None = None) -> None:
