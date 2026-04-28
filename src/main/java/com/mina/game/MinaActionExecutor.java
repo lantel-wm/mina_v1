@@ -18,6 +18,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 public final class MinaActionExecutor {
@@ -25,6 +26,7 @@ public final class MinaActionExecutor {
 	private static final Pattern SELECTOR = Pattern.compile("[A-Za-z0-9_:@\\[\\]=,.!\\-]+");
 	private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9_:.\\-/#]+");
 	private static final double BODY_EYE_HEIGHT = 1.62D;
+	private static final Set<String> READ_ONLY_COMMAND_PREFIXES = Set.of("seed", "time query", "weather query", "list", "locate structure");
 	private final ThreadLocal<List<CommandExecution>> commandLog = ThreadLocal.withInitial(ArrayList::new);
 
 	public JsonArray executeResponse(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject response) {
@@ -133,7 +135,7 @@ public final class MinaActionExecutor {
 		switch (name) {
 			case "send_player_message" -> message(requester, string(args, "content", ""));
 			case "send_global_message" -> server.getPlayerList().broadcastSystemMessage(Component.literal("[Mina] " + string(args, "content", "")), false);
-			case "run_safe_command" -> runSafeCommand(server, requester, config, string(args, "command", ""));
+			case "run_safe_command", "run_read_only_command" -> runReadOnlyCommand(server, requester, string(args, "command", ""));
 			case "locate_structure" -> locateStructure(server, requester, string(args, "structure", ""));
 			case "body_spawn" -> bodySpawn(server, requester, config);
 			case "body_move_to_position" -> bodyMoveToPosition(server, requester, config, args);
@@ -154,11 +156,11 @@ public final class MinaActionExecutor {
 		}
 	}
 
-	private void runSafeCommand(MinecraftServer server, ServerPlayer requester, MinaConfig config, String command) {
+	private void runReadOnlyCommand(MinecraftServer server, ServerPlayer requester, String command) {
 		String normalized = stripSlash(command);
-		if (normalized.isBlank() || config.isDangerousCommand(normalized)) {
-			MinaMod.LOGGER.info("mina safe command refused command={}", command);
-			message(requester, "Mina refused a denied or empty command.");
+		if (normalized.isBlank() || !isReadOnlyCommand(normalized)) {
+			MinaMod.LOGGER.info("mina read-only command refused command={}", command);
+			message(requester, "Mina refused a non-read-only command.");
 			return;
 		}
 		runCommand(server, requester, normalized);
@@ -519,7 +521,17 @@ public final class MinaActionExecutor {
 		while (normalized.startsWith("/")) {
 			normalized = normalized.substring(1).trim();
 		}
-		return normalized;
+		return normalized.replaceAll("\\s+", " ");
+	}
+
+	private static boolean isReadOnlyCommand(String command) {
+		String normalized = stripSlash(command).toLowerCase(Locale.ROOT);
+		for (String prefix : READ_ONLY_COMMAND_PREFIXES) {
+			if (normalized.equals(prefix) || normalized.startsWith(prefix + " ")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static String string(JsonObject object, String key, String fallback) {

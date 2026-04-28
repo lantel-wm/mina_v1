@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -32,10 +33,26 @@ def turn(payload: dict[str, Any]) -> dict[str, Any]:
     player = payload.get("player") if isinstance(payload.get("player"), dict) else {}
     memory.upsert_player(player)
     message = str(payload.get("message") or "").lower()
+    if "时间" in message or "time query" in message:
+        return {
+            "messages": [{"target": "requester", "content": "我来查询当前游戏时间。"}],
+            "actions": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": "run_read_only_command",
+                    "args": {"command": "time query daytime"},
+                    "requires_permission": False,
+                    "deadline_ticks": 0,
+                }
+            ],
+        }
+    if "跟随" in message or "follow" in message:
+        response = skills.start_task("follow_player", {"task_type": "follow_player", "target_hint": message}, payload)
+        return response.to_dict()
     if "砍树" in message or "chop" in message or "tree" in message:
         response = skills.start_task("chop_tree", {"task_type": "chop_tree", "target_hint": message}, payload)
         return response.to_dict()
-    return {"messages": [{"target": "requester", "content": "scripted sidecar only handles chop_tree."}], "actions": []}
+    return {"messages": [{"target": "requester", "content": "scripted sidecar only handles chop_tree and follow_player."}], "actions": []}
 
 
 @app.post("/v1/action-results")

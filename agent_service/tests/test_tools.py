@@ -13,6 +13,14 @@ class FakeSearxng(SearxngClient):
         return [{"title": query, "url": "https://example.com", "content": "ok"}]
 
 
+class FailingSearxng(SearxngClient):
+    def __init__(self) -> None:
+        pass
+
+    def search(self, query: str, max_results: int = 5):
+        raise OSError("offline")
+
+
 def _runner(tmp_path) -> ToolRunner:
     return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
 
@@ -49,6 +57,7 @@ def test_model_tool_specs_do_not_expose_low_level_body_tools() -> None:
     names = {spec["function"]["name"] for spec in tool_specs()}
 
     assert "start_body_task" in names
+    assert "run_read_only_command" in names
     assert "body_chain" not in names
     assert "run_safe_command" not in names
 
@@ -75,6 +84,18 @@ def test_start_body_task_schedules_observable_move_when_body_online(tmp_path) ->
     assert action["step_id"].startswith("move:")
 
 
+def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, _allowed_turn())
+
+    assert result.actions
+    action = result.actions[0]
+    assert action["name"] == "body_move_to_requester"
+    assert action["monitor"]["type"] == "follow_requester"
+    assert action["step_id"].startswith("follow:")
+
+
 def test_low_level_body_tool_is_rejected(tmp_path) -> None:
     runner = _runner(tmp_path)
 
@@ -82,6 +103,33 @@ def test_low_level_body_tool_is_rejected(tmp_path) -> None:
 
     assert result.actions == []
     assert "private executor primitive" in result.content
+
+
+def test_read_only_command_schedules_fabric_action(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("run_read_only_command", {"command": "/time query daytime"}, _allowed_turn())
+
+    assert result.action is not None
+    assert result.action["name"] == "run_read_only_command"
+    assert result.action["args"]["command"] == "time query daytime"
+
+
+def test_write_command_is_rejected(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("run_read_only_command", {"command": "setblock 0 80 0 minecraft:air"}, _allowed_turn())
+
+    assert result.action is None
+    assert "Only read-only commands" in result.content
+
+
+def test_web_search_returns_model_visible_error_when_unavailable(tmp_path) -> None:
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FailingSearxng())
+
+    result = runner.run("web_search", {"query": "minecraft", "max_results": 3}, _allowed_turn())
+
+    assert "web_search unavailable" in result.content
 
 
 def test_mcp_call_is_explicitly_unavailable_without_config(tmp_path) -> None:

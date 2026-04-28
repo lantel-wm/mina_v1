@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any, Callable
 
 from .mcp import McpRegistry
@@ -108,7 +109,7 @@ def tool_specs() -> list[dict[str, Any]]:
                 "strict": True,
                 "parameters": _schema(
                     {
-                        "task_type": {"type": "string", "enum": ["chop_tree"]},
+                        "task_type": {"type": "string", "enum": ["chop_tree", "follow_player"]},
                         "target_hint": {"type": "string"},
                     },
                     ["task_type", "target_hint"],
@@ -130,6 +131,18 @@ def tool_specs() -> list[dict[str, Any]]:
                 "name": "task_status",
                 "description": "Inspect Mina's current high-level body task status.",
                 "parameters": _schema({"task_id": {"type": "string"}}, ["task_id"]),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_read_only_command",
+                "description": (
+                    "Run a tightly constrained read-only Minecraft command and show its output to the requester. "
+                    "Allowed prefixes: seed, time query, weather query, list, locate structure."
+                ),
+                "strict": True,
+                "parameters": _schema({"command": {"type": "string"}}, ["command"]),
             },
         },
         {
@@ -171,6 +184,7 @@ class ToolRunner:
             "start_body_task": self._start_body_task,
             "stop_body_task": self._stop_body_task,
             "task_status": self._task_status,
+            "run_read_only_command": self._run_read_only_command,
             "mcp_call": self._mcp_call,
         }
         if name in local:
@@ -195,7 +209,11 @@ class ToolRunner:
         query = str(args.get("query") or "").strip()
         max_results = int(args.get("max_results") or 5)
         LOGGER.info("web_search query=%s max_results=%s", query, max_results)
-        results = self.searxng.search(query, max_results=max(1, min(10, max_results)))
+        try:
+            results = self.searxng.search(query, max_results=max(1, min(10, max_results)))
+        except Exception as exc:  # noqa: BLE001 - tool calls must return model-visible errors.
+            LOGGER.info("web_search unavailable query=%s error=%s", query, exc)
+            return ToolResult(content=json.dumps({"ok": False, "error": f"web_search unavailable: {exc}"}, ensure_ascii=False))
         LOGGER.info("web_search result_count=%s", len(results))
         return ToolResult(content=json.dumps({"ok": True, "results": results}, ensure_ascii=False))
 
@@ -242,6 +260,27 @@ class ToolRunner:
         status = self.skills.task_status(str(args.get("task_id") or "") or None, turn)
         return ToolResult(content=json.dumps(status, ensure_ascii=False))
 
+    def _run_read_only_command(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
+        command = _strip_slash(str(args.get("command") or ""))
+        if not _is_read_only_command(command):
+            return ToolResult(
+                content=json.dumps(
+                    {
+                        "ok": False,
+                        "error": "Only read-only commands are allowed: seed, time query, weather query, list, locate structure.",
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        action = {
+            "id": str(uuid.uuid4()),
+            "name": "run_read_only_command",
+            "args": {"command": command},
+            "requires_permission": False,
+            "deadline_ticks": 0,
+        }
+        return ToolResult(content=json.dumps({"ok": True, "action": action}, ensure_ascii=False), action=action)
+
     def _mcp_call(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         server = str(args.get("server") or "")
         tool = str(args.get("tool") or "")
@@ -265,3 +304,20 @@ def _looks_like_minecraft_write(tool: str, arguments: dict[str, Any]) -> bool:
     haystack = (tool + " " + json.dumps(arguments, ensure_ascii=False)).lower()
     banned = ["setblock", "fill", "tp ", "teleport", "gamemode", "give ", "summon", "kill "]
     return any(token in haystack for token in banned)
+
+
+def _strip_slash(command: str) -> str:
+    normalized = command.strip()
+    while normalized.startswith("/"):
+        normalized = normalized[1:].strip()
+    return " ".join(normalized.split())
+
+
+def _is_read_only_command(command: str) -> bool:
+    normalized = _strip_slash(command).lower()
+    if not normalized:
+        return False
+    for prefix in READ_ONLY_COMMAND_PREFIXES:
+        if normalized == prefix or normalized.startswith(prefix + " "):
+            return True
+    return False

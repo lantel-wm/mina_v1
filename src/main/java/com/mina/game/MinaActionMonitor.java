@@ -116,6 +116,23 @@ public final class MinaActionMonitor {
 					success.addProperty("actual_block", actual);
 				}
 			}
+		} else if ("follow_requester".equals(type)) {
+			ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
+			if (body != null && requester != null) {
+				double distance = Math.sqrt(body.distanceToSqr(requester));
+				int elapsed = ticks - activeMonitor.startedTick;
+				double maxDistance = doubleValue(monitor, "max_distance", 4.0D);
+				int graceTicks = intValue(monitor, "grace_ticks", 80);
+				if (elapsed >= graceTicks && distance > maxDistance) {
+					success = result("reposition", "body drifted from requester");
+					success.addProperty("distance", round(distance));
+					success.addProperty("max_distance", maxDistance);
+				} else if (elapsed >= activeMonitor.deadlineTicks) {
+					success = result("success", "follow heartbeat");
+					success.addProperty("distance", round(distance));
+					success.addProperty("max_distance", maxDistance);
+				}
+			}
 		}
 		if (success != null) {
 			return success;

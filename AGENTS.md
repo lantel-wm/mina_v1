@@ -145,9 +145,37 @@ Headless real-game E2E:
 
 ```sh
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario chop_tree --sidecar scripted
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario follow_player --sidecar scripted
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario read_only_command --sidecar scripted
 ```
 
-This starts a scripted sidecar and a dedicated Fabric server in `build/e2e/server`, downloads PuppetPlayers/Fabric Language Kotlin into that runtime if missing, and drives the test-only `/mina-test` commands. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task. The `chop_tree` scenario requires `/mina-test ready` before the request and passes only after the target log is observed as air. The task summary is written to `build/e2e/trace-summary.json`; task/action/result events are written to `build/e2e/trace.jsonl`.
+This starts a scripted sidecar and a dedicated Fabric server in `build/e2e/server`, downloads PuppetPlayers/Fabric Language Kotlin into that runtime if missing, and drives the test-only `/mina-test` commands. `/mina-test` is registered only when the server runs with `-Dmina.testHarness=true` through the `runE2eServer` Gradle task. The `chop_tree` scenario requires `/mina-test ready` before the request and passes only after the target log is observed as air. The `follow_player` scenario starts the follow skill, moves the requester, and passes only after Mina's body returns within the allowed follow distance. The `read_only_command` scenario verifies that a model-side command request is constrained to `run_read_only_command` and that Fabric returns the command output. The task summary is written to `build/e2e/trace-summary.json`; task/action/result events are written to `build/e2e/trace.jsonl`.
+
+## Iteration Workflow
+
+The working target is a usable Minecraft agent that can answer knowledge questions through sidecar tools, run tightly constrained read-only Minecraft commands, and control the PuppetPlayers body for simple verified tasks such as following a player and chopping a tree.
+
+For every behavior change:
+
+1. Keep model-facing tools high-level and safe. Minecraft mutations must go through Fabric actions and monitors; do not expose raw movement, attack, write-command, or unrestricted MCP tools to the model.
+2. Add or update a deterministic scripted test before relying on live model behavior. Prefer extending `agent_service/dev/game_e2e.py` and `/mina-test` so failures reproduce without a GUI client or API key.
+3. Run the baseline checks:
+
+```sh
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test pytest -q
+GRADLE_USER_HOME=$PWD/.gradle ./gradlew build --no-daemon
+```
+
+4. Run the relevant headless E2E scenarios. At minimum, keep `chop_tree` passing before committing body-control changes:
+
+```sh
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario chop_tree --sidecar scripted
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario follow_player --sidecar scripted
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.dev.game_e2e --scenario read_only_command --sidecar scripted
+```
+
+5. Inspect `build/e2e/trace-summary.json` and `build/e2e/trace.jsonl` when an E2E scenario fails. Fix the policy, monitor, or skill runtime first; do not compensate by letting the model directly call lower-level body primitives.
+6. Commit after a coherent, tested increment. Push only when a git remote is configured and all relevant scripted E2E scenarios pass. Live DeepSeek E2E is optional and should be gated by `MINA_API_KEY`/explicit opt-in so default CI remains deterministic.
 
 ## Run Sidecar
 

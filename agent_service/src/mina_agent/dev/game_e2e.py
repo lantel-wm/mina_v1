@@ -21,14 +21,15 @@ KOTLIN_VERSION = "1.13.11+kotlin.2.3.21"
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Mina headless game E2E scenarios.")
-    parser.add_argument("--scenario", default="chop_tree", choices=["chop_tree"])
+    parser.add_argument("--scenario", default="chop_tree", choices=["chop_tree", "follow_player", "read_only_command"])
     parser.add_argument("--sidecar", default="scripted", choices=["scripted"])
     parser.add_argument("--port", type=int, default=18911)
+    parser.add_argument("--server-port", type=int, default=25566)
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
 
-    prepare_runtime(args.port)
+    prepare_runtime(args.port, args.server_port)
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
@@ -40,8 +41,9 @@ def main() -> int:
         output = OutputReader(server)
         output.start()
         output.wait_for("Done", timeout=args.timeout)
-        send(server, "mina-test setup chop_tree")
-        output.wait_for("Mina test chop_tree setup complete", timeout=30)
+        setup_scenario = "follow_player" if args.scenario == "read_only_command" else args.scenario
+        send(server, f"mina-test setup {setup_scenario}")
+        output.wait_for(f"Mina test {setup_scenario} setup complete", timeout=30)
         poll_command(
             server,
             output,
@@ -50,22 +52,21 @@ def main() -> int:
             pending=["Mina test not ready"],
             timeout=60,
         )
-        send(server, "mina-test request 砍树")
-        deadline = time.time() + args.timeout
-        while time.time() < deadline:
-            send(server, "mina-test assert chop_tree")
-            if output.wait_for_any(["Mina test chop_tree passed", "Mina test chop_tree failed"], timeout=5) == "Mina test chop_tree passed":
-                write_trace_summary(args.port)
-                return 0
-            time.sleep(2)
-        raise TimeoutError("chop_tree scenario timed out before target log was broken")
+        if args.scenario == "chop_tree":
+            run_chop_tree(server, output, args.timeout)
+        elif args.scenario == "follow_player":
+            run_follow_player(server, output, args.timeout)
+        elif args.scenario == "read_only_command":
+            run_read_only_command(server, output)
+        write_trace_summary(args.port)
+        return 0
     finally:
         if server is not None:
             stop_process(server, command="stop")
         stop_process(sidecar)
 
 
-def prepare_runtime(port: int) -> None:
+def prepare_runtime(port: int, server_port: int) -> None:
     world_dir = SERVER_DIR / "world"
     if world_dir.exists():
         shutil.rmtree(world_dir)
@@ -76,6 +77,7 @@ def prepare_runtime(port: int) -> None:
         "\n".join(
             [
                 "online-mode=false",
+                f"server-port={server_port}",
                 "enable-command-block=true",
                 "gamemode=survival",
                 "difficulty=peaceful",
@@ -232,6 +234,50 @@ def poll_command(
             return
         time.sleep(interval)
     raise TimeoutError(f"{command} did not report {success!r} before timeout")
+
+
+def run_chop_tree(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
+    send(proc, "mina-test request 砍树")
+    poll_command(
+        proc,
+        output,
+        "mina-test assert chop_tree",
+        success="Mina test chop_tree passed",
+        pending=["Mina test chop_tree failed"],
+        timeout=timeout,
+        interval=2.0,
+    )
+
+
+def run_follow_player(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    poll_command(
+        proc,
+        output,
+        "mina-test assert follow_player",
+        success="Mina test follow_player passed",
+        pending=["Mina test follow_player failed"],
+        timeout=30,
+        interval=1.0,
+    )
+    send(proc, "mina-test move_requester_far")
+    output.wait_for("Mina test requester moved far", timeout=10)
+    poll_command(
+        proc,
+        output,
+        "mina-test assert follow_player",
+        success="Mina test follow_player passed",
+        pending=["Mina test follow_player failed"],
+        timeout=timeout,
+        interval=2.0,
+    )
+
+
+def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+    send(proc, "mina-test request 查询时间")
+    output.wait_for("我来查询当前游戏时间", timeout=30)
+    output.wait_for("The time is", timeout=30)
 
 
 def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:

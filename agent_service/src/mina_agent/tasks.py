@@ -25,7 +25,7 @@ class SkillRuntime:
         self._active_by_player: dict[str, str] = {}
 
     def start_task(self, task_type: str, args: dict[str, Any], turn: dict[str, Any]) -> TurnResponse:
-        if task_type != "chop_tree":
+        if task_type not in {"chop_tree", "follow_player"}:
             return TurnResponse(messages=[{"target": "requester", "content": f"Unsupported body task: {task_type}"}])
 
         player = turn.get("player") or {}
@@ -49,6 +49,7 @@ class SkillRuntime:
                 "target": None,
                 "last_error": None,
                 "active_action_id": None,
+                "cycles": 0,
                 "latest_snapshot": turn.get("snapshot") or {},
                 "created_at": time.time(),
                 "updated_at": time.time(),
@@ -58,7 +59,10 @@ class SkillRuntime:
             self.memory.record_task_event(task_id, "started", {"task_type": task_type, "args": args})
             response = self._advance(task, turn.get("snapshot") or {})
             if not response.messages:
-                response.messages.append({"target": "requester", "content": "我开始砍树，会根据实际执行结果继续调整。"})
+                if task_type == "follow_player":
+                    response.messages.append({"target": "requester", "content": "我开始跟随你，会根据距离变化继续调整。"})
+                else:
+                    response.messages.append({"target": "requester", "content": "我开始砍树，会根据实际执行结果继续调整。"})
             return response
 
     def stop_task(self, task_id: str | None, turn: dict[str, Any] | None = None) -> TurnResponse:
@@ -151,6 +155,8 @@ class SkillRuntime:
             return self._recover_or_fail(task, result.get("error") or "command failed")
         if monitor_status in {"failed", "timeout"} or status in {"monitor_failed", "timeout"}:
             return self._recover_or_fail(task, monitor.get("reason") or result.get("error") or "monitor failed")
+        if task.get("type") == "follow_player":
+            return self._handle_follow_result(task, result, status, monitor_status)
         if monitor_status != "success" and status not in {"completed", "success"}:
             return TurnResponse(debug={"task_status": _public_task(task)})
 
@@ -180,6 +186,25 @@ class SkillRuntime:
             )
         return self._advance(task, snapshot)
 
+    def _handle_follow_result(self, task: dict[str, Any], result: dict[str, Any], status: str, monitor_status: str) -> TurnResponse:
+        step_id = str(result.get("step_id") or "")
+        snapshot = task.get("latest_snapshot") or {}
+        if step_id.startswith("spawn"):
+            if not _body_online(snapshot):
+                task["stage"] = "spawn_sent"
+                return TurnResponse(debug={"task_status": _public_task(task)})
+            return self._advance(task, snapshot)
+        if step_id.startswith("follow"):
+            task["stage"] = "follow"
+            if monitor_status == "reposition":
+                task["last_error"] = "body drifted from requester"
+                self.memory.record_task_event(task["task_id"], "follow_reposition", result.get("monitor_result") or {})
+                return self._advance(task, snapshot)
+            if monitor_status == "success" or status in {"completed", "success"}:
+                task["last_error"] = None
+                return self._advance(task, snapshot)
+        return TurnResponse(debug={"task_status": _public_task(task)})
+
     def _advance(self, task: dict[str, Any], snapshot: dict[str, Any]) -> TurnResponse:
         if task.get("status") != "active":
             return TurnResponse(debug={"task_status": _public_task(task)})
@@ -196,6 +221,9 @@ class SkillRuntime:
             )
             self._mark_action(task, action)
             return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
+
+        if task.get("type") == "follow_player":
+            return self._advance_follow(task)
 
         if task.get("stage") in {"new", "spawn_sent"}:
             target = _choose_log_target(snapshot)
@@ -281,6 +309,25 @@ class SkillRuntime:
 
         return TurnResponse(debug={"task_status": _public_task(task)})
 
+    def _advance_follow(self, task: dict[str, Any]) -> TurnResponse:
+        cycle = int(task.get("cycles") or 0) + 1
+        task["cycles"] = cycle
+        action = _action(
+            task,
+            "body_move_to_requester",
+            {"sprint": False, "jump": True},
+            step=f"follow:{cycle}",
+            monitor={
+                "type": "follow_requester",
+                "max_distance": 4.0,
+                "grace_ticks": 80,
+                "deadline_ticks": 160,
+            },
+        )
+        self._mark_action(task, action)
+        task["stage"] = "follow_sent"
+        return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
+
     def _recover_or_fail(self, task: dict[str, Any], reason: Any) -> TurnResponse:
         task["attempts"] = int(task.get("attempts") or 0) + 1
         task["last_error"] = str(reason)
@@ -289,16 +336,20 @@ class SkillRuntime:
             task["status"] = "failed"
             task["stage"] = "failed"
             self.memory.add_skill_reflection(
-                "chop_tree",
-                f"Chop tree failed after repeated recovery: {task['last_error']}",
+                str(task.get("type") or "unknown"),
+                f"{task.get('type')} failed after repeated recovery: {task['last_error']}",
                 {"task_id": task["task_id"], "target": task.get("target")},
             )
+            content = "跟随连续失败，我先停下，避免反复误操作。" if task.get("type") == "follow_player" else "砍树连续失败，我先停下，避免反复误操作。"
             return TurnResponse(
-                messages=[{"target": "requester", "content": "砍树连续失败，我先停下，避免反复误操作。"}],
+                messages=[{"target": "requester", "content": content}],
                 actions=[_action(task, "body_stop", {}, step="stop:failed", monitor=None)],
                 debug={"task_status": _public_task(task)},
             )
         snapshot = task.get("latest_snapshot") or {}
+        if task.get("type") == "follow_player":
+            task["stage"] = "follow"
+            return self._advance(task, snapshot)
         task["target"] = _choose_log_target(snapshot) or task.get("target")
         task["stage"] = "move" if task.get("target") else "new"
         return self._advance(task, snapshot)
@@ -373,6 +424,7 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
         "target": task.get("target"),
         "last_error": task.get("last_error"),
         "active_action_id": task.get("active_action_id"),
+        "cycles": task.get("cycles"),
         "updated_at": task.get("updated_at"),
     }
 
@@ -385,6 +437,7 @@ def _snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
         "body_x": body.get("x"),
         "body_y": body.get("y"),
         "body_z": body.get("z"),
+        "distance_to_requester": body.get("distance_to_requester"),
         "interesting_blocks": len(blocks),
         "logs": sum(1 for block in blocks if block.get("category") == "log"),
     }

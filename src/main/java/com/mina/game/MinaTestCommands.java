@@ -42,21 +42,36 @@ public final class MinaTestCommands {
 			return;
 		}
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
-			literal("mina-test")
-				.then(literal("setup")
-					.then(literal("chop_tree").executes(context -> setupChopTree(context.getSource()))))
+				literal("mina-test")
+					.then(literal("setup")
+						.then(literal("chop_tree").executes(context -> setupChopTree(context.getSource())))
+						.then(literal("follow_player").executes(context -> setupFollowPlayer(context.getSource()))))
 				.then(literal("request")
 					.then(argument("content", StringArgumentType.greedyString())
 						.executes(context -> request(context.getSource(), StringArgumentType.getString(context, "content")))))
 				.then(literal("ready").executes(context -> ready(context.getSource())))
+				.then(literal("move_requester_far").executes(context -> moveRequesterFar(context.getSource())))
 				.then(literal("snapshot").executes(context -> snapshot(context.getSource())))
 				.then(literal("assert")
-					.then(literal("chop_tree").executes(context -> assertChopTree(context.getSource()))))
+					.then(literal("chop_tree").executes(context -> assertChopTree(context.getSource())))
+					.then(literal("follow_player").executes(context -> assertFollowPlayer(context.getSource()))))
 				.then(literal("stop").executes(context -> stop(context.getSource())))
 		));
 	}
 
 	private int setupChopTree(CommandSourceStack source) {
+		setupWorldAndPlayers(source);
+		source.sendSuccess(() -> Component.literal("Mina test chop_tree setup complete. Poll /mina-test ready before requesting."), false);
+		return 1;
+	}
+
+	private int setupFollowPlayer(CommandSourceStack source) {
+		setupWorldAndPlayers(source);
+		source.sendSuccess(() -> Component.literal("Mina test follow_player setup complete. Poll /mina-test ready before requesting."), false);
+		return 1;
+	}
+
+	private void setupWorldAndPlayers(CommandSourceStack source) {
 		MinecraftServer server = source.getServer();
 		prepareChopTreeWorld(source.getLevel());
 		run(server, "time set day");
@@ -64,8 +79,6 @@ public final class MinaTestCommands {
 		run(server, "puppet " + TEST_PLAYER + " spawn");
 		run(server, "puppet " + config.bodyUsername + " spawn");
 		config.allow(TEST_PLAYER);
-		source.sendSuccess(() -> Component.literal("Mina test chop_tree setup complete. Poll /mina-test ready before requesting."), false);
-		return 1;
 	}
 
 	private int ready(CommandSourceStack source) {
@@ -97,10 +110,21 @@ public final class MinaTestCommands {
 	private int request(CommandSourceStack source, String content) {
 		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
 		if (requester == null) {
-			source.sendFailure(Component.literal("Test requester is not online. Run /mina-test setup chop_tree first."));
+			source.sendFailure(Component.literal("Test requester is not online. Run /mina-test setup first."));
 			return 0;
 		}
 		return turnController.submitPlayerTurn(source.getServer(), requester, "command", content, false);
+	}
+
+	private int moveRequesterFar(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		run(source.getServer(), "tp " + TEST_PLAYER + " 4.5 " + TREE_Y + " -4.5 0 0");
+		source.sendSuccess(() -> Component.literal("Mina test requester moved far."), false);
+		return 1;
 	}
 
 	private int snapshot(CommandSourceStack source) {
@@ -126,6 +150,28 @@ public final class MinaTestCommands {
 			return 0;
 		}
 		source.sendSuccess(() -> Component.literal("Mina test chop_tree passed."), false);
+		return 1;
+	}
+
+	private int assertFollowPlayer(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		boolean markerReady = level.getBlockState(SETUP_MARKER).is(Blocks.GRASS_BLOCK);
+		if (!markerReady) {
+			source.sendFailure(Component.literal("Mina test follow_player failed: setup marker is missing."));
+			return 0;
+		}
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		ServerPlayer body = source.getServer().getPlayerList().getPlayer(config.bodyUsername);
+		if (requester == null || body == null) {
+			source.sendFailure(Component.literal("Mina test follow_player failed: requester/body offline."));
+			return 0;
+		}
+		double distance = Math.sqrt(body.distanceToSqr(requester));
+		if (distance > 4.0D) {
+			source.sendFailure(Component.literal(String.format(java.util.Locale.ROOT, "Mina test follow_player failed: distance %.2f.", distance)));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal(String.format(java.util.Locale.ROOT, "Mina test follow_player passed: distance %.2f.", distance)), false);
 		return 1;
 	}
 
