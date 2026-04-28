@@ -108,6 +108,8 @@ def test_start_body_task_fails_gracefully_when_logs_have_no_approach(tmp_path) -
     result = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
 
     assert result.actions == []
+    assert '"ok": false' in result.content
+    assert '"error": "no log target with approach position"' in result.content
     assert "没有找到可安全接近的原木" in result.content
     assert '"task not found"' in runner.run("task_status", {}, turn).content
 

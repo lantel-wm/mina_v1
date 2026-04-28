@@ -290,3 +290,40 @@ def test_harness_offline_fallback_still_chops_for_explicit_tree_action(tmp_path)
     )
 
     assert response["actions"][0]["name"] == "body_move_to_position"
+
+
+def test_harness_offline_fallback_preserves_body_task_failure_message(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    harness = AgentHarness(Settings(api_key="", db_path=tmp_path / "mina.sqlite3"), memory, UnconfiguredDeepSeek(), tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-offline-unreachable-chop",
+            "trigger": "command",
+            "message": "chop tree",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "body_state": {"online": True},
+                "nearby_blocks": {
+                    "requester": [
+                        {
+                            "block": "minecraft:oak_log",
+                            "category": "log",
+                            "x": 2,
+                            "y": 80,
+                            "z": 0,
+                            "center_x": 2.5,
+                            "center_y": 80.5,
+                            "center_z": 0.5,
+                            "distance": 3.0,
+                        }
+                    ]
+                },
+            },
+        }
+    )
+
+    assert response.get("actions", []) == []
+    assert "没有找到可安全接近的原木" in response["messages"][0]["content"]

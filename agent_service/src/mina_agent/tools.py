@@ -240,13 +240,21 @@ class ToolRunner:
             return ToolResult(content=json.dumps({"ok": False, "error": "permission denied"}, ensure_ascii=False))
         task_type = str(args.get("task_type") or "")
         response = self.skills.start_task(task_type, args, turn)
+        task_status = response.debug.get("task_status") if isinstance(response.debug.get("task_status"), dict) else {}
+        ok = bool(response.actions) or bool(response.messages)
+        error = ""
+        if task_status.get("status") == "failed":
+            ok = False
+            error = str(task_status.get("last_error") or "")
         payload = {
-            "ok": bool(response.actions) or bool(response.messages),
+            "ok": ok,
             "task_type": task_type,
             "messages": response.messages,
             "actions": response.actions,
             "debug": response.debug,
         }
+        if error:
+            payload["error"] = error
         return ToolResult(content=json.dumps(payload, ensure_ascii=False), actions=response.actions)
 
     def _stop_body_task(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:

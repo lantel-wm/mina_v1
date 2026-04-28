@@ -253,7 +253,8 @@ class AgentHarness:
         messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
         if payload.get("ok") is False:
             error = str(payload.get("error") or "tool unavailable")
-            messages = [{"target": "requester", "content": f"离线模式无法完成请求：{error}"}]
+            if not messages:
+                messages = [{"target": "requester", "content": f"离线模式无法完成请求：{error}"}]
         elif not messages and actions:
             messages = [{"target": "requester", "content": fallback_message}]
         return TurnResponse(messages=messages, actions=actions, debug={"offline_fallback": True})
