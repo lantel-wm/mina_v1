@@ -91,8 +91,38 @@ class MemoryStore:
                     content='',
                     tokenize='unicode61'
                 );
+                create virtual table if not exists memory_fts_v2 using fts5(
+                    kind,
+                    scope_id,
+                    label,
+                    content,
+                    tokenize='unicode61'
+                );
                 """
             )
+            if conn.execute("select count(*) from memory_fts_v2").fetchone()[0] == 0:
+                self._backfill_fts_v2(conn)
+
+    def _backfill_fts_v2(self, conn: sqlite3.Connection) -> None:
+        conn.executescript(
+            """
+            insert into memory_fts_v2(kind, scope_id, label, content)
+            select 'conversation', player_id, role, content
+            from conversations;
+
+            insert into memory_fts_v2(kind, scope_id, label, content)
+            select 'event', player_id, event_type, payload_json
+            from events;
+
+            insert into memory_fts_v2(kind, scope_id, label, content)
+            select 'task_event', task_id, event_type, payload_json
+            from task_events;
+
+            insert into memory_fts_v2(kind, scope_id, label, content)
+            select 'skill_reflection', skill_name, skill_name, reflection
+            from skill_reflections;
+            """
+        )
 
     def upsert_player(self, player: dict[str, Any]) -> None:
         player_id = str(player.get("uuid") or player.get("id") or "unknown")
@@ -115,7 +145,7 @@ class MemoryStore:
                 (request_id, player_id, role, content, time.time()),
             )
             conn.execute(
-                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
                 ("conversation", player_id, role, content),
             )
 
@@ -126,7 +156,7 @@ class MemoryStore:
                 (player_id, event_type, json.dumps(payload, ensure_ascii=False), importance, time.time()),
             )
             conn.execute(
-                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
                 ("event", player_id, event_type, json.dumps(payload, ensure_ascii=False)),
             )
 
@@ -159,7 +189,7 @@ class MemoryStore:
                 (task_id, event_type, content, time.time()),
             )
             conn.execute(
-                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
                 ("task_event", task_id, event_type, content),
             )
 
@@ -170,7 +200,7 @@ class MemoryStore:
                 (skill_name, reflection, json.dumps(payload, ensure_ascii=False), time.time()),
             )
             conn.execute(
-                "insert into memory_fts(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
                 ("skill_reflection", skill_name, skill_name, reflection),
             )
 
@@ -221,13 +251,17 @@ class MemoryStore:
             try:
                 fts_rows = conn.execute(
                     """
-                    select kind, label, content, bm25(memory_fts) as score
-                    from memory_fts
-                    where memory_fts match ?
+                    select kind, label, content, bm25(memory_fts_v2) as score
+                    from memory_fts_v2
+                    where memory_fts_v2 match ?
+                      and (
+                        (kind in ('conversation', 'event') and scope_id = ?)
+                        or kind = 'skill_reflection'
+                      )
                     order by score
                     limit ?
                     """,
-                    (_fts_query(query), limit),
+                    (_fts_query(query), player_id, limit),
                 ).fetchall()
             except sqlite3.OperationalError:
                 fts_rows = []

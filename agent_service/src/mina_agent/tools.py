@@ -72,7 +72,7 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "memory_search",
-                "description": "Search Mina's player, task, world, and skill memories.",
+                "description": "Search the current player's memories plus reusable skill reflections.",
                 "parameters": _schema(
                     {
                         "query": {"type": "string"},
