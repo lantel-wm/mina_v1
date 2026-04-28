@@ -52,6 +52,7 @@ class AgentHarness:
             self.memory.add_conversation(request_id, player_id, "assistant", fallback)
             return TurnResponse(messages=[{"target": "requester", "content": fallback}]).to_dict()
 
+        turn = self._with_current_task(turn)
         messages = build_messages(turn, self.memory)
         actions: list[dict[str, Any]] = []
         usage: dict[str, Any] = {}
@@ -191,6 +192,19 @@ class AgentHarness:
         self.memory.add_event(player_id, "companion_alert", {"content": content}, importance=2)
         self._debug("companion message player=%s content=%s", player.get("name") or player_id, content)
         return TurnResponse(messages=[{"target": "requester", "content": content}])
+
+    def _with_current_task(self, turn: dict[str, Any]) -> dict[str, Any]:
+        try:
+            status = self.tools.skills.task_status(None, turn)
+        except Exception:  # noqa: BLE001 - context enrichment should never break a turn.
+            return turn
+        if status.get("ok") is False:
+            return turn
+        enriched = dict(turn)
+        snapshot = dict(enriched.get("snapshot") or {})
+        snapshot["active_task"] = status
+        enriched["snapshot"] = snapshot
+        return enriched
 
     def _debug(self, message: str, *args: Any) -> None:
         if self.settings.debug_tool_calls:

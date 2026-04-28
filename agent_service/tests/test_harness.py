@@ -76,6 +76,27 @@ class ToolCallingDeepSeek:
         )
 
 
+class ContextInspectingDeepSeek:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, Any]] = []
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.messages = messages
+        context = "\n".join(str(message.get("content") or "") for message in messages)
+        assert '"active_task"' in context
+        assert '"type": "follow_player"' in context
+        assert '"status": "active"' in context
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": "当前任务是跟随玩家。"},
+            finish_reason="stop",
+            usage={"completion_tokens": 1},
+            raw={},
+        )
+
+
 def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -95,3 +116,33 @@ def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
 
     assert response["messages"][0]["content"] == "我查到了 Minecraft Wiki 的相关结果。"
     assert deepseek.calls == 2
+
+
+def test_harness_injects_current_task_into_context(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    turn = {
+        "request_id": "req-start",
+        "trigger": "command",
+        "message": "跟随我",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {"body_state": {"online": True}},
+    }
+    started = tools.run("start_body_task", {"task_type": "follow_player"}, turn)
+    assert started.actions
+
+    deepseek = ContextInspectingDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    response = harness.run_turn(
+        {
+            "request_id": "req-status",
+            "trigger": "command",
+            "message": "现在状态如何",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert response["messages"][0]["content"] == "当前任务是跟随玩家。"
