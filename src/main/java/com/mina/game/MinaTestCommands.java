@@ -155,6 +155,8 @@ public final class MinaTestCommands {
 	private void setupWorldAndPlayers(CommandSourceStack source) {
 		MinecraftServer server = source.getServer();
 		prepareChopTreeWorld(source.getLevel());
+		run(server, "difficulty peaceful");
+		run(server, "kill @e[type=minecraft:creeper]");
 		run(server, "time set day");
 		run(server, "weather clear");
 		run(server, "puppet " + TEST_PLAYER + " spawn");
@@ -292,6 +294,7 @@ public final class MinaTestCommands {
 			}
 			case "low_health" -> lowHealth(source);
 			case "low_hunger" -> lowHunger(source);
+			case "nearby_hostile" -> nearbyHostile(source);
 			default -> {
 				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
 				yield 0;
@@ -347,6 +350,13 @@ public final class MinaTestCommands {
 		requester.getFoodData().setFoodLevel(4);
 		requester.getFoodData().setSaturation(0.0F);
 		source.sendSuccess(() -> Component.literal("Mina test world mutate low_hunger complete."), false);
+		return 1;
+	}
+
+	private int nearbyHostile(CommandSourceStack source) {
+		run(source.getServer(), "difficulty normal");
+		run(source.getServer(), "summon minecraft:creeper 1.5 " + TREE_Y + " -2.5 {NoAI:1b,Silent:1b,PersistenceRequired:1b}");
+		source.sendSuccess(() -> Component.literal("Mina test world mutate nearby_hostile complete."), false);
 		return 1;
 	}
 

@@ -58,11 +58,15 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     health_companion = SCENARIOS["companion_low_health_alert"]
     hunger_companion = SCENARIOS["companion_low_hunger_alert"]
     silent_companion = SCENARIOS["companion_healthy_silent"]
+    hostile_companion = SCENARIOS["companion_nearby_hostile_alert"]
     assert any(step.request_id == "companion-low-health-cooldown" for step in health_companion.steps)
     assert any(step.request_id == "companion-low-hunger-cooldown" for step in hunger_companion.steps)
     assert silent_companion.expected_model is not None
     assert silent_companion.expected_model.count == 0
     assert silent_companion.steps[0].wait_for == ['"messages":[]']
+    assert any(step.request_id == "companion-nearby-hostile-cooldown" for step in hostile_companion.steps)
+    assert hostile_companion.expected_model is not None
+    assert hostile_companion.expected_model.count == 0
 
 
 def test_scenario_manifest_supports_expected_trace_invariants() -> None:

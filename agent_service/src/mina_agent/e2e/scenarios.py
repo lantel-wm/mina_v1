@@ -361,6 +361,37 @@ SCENARIO_DATA = [
         "rubric": "Companion ticks should stay silent when the player is healthy, fed, and not in nearby danger.",
     },
     {
+        "name": "companion_nearby_hostile_alert",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "companion", "safety"],
+        "steps": [
+            {"kind": "world_mutate", "value": "nearby_hostile", "wait_for": ["Mina test world mutate nearby_hostile complete."]},
+            {
+                "kind": "companion_tick",
+                "request_id": "companion-nearby-hostile",
+                "wait_for": ["附近有"],
+                "timeout": 30,
+            },
+            {
+                "kind": "companion_tick",
+                "request_id": "companion-nearby-hostile-cooldown",
+                "wait_for": ['"messages":[]'],
+                "timeout": 30,
+            },
+        ],
+        "forbidden_actions": {
+            "body_spawn",
+            "body_move_to_position",
+            "body_move_to_requester",
+            "body_chain",
+            "body_attack",
+            "body_use",
+            "run_read_only_command",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Companion ticks should warn about a nearby hostile mob, then stay silent during cooldown, without using the model or controlling the body.",
+    },
+    {
         "name": "read_only_time_live_model",
         "fixture": "follow_player",
         "tags": ["live", "core", "world_tool", "model"],
