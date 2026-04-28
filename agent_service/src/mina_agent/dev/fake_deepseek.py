@@ -123,6 +123,30 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
             ],
         }
         finish_reason = "tool_calls"
+    elif _is_multi_body_action_message(user_message):
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-follow-first",
+                    "type": "function",
+                    "function": {
+                        "name": "start_body_task",
+                        "arguments": '{"task_type":"follow_player","target_hint":"me"}',
+                    },
+                },
+                {
+                    "id": "call-chop-second",
+                    "type": "function",
+                    "function": {
+                        "name": "start_body_task",
+                        "arguments": '{"task_type":"chop_tree","target_hint":"nearby tree"}',
+                    },
+                },
+            ],
+        }
+        finish_reason = "tool_calls"
     elif _is_chop_message(user_message):
         message = {
             "role": "assistant",
@@ -269,6 +293,11 @@ def _is_status_message(message: str) -> bool:
 def _is_stop_message(message: str) -> bool:
     normalized = message.lower()
     return "停止" in message or "取消" in message or "stop" in normalized or "cancel" in normalized
+
+
+def _is_multi_body_action_message(message: str) -> bool:
+    normalized = message.lower()
+    return "多身体任务" in message or "multi body" in normalized or ("同时" in message and "跟随" in message and "砍树" in message)
 
 
 def _is_follow_message(message: str) -> bool:

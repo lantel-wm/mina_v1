@@ -171,6 +171,46 @@ class ActionDispatchDeepSeek:
         )
 
 
+class MultiActionDispatchDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        if self.calls > 1:
+            raise AssertionError("harness should not request another model subturn after action dispatch")
+        return DeepSeekResponse(
+            message={
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-follow",
+                        "type": "function",
+                        "function": {
+                            "name": "start_body_task",
+                            "arguments": '{"task_type": "follow_player", "target_hint": "me"}',
+                        },
+                    },
+                    {
+                        "id": "call-chop",
+                        "type": "function",
+                        "function": {
+                            "name": "start_body_task",
+                            "arguments": '{"task_type": "chop_tree", "target_hint": "nearby tree"}',
+                        },
+                    },
+                ],
+            },
+            finish_reason="tool_calls",
+            usage={"prompt_tokens": 1},
+            raw={},
+        )
+
+
 class UnconfiguredDeepSeek:
     def configured(self) -> bool:
         return False
@@ -221,6 +261,53 @@ def test_harness_dispatches_fabric_action_before_next_model_subturn(tmp_path) ->
     assert response["actions"][0]["name"] == "body_move_to_requester"
     assert "我开始跟随你" in response["messages"][0]["content"]
     assert response["debug"]["action_barrier"] is True
+
+
+def test_harness_action_barrier_ignores_later_action_tool_calls(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = MultiActionDispatchDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-multi-action-barrier",
+            "trigger": "command",
+            "message": "同时跟随并砍树",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "body_state": {"online": True},
+                "nearby_blocks": {
+                    "requester": [
+                        {
+                            "block": "minecraft:spruce_log",
+                            "category": "log",
+                            "x": 2,
+                            "y": 80,
+                            "z": 0,
+                            "center_x": 2.5,
+                            "center_y": 80.5,
+                            "center_z": 0.5,
+                            "distance": 3.0,
+                            "approach_x": 2.5,
+                            "approach_y": 80,
+                            "approach_z": -0.5,
+                        }
+                    ]
+                },
+            },
+        }
+    )
+
+    assert deepseek.calls == 1
+    assert [action["name"] for action in response["actions"]] == ["body_move_to_requester"]
+    calls = memory.recent_tool_calls(request_id="req-multi-action-barrier", limit=10)
+    assert [call["tool_name"] for call in calls] == ["start_body_task"]
+    assert "follow_player" in calls[0]["args_json"]
+    assert "chop_tree" not in calls[0]["args_json"]
+    tasks = tools.skills.list_tasks()
+    assert [task["type"] for task in tasks] == ["follow_player"]
 
 
 def test_harness_injects_current_task_into_context(tmp_path) -> None:

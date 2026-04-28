@@ -45,6 +45,7 @@ def main() -> int:
             "model_follow_player",
             "model_spawn_body_follow",
             "model_follow_heartbeat",
+            "model_multi_body_action_barrier",
             "model_action_barrier",
             "model_read_only_command",
             "model_knowledge_query",
@@ -101,6 +102,7 @@ def main() -> int:
         "model_follow_player",
         "model_spawn_body_follow",
         "model_follow_heartbeat",
+        "model_multi_body_action_barrier",
         "model_banned_command",
         "model_private_body_tool",
         "model_action_barrier",
@@ -159,6 +161,7 @@ def main() -> int:
                 "model_follow_player",
                 "model_spawn_body_follow",
                 "model_follow_heartbeat",
+                "model_multi_body_action_barrier",
                 "model_action_barrier",
                 "model_read_only_command",
                 "model_knowledge_query",
@@ -228,6 +231,8 @@ def main() -> int:
             run_model_spawn_body_follow(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_follow_heartbeat":
             run_model_follow_heartbeat(server, output, args.timeout, args.port, args.deepseek_port)
+        elif args.scenario == "model_multi_body_action_barrier":
+            run_model_multi_body_action_barrier(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_action_barrier":
             run_model_action_barrier(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_read_only_command":
@@ -1022,6 +1027,44 @@ def run_model_follow_heartbeat(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before follow heartbeat dispatch, got {calls!r}")
+
+
+def run_model_multi_body_action_barrier(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    send(proc, "mina-test request 请同时跟随我并砍树")
+    output.wait_for("我开始跟随你", timeout=30)
+    call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "start_body_task"
+        and item.get("status") == "ok"
+        and f'"task_type": "follow_player"' in str(item.get("args_json") or ""),
+        timeout=10,
+    )
+    if not call:
+        raise AssertionError("multi body action barrier did not record the first follow tool call")
+    tool_calls = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tool-calls", timeout=5).get("tool_calls", [])
+    if len(tool_calls) != 1:
+        raise AssertionError(f"multi body action barrier should record only the first action tool call: {tool_calls!r}")
+    if "chop_tree" in str(tool_calls):
+        raise AssertionError(f"multi body action barrier should not process the second chop_tree call: {tool_calls!r}")
+    events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5).get("events", [])
+    if any(isinstance(event, dict) and event.get("action_name") in {"body_move_to_position", "body_chain"} for event in events):
+        raise AssertionError(f"multi body action barrier should not schedule chop_tree actions: {events!r}")
+    tasks = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tasks", timeout=5).get("tasks", [])
+    active_follow = [
+        task for task in tasks
+        if isinstance(task, dict) and task.get("type") == "follow_player" and task.get("status") == "active"
+    ]
+    chop_tasks = [task for task in tasks if isinstance(task, dict) and task.get("type") == "chop_tree"]
+    if not active_follow or chop_tasks:
+        raise AssertionError(f"expected only an active follow task after multi body call barrier: {tasks!r}")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 1:
+        raise AssertionError(f"fake DeepSeek should have one call before multi body action barrier dispatch, got {calls!r}")
 
 
 def assert_body_task_tool_call(sidecar_port: int | None, task_type: str) -> None:
