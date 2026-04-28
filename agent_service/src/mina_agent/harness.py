@@ -102,6 +102,15 @@ class AgentHarness:
             self._debug("turn local_memory request_id=%s intent=%s", request_id, local_memory.debug.get("intent"))
             return local_memory.to_dict()
 
+        local_web_search = self._local_web_search_response(turn)
+        if local_web_search is not None:
+            for message_item in local_web_search.messages:
+                content = str(message_item.get("content") or "").strip()
+                if content:
+                    self.memory.add_conversation(request_id, player_id, "assistant", content)
+            self._debug("turn local_web_search request_id=%s query=%s", request_id, local_web_search.debug.get("query"))
+            return local_web_search.to_dict()
+
         if not self.deepseek.configured():
             offline = self._offline_fallback(turn)
             if offline is not None:
@@ -341,6 +350,35 @@ class AgentHarness:
 
         return None
 
+    def _local_web_search_response(self, turn: dict[str, Any]) -> TurnResponse | None:
+        if turn.get("trigger") != "command":
+            return None
+        message = str(turn.get("message") or "").strip()
+        normalized = message.lower()
+        if not normalized or not _local_web_search_intent(normalized):
+            return None
+
+        args = {"query": _local_web_search_query(message), "max_results": 3}
+        result = self.tools.run("web_search", args, turn)
+        self._record_tool_call(turn, "web_search", args, result, [])
+        payload = _json_object(result.content)
+        if payload.get("ok") is not True:
+            error = str(payload.get("error") or "web_search unavailable")
+            return TurnResponse(
+                messages=[{"target": "requester", "content": f"联网搜索暂不可用：{error}"}],
+                debug={"local_web_search": True, "query": args["query"]},
+            )
+        lines = _safe_search_result_lines(payload.get("results") or [])
+        if not lines:
+            return TurnResponse(
+                messages=[{"target": "requester", "content": "搜索完成，但没有可安全展示的结果摘要。"}],
+                debug={"local_web_search": True, "query": args["query"]},
+            )
+        return TurnResponse(
+            messages=[{"target": "requester", "content": "搜索结果：\n" + "\n".join(lines)}],
+            debug={"local_web_search": True, "query": args["query"]},
+        )
+
     def _offline_fallback(self, turn: dict[str, Any]) -> TurnResponse | None:
         message = str(turn.get("message") or "").strip()
         normalized = message.lower()
@@ -427,17 +465,7 @@ class AgentHarness:
             self._record_tool_call(turn, "web_search", args, result, [])
             payload = _json_object(result.content)
             if payload.get("ok") is True:
-                lines = []
-                for item in payload.get("results") or []:
-                    if not isinstance(item, dict):
-                        continue
-                    title = str(item.get("title") or "result")
-                    url = str(item.get("url") or "")
-                    content = str(item.get("content") or "").strip()
-                    detail = f"{title} {url}".strip()
-                    if content:
-                        detail += f" - {_truncate(content, 120)}"
-                    lines.append(detail)
+                lines = _safe_search_result_lines(payload.get("results") or [])
                 if lines:
                     return TurnResponse(
                         messages=[{"target": "requester", "content": "搜索结果：\n" + "\n".join(lines)}],
@@ -883,6 +911,134 @@ def _natural_locate_instructional(message: str) -> bool:
             "what is",
         )
     )
+
+
+def _local_web_search_intent(message: str) -> bool:
+    if _negated_web_search_intent(message):
+        return False
+    return any(
+        token in message
+        for token in (
+            "web_search",
+            "联网查",
+            "联网搜索",
+            "网上查",
+            "网页搜索",
+            "搜索",
+            "search",
+            "look up online",
+            "web lookup",
+        )
+    )
+
+
+def _negated_web_search_intent(message: str) -> bool:
+    return any(
+        token in message
+        for token in (
+            "不要搜索",
+            "别搜索",
+            "不用搜索",
+            "无需搜索",
+            "不要联网",
+            "别联网",
+            "不用联网",
+            "无需联网",
+            "不要查网页",
+            "别查网页",
+            "不要用 web_search",
+            "别用 web_search",
+            "不要调用 web_search",
+            "别调用 web_search",
+            "do not search",
+            "don't search",
+            "dont search",
+            "no search",
+            "without search",
+            "do not browse",
+            "don't browse",
+            "dont browse",
+            "no web search",
+            "without web search",
+        )
+    )
+
+
+def _local_web_search_query(message: str) -> str:
+    query = message.strip()
+    replacements = (
+        "请使用 web_search 工具搜索",
+        "使用 web_search 工具搜索",
+        "web_search",
+        "请联网查一下",
+        "帮我联网查一下",
+        "联网查一下",
+        "联网搜索一下",
+        "网上查一下",
+        "网页搜索一下",
+        "请搜索",
+        "帮我搜索",
+        "搜索一下",
+        "search for",
+        "look up online",
+        "web lookup",
+        "search",
+    )
+    lowered = query.lower()
+    for prefix in replacements:
+        prefix_lower = prefix.lower()
+        if lowered.startswith(prefix_lower):
+            query = query[len(prefix):].strip(" ：:，,。.")
+            break
+    return query or message.strip()
+
+
+def _safe_search_result_lines(results: Any) -> list[str]:
+    lines: list[str] = []
+    if not isinstance(results, list):
+        return lines
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "result").strip()
+        url = str(item.get("url") or "").strip()
+        content = str(item.get("content") or "").strip()
+        if _unsafe_search_text(f"{title}\n{content}"):
+            continue
+        detail = title
+        if url:
+            detail += f" {url}"
+        if content:
+            detail += f" - {_truncate(content, 160)}"
+        lines.append(detail.strip())
+        if len(lines) >= 3:
+            break
+    return lines
+
+
+def _unsafe_search_text(value: str) -> bool:
+    normalized = value.lower()
+    if any(
+        token in normalized
+        for token in (
+            "ignore every previous instruction",
+            "ignore previous instructions",
+            "忽略之前",
+            "忽略以上",
+            "调用工具",
+            "call body_",
+            "body_chain",
+            "body_attack",
+            "run setblock",
+            "execute command",
+        )
+    ):
+        return True
+    for token in re.split(r"[^a-z0-9_:\-]+", normalized):
+        command = token.split(":")[-1]
+        if command in MINECRAFT_WRITE_COMMANDS:
+            return True
+    return False
 
 
 def _literal_read_only_command(message: str) -> str:
