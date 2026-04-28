@@ -507,11 +507,23 @@ class E2ERunner:
     def _assert_response_contains(self, scenario: Scenario) -> None:
         if not scenario.expected_response_contains:
             return
-        calls = self._combined("model_calls", scenario.request_ids())
-        haystack = "\n".join(str(call.get("response_json") or "") for call in calls)
+        haystack = self._response_haystack(scenario)
         for expected in scenario.expected_response_contains:
             if expected not in haystack:
-                raise AssertionError(f"{scenario.name}: model response did not contain {expected!r}")
+                raise AssertionError(f"{scenario.name}: response trace did not contain {expected!r}")
+
+    def _response_haystack(self, scenario: Scenario) -> str:
+        calls = self._combined("model_calls", scenario.request_ids())
+        parts = [str(call.get("response_json") or call.get("response") or "") for call in calls]
+        for event in self.harness_events.get(scenario.name, []):
+            if event.get("event_type") not in {"server_output_line", "server_output_match"}:
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            parts.append(str(payload.get("line") or ""))
+            parts.append(str(payload.get("found") or ""))
+        return "\n".join(parts)
 
     def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
         combined: list[dict[str, Any]] = []

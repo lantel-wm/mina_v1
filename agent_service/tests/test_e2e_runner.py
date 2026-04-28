@@ -276,6 +276,35 @@ def test_failure_trace_artifacts_record_trace_read_errors(tmp_path, monkeypatch)
     assert "sidecar trace endpoint unavailable" in records[0]["error"]
 
 
+def test_response_contains_can_match_player_visible_harness_output(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "visible_response_case",
+            "fixture": "follow_player",
+            "steps": [{"kind": "request", "request_id": "visible-response-request", "value": "查询"}],
+            "expected_response_contains": ["VisibleMarker-42"],
+            "rubric": "response quality should be checked against player-visible output",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+    runner._record_harness_event(
+        "visible_response_case",
+        "server_output_line",
+        {"line": "mina turn response requestId=visible-response-request text=VisibleMarker-42"},
+    )
+
+    monkeypatch.setattr("mina_agent.e2e.runner.read_json", lambda url, timeout: {"model_calls": []})
+
+    runner._assert_response_contains(scenario)
+
+
 def test_failure_snapshot_line_is_compacted() -> None:
     line = (
         '[20:00:00] [Server thread/INFO] (Minecraft) '
