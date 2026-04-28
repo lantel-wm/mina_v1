@@ -6,7 +6,14 @@ import urllib.request
 import pytest
 
 from mina_agent.e2e.manifest import Scenario, scenario_from_dict
-from mina_agent.e2e.runner import E2ERunner, SearxngFixtureServer, main, require_live_deepseek_env
+from mina_agent.e2e.runner import (
+    E2ERunner,
+    SearxngFixtureServer,
+    main,
+    parse_args,
+    require_live_deepseek_env,
+    select_scenarios,
+)
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
 
 
@@ -58,6 +65,33 @@ def test_scenario_manifest_supports_expected_trace_invariants() -> None:
     assert scenario.expected_model is not None
     assert scenario.expected_model.min_count == 1
     assert scenario.expected_response_contains == ["MinaE2E-Diamond-Y=-59"]
+
+
+def test_runner_loads_external_manifest_scenarios(tmp_path) -> None:
+    manifest = tmp_path / "scenarios.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "scenarios": [
+                    {
+                        "name": "custom_manifest_case",
+                        "fixture": "follow_player",
+                        "tags": ["core"],
+                        "steps": [{"kind": "request", "request_id": "custom-1", "value": "状态"}],
+                        "expected_model": {"mode": "exact", "count": 0},
+                        "rubric": "custom manifest scenario",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = parse_args(["--manifest", str(manifest), "--scenario", "custom_manifest_case"])
+
+    selected = select_scenarios(args)
+
+    assert [scenario.name for scenario in selected] == ["custom_manifest_case"]
+    assert selected[0].request_ids() == ["custom-1"]
 
 
 def test_live_runner_requires_api_key_by_default(monkeypatch) -> None:

@@ -18,7 +18,7 @@ from typing import Any
 
 from mina_agent.config import load_dotenv_defaults
 
-from .manifest import ActionExpectation, Scenario, ToolExpectation
+from .manifest import ActionExpectation, Scenario, ToolExpectation, load_scenarios_from_file
 from .scenarios import SCENARIOS, SUITES
 from .trace import compact_summary_action_events, compact_summary_model_calls, compact_summary_tool_calls, model_usage_summary, trace_records
 
@@ -78,7 +78,8 @@ def main(argv: list[str] | None = None) -> int:
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Mina declarative live E2E scenarios.")
     parser.add_argument("--suite", default="live", choices=sorted(SUITES))
-    parser.add_argument("--scenario", action="append", choices=sorted(SCENARIOS))
+    parser.add_argument("--scenario", action="append")
+    parser.add_argument("--manifest", action="append", default=[], help="Load additional JSON scenario manifests.")
     parser.add_argument("--port", type=int, default=18911)
     parser.add_argument("--server-port", type=int, default=25566)
     parser.add_argument("--timeout", type=float, default=180.0)
@@ -94,8 +95,21 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def select_scenarios(args: argparse.Namespace) -> list[Scenario]:
-    names = args.scenario if args.scenario else SUITES[args.suite]
-    return [SCENARIOS[name] for name in names]
+    scenarios = dict(SCENARIOS)
+    for manifest_path in args.manifest:
+        scenarios.update(load_scenarios_from_file(Path(manifest_path)))
+    names = args.scenario if args.scenario else suite_names(args.suite, scenarios)
+    missing = [name for name in names if name not in scenarios]
+    if missing:
+        raise SystemExit(f"Unknown Mina E2E scenario(s): {', '.join(missing)}")
+    return [scenarios[name] for name in names]
+
+
+def suite_names(suite: str, scenarios: dict[str, Scenario]) -> list[str]:
+    if suite == "all":
+        return list(scenarios)
+    suite_tag = {"live": "core", "body": "body", "safety": "safety"}[suite]
+    return [name for name, scenario in scenarios.items() if suite_tag in scenario.tags]
 
 
 def require_live_deepseek_env() -> dict[str, str]:

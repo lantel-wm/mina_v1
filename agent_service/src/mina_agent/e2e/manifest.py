@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+from pathlib import Path
 from typing import Any
 
 
@@ -115,3 +117,12 @@ def scenario_from_dict(payload: dict[str, Any]) -> Scenario:
         rubric=str(payload.get("rubric") or ""),
         keep_artifacts=str(payload.get("keep_artifacts") or "on_failure"),
     )
+
+
+def load_scenarios_from_file(path: Path) -> dict[str, Scenario]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_scenarios = payload.get("scenarios") if isinstance(payload, dict) else payload
+    if not isinstance(raw_scenarios, list):
+        raise ValueError("E2E manifest must be a scenario list or an object with a scenarios list")
+    scenarios = [scenario_from_dict(item) for item in raw_scenarios if isinstance(item, dict)]
+    return {scenario.name: scenario for scenario in scenarios}
