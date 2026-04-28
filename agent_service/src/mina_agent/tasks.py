@@ -159,6 +159,15 @@ class SkillRuntime:
     def _handle_result(self, task: dict[str, Any], result: dict[str, Any]) -> TurnResponse:
         if task.get("status") != "active":
             return TurnResponse(debug={"task_status": _public_task(task)})
+        action_id = str(result.get("action_id") or "")
+        active_action_id = str(task.get("active_action_id") or "")
+        if action_id and active_action_id and action_id != active_action_id:
+            self.memory.record_task_event(
+                task["task_id"],
+                "stale_action_result",
+                {"action_id": action_id, "active_action_id": active_action_id, "step_id": result.get("step_id")},
+            )
+            return TurnResponse(debug={"task_status": _public_task(task)})
         status = str(result.get("status") or "")
         monitor = result.get("monitor_result") if isinstance(result.get("monitor_result"), dict) else {}
         monitor_status = str(monitor.get("status") or "")

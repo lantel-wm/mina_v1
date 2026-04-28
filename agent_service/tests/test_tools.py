@@ -161,6 +161,52 @@ def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> 
     assert "当前没有正在执行的身体任务" in stopped.content
 
 
+def test_stale_action_result_does_not_advance_active_task(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    assert moved.actions
+
+    stale = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "duplicate old move result"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+
+    assert stale.actions == []
+    status = runner.run("task_status", {"task_id": move["task_id"]}, turn)
+    assert '"stage": "attack_sent"' in status.content
+
+
 def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) -> None:
     runner = _runner(tmp_path)
 
