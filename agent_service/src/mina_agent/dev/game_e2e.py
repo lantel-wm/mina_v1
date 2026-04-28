@@ -36,6 +36,7 @@ def main() -> int:
             "body_unavailable",
             "offline_knowledge_query",
             "offline_read_only_command",
+            "offline_chop_tree",
             "offline_follow",
         ],
     )
@@ -51,7 +52,7 @@ def main() -> int:
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
-    offline_service_scenarios = {"offline_follow", "offline_read_only_command", "offline_knowledge_query"}
+    offline_service_scenarios = {"offline_follow", "offline_read_only_command", "offline_knowledge_query", "offline_chop_tree"}
     fake_search = start_fake_search(args.search_port) if args.scenario == "offline_knowledge_query" else None
     sidecar_mode = "service" if args.scenario in offline_service_scenarios else args.sidecar
     sidecar = start_sidecar(
@@ -71,7 +72,7 @@ def main() -> int:
         output.wait_for("Done", timeout=args.timeout)
         setup_scenario = (
             "chop_tree"
-            if args.scenario in {"replace_follow_with_chop", "banned_command"}
+            if args.scenario in {"replace_follow_with_chop", "banned_command", "offline_chop_tree"}
             else "follow_player"
             if args.scenario in {
                 "read_only_command",
@@ -117,6 +118,8 @@ def main() -> int:
             run_knowledge_query(server, output)
         elif args.scenario == "offline_read_only_command":
             run_read_only_command(server, output)
+        elif args.scenario == "offline_chop_tree":
+            run_chop_tree(server, output, args.timeout)
         elif args.scenario == "offline_follow":
             run_follow_player(server, output, args.timeout)
         write_trace_summary(args.port)
