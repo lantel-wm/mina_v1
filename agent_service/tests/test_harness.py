@@ -153,6 +153,9 @@ def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
 
     assert response["messages"][0]["content"] == "我查到了 Minecraft Wiki 的相关结果。"
     assert deepseek.calls == 2
+    calls = memory.recent_tool_calls(request_id="req-1", limit=10)
+    assert [call["tool_name"] for call in calls] == ["web_search"]
+    assert calls[0]["status"] == "ok"
 
 
 def test_harness_dispatches_fabric_action_before_next_model_subturn(tmp_path) -> None:
@@ -267,6 +270,8 @@ def test_harness_offline_fallback_can_return_search_results(tmp_path) -> None:
 
     assert "搜索结果" in response["messages"][0]["content"]
     assert "Minecraft Wiki" in response["messages"][0]["content"]
+    calls = memory.recent_tool_calls(request_id="req-offline-search", limit=10)
+    assert [call["tool_name"] for call in calls] == ["web_search"]
 
 
 def test_harness_offline_fallback_still_reports_missing_key_for_complex_request(tmp_path) -> None:

@@ -96,6 +96,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def action_events(request_id: str | None = None) -> dict[str, Any]:
         return {"ok": True, "events": memory.recent_action_events(request_id=request_id, limit=500)}
 
+    @app.get("/v1/tool-calls")
+    def tool_calls(request_id: str | None = None) -> dict[str, Any]:
+        return {"ok": True, "tool_calls": memory.recent_tool_calls(request_id=request_id, limit=500)}
+
     return app
 
 

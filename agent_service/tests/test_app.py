@@ -49,6 +49,31 @@ def test_app_records_action_events_for_read_only_command(tmp_path) -> None:
     assert "The time is 1200" in events[1]["payload_json"]
 
 
+def test_app_exposes_tool_call_journal(tmp_path) -> None:
+    app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+    turn = _route(app, "/v1/turn")
+    tool_calls = _route(app, "/v1/tool-calls")
+
+    asyncio.run(
+        turn(
+            {
+                "request_id": "req-time",
+                "trigger": "command",
+                "message": "查询时间",
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": False},
+                "snapshot": {},
+            }
+        )
+    )
+    calls = tool_calls(request_id="req-time")["tool_calls"]
+
+    assert len(calls) == 1
+    assert calls[0]["tool_name"] == "run_read_only_command"
+    assert calls[0]["status"] == "ok"
+    assert "time query daytime" in calls[0]["args_json"]
+
+
 def test_app_records_single_action_result_payload(tmp_path) -> None:
     app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
     action_results = _route(app, "/v1/action-results")

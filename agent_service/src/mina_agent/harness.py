@@ -239,7 +239,9 @@ class AgentHarness:
             )
 
         if _contains_any(normalized, {"查资料", "搜索", "search", "wiki"}):
-            result = self.tools.run("web_search", {"query": message, "max_results": 3}, turn)
+            args = {"query": message, "max_results": 3}
+            result = self.tools.run("web_search", args, turn)
+            self._record_tool_call(turn, "web_search", args, result, [])
             payload = _json_object(result.content)
             if payload.get("ok") is True:
                 lines = []
@@ -277,7 +279,26 @@ class AgentHarness:
                 messages = [{"target": "requester", "content": f"离线模式无法完成请求：{error}"}]
         elif not messages and actions:
             messages = [{"target": "requester", "content": fallback_message}]
+        self._record_tool_call(turn, name, args, result, actions)
         return TurnResponse(messages=messages, actions=actions, debug={"offline_fallback": True})
+
+    def _record_tool_call(
+        self,
+        turn: dict[str, Any],
+        name: str,
+        args: dict[str, Any],
+        result: Any,
+        result_actions: list[dict[str, Any]],
+    ) -> None:
+        request_id = str(turn.get("request_id") or "")
+        status = "ok" if result_actions or not _is_tool_error(result.content) else "error"
+        self.memory.record_tool_call(
+            request_id,
+            name,
+            args,
+            {"content": result.content, "actions": result_actions},
+            status,
+        )
 
     def _companion_tick(self, turn: dict[str, Any]) -> TurnResponse | None:
         player = turn.get("player") or {}

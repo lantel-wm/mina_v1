@@ -149,11 +149,11 @@ def main() -> int:
         elif args.scenario == "model_read_only_command":
             run_model_read_only_command(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_knowledge_query":
-            run_model_knowledge_query(server, output, args.deepseek_port)
+            run_model_knowledge_query(server, output, args.port, args.deepseek_port)
         elif args.scenario == "offline_body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "offline_knowledge_query":
-            run_knowledge_query(server, output)
+            run_knowledge_query(server, output, args.port)
         elif args.scenario == "offline_read_only_command":
             run_read_only_command(server, output, args.port)
         elif args.scenario == "offline_chop_tree":
@@ -461,11 +461,21 @@ def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader", s
             raise AssertionError("read-only command action_result was not recorded in the sidecar action journal")
 
 
-def run_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+def run_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int | None = None) -> None:
     send(proc, "mina-test request 查资料 Minecraft Wiki")
     found = output.wait_for_any(["搜索结果：Minecraft Wiki", "联网知识查询链路可用"], timeout=30)
     if not found:
         raise TimeoutError("knowledge query result")
+    if sidecar_port is not None:
+        call = wait_tool_call(
+            sidecar_port,
+            lambda item: item.get("tool_name") == "web_search"
+            and item.get("status") == "ok"
+            and "Minecraft Wiki" in str(item.get("result_json") or ""),
+            timeout=10,
+        )
+        if not call:
+            raise AssertionError("knowledge query did not record a successful web_search tool call")
 
 
 def run_banned_command(proc: subprocess.Popen[str], output: "OutputReader") -> None:
@@ -570,8 +580,8 @@ def run_model_read_only_command(proc: subprocess.Popen[str], output: "OutputRead
         raise AssertionError(f"fake DeepSeek should have one call before read-only command dispatch, got {calls!r}")
 
 
-def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader", deepseek_port: int) -> None:
-    run_knowledge_query(proc, output)
+def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int, deepseek_port: int) -> None:
+    run_knowledge_query(proc, output, sidecar_port)
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 2:
         raise AssertionError(f"fake DeepSeek should have two calls for web_search tool loop, got {calls!r}")
@@ -617,6 +627,10 @@ def write_trace_summary(port: int) -> None:
         payload["action_events"] = read_json(f"http://127.0.0.1:{port}/v1/action-events", timeout=5).get("events", [])
     except OSError:
         payload["action_events"] = []
+    try:
+        payload["tool_calls"] = read_json(f"http://127.0.0.1:{port}/v1/tool-calls", timeout=5).get("tool_calls", [])
+    except OSError:
+        payload["tool_calls"] = []
     trace = ROOT / "build" / "e2e" / "trace-summary.json"
     trace.parent.mkdir(parents=True, exist_ok=True)
     trace.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -636,6 +650,17 @@ def wait_action_event(port: int, predicate, timeout: float) -> dict[str, Any]:  
         for event in payload.get("events") or []:
             if isinstance(event, dict) and predicate(event):
                 return event
+        time.sleep(0.5)
+    return {}
+
+
+def wait_tool_call(port: int, predicate, timeout: float) -> dict[str, Any]:  # noqa: ANN001
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        payload = read_json(f"http://127.0.0.1:{port}/v1/tool-calls", timeout=5)
+        for call in payload.get("tool_calls") or []:
+            if isinstance(call, dict) and predicate(call):
+                return call
         time.sleep(0.5)
     return {}
 
@@ -667,6 +692,33 @@ def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:
                 "event_type": event.get("event_type"),
                 "created_at": event.get("created_at"),
                 "payload": payload,
+            }
+        )
+    for call in tasks_payload.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        args = call.get("args_json")
+        result = call.get("result_json")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                pass
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except json.JSONDecodeError:
+                pass
+        records.append(
+            {
+                "trace_id": trace_id,
+                "request_id": call.get("request_id"),
+                "tool_name": call.get("tool_name"),
+                "event_type": "tool_call",
+                "status": call.get("status"),
+                "created_at": call.get("created_at"),
+                "args": args,
+                "result": result,
             }
         )
     for task in tasks_payload.get("tasks") or []:

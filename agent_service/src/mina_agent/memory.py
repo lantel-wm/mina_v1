@@ -196,6 +196,31 @@ class MemoryStore:
                 ),
             )
 
+    def recent_tool_calls(self, request_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            if request_id:
+                rows = conn.execute(
+                    """
+                    select request_id, tool_name, args_json, result_json, status, created_at
+                    from tool_calls
+                    where request_id = ?
+                    order by id desc
+                    limit ?
+                    """,
+                    (request_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    select request_id, tool_name, args_json, result_json, status, created_at
+                    from tool_calls
+                    order by id desc
+                    limit ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     def record_task_event(self, task_id: str, event_type: str, payload: dict[str, Any]) -> None:
         content = json.dumps(payload, ensure_ascii=False)
         with self._connect() as conn:

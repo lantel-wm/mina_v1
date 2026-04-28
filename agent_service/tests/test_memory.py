@@ -44,3 +44,16 @@ def test_action_event_journal_records_non_task_actions(tmp_path) -> None:
     assert events[0]["action_id"] == "action-1"
     assert events[0]["action_name"] == "run_read_only_command"
     assert "The time is 1200" in events[0]["payload_json"]
+
+
+def test_tool_call_journal_can_be_filtered_by_request(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.record_tool_call("req-1", "web_search", {"query": "diamond"}, {"content": "{}"}, "ok")
+    memory.record_tool_call("req-2", "task_status", {}, {"content": "{}"}, "ok")
+
+    calls = memory.recent_tool_calls(request_id="req-1", limit=10)
+
+    assert len(calls) == 1
+    assert calls[0]["request_id"] == "req-1"
+    assert calls[0]["tool_name"] == "web_search"
+    assert '"diamond"' in calls[0]["args_json"]
