@@ -207,12 +207,12 @@ class ToolRunner:
 
     def _web_search(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         query = str(args.get("query") or "").strip()
-        max_results = int(args.get("max_results") or 5)
+        max_results = _bounded_int(args.get("max_results"), fallback=5, minimum=1, maximum=10)
         if not query:
             return ToolResult(content=json.dumps({"ok": False, "error": "web_search query is required"}, ensure_ascii=False))
         LOGGER.info("web_search query=%s max_results=%s", query, max_results)
         try:
-            results = self.searxng.search(query, max_results=max(1, min(10, max_results)))
+            results = self.searxng.search(query, max_results=max_results)
         except Exception as exc:  # noqa: BLE001 - tool calls must return model-visible errors.
             LOGGER.info("web_search unavailable query=%s error=%s", query, exc)
             return ToolResult(content=json.dumps({"ok": False, "error": f"web_search unavailable: {exc}"}, ensure_ascii=False))
@@ -222,8 +222,8 @@ class ToolRunner:
     def _memory_search(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         player_id = _player_id(turn)
         query = str(args.get("query") or "")
-        limit = int(args.get("limit") or 8)
-        results = self.memory.search(player_id, query, limit=max(1, min(12, limit)))
+        limit = _bounded_int(args.get("limit"), fallback=8, minimum=1, maximum=12)
+        results = self.memory.search(player_id, query, limit=limit)
         LOGGER.info("memory_search player=%s query=%s result_count=%s", player_id, query, len(results))
         return ToolResult(content=json.dumps({"ok": True, "results": results}, ensure_ascii=False))
 
@@ -231,8 +231,8 @@ class ToolRunner:
         player_id = _player_id(turn)
         event_type = str(args.get("event_type") or "note")
         content = str(args.get("content") or "")
-        importance = int(args.get("importance") or 1)
-        self.memory.add_event(player_id, event_type, {"content": content}, importance=max(1, min(5, importance)))
+        importance = _bounded_int(args.get("importance"), fallback=1, minimum=1, maximum=5)
+        self.memory.add_event(player_id, event_type, {"content": content}, importance=importance)
         LOGGER.info("memory_write player=%s event_type=%s importance=%s content=%s", player_id, event_type, importance, content[:500])
         return ToolResult(content=json.dumps({"ok": True}, ensure_ascii=False))
 
@@ -241,6 +241,8 @@ class ToolRunner:
         if not permissions.get("can_use_actions", False):
             return ToolResult(content=json.dumps({"ok": False, "error": "permission denied"}, ensure_ascii=False))
         task_type = str(args.get("task_type") or "")
+        if task_type not in {"chop_tree", "follow_player"}:
+            return ToolResult(content=json.dumps({"ok": False, "error": f"unsupported body task: {task_type}"}, ensure_ascii=False))
         response = self.skills.start_task(task_type, args, turn)
         task_status = response.debug.get("task_status") if isinstance(response.debug.get("task_status"), dict) else {}
         ok = bool(response.actions) or bool(response.messages)
@@ -325,6 +327,14 @@ def _strip_slash(command: str) -> str:
     while normalized.startswith("/"):
         normalized = normalized[1:].strip()
     return " ".join(normalized.split())
+
+
+def _bounded_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = fallback
+    return max(minimum, min(maximum, parsed))
 
 
 def _is_read_only_command(command: str) -> bool:

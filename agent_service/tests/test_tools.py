@@ -22,6 +22,16 @@ class FailingSearxng(SearxngClient):
         raise OSError("offline")
 
 
+class RecordingSearxng(SearxngClient):
+    def __init__(self) -> None:
+        pass
+
+    def search(self, query: str, max_results: int = 5):
+        self.query = query
+        self.max_results = max_results
+        return [{"title": "ok", "url": "https://example.com", "content": "ok"}]
+
+
 def _runner(tmp_path) -> ToolRunner:
     return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearxng())
 
@@ -83,6 +93,16 @@ def test_start_body_task_requires_permission(tmp_path) -> None:
 
     assert "permission denied" in result.content
     assert result.actions == []
+
+
+def test_start_body_task_rejects_unsupported_task_type(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("start_body_task", {"task_type": "mine_diamond"}, _allowed_turn())
+
+    assert result.actions == []
+    assert '"ok": false' in result.content
+    assert "unsupported body task" in result.content
 
 
 def test_start_body_task_schedules_observable_move_when_body_online(tmp_path) -> None:
@@ -333,6 +353,27 @@ def test_web_search_rejects_empty_query(tmp_path) -> None:
 
     assert '"ok": false' in result.content
     assert "query is required" in result.content
+
+
+def test_web_search_tolerates_invalid_max_results(tmp_path) -> None:
+    searxng = RecordingSearxng()
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), searxng)
+
+    result = runner.run("web_search", {"query": "minecraft", "max_results": "many"}, _allowed_turn())
+
+    assert '"ok": true' in result.content
+    assert searxng.max_results == 5
+
+
+def test_memory_tools_tolerate_invalid_numeric_args(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    written = runner.run("memory_write", {"event_type": "note", "content": "base near spawn", "importance": "high"}, turn)
+    searched = runner.run("memory_search", {"query": "base", "limit": "many"}, turn)
+
+    assert '"ok": true' in written.content
+    assert "base near spawn" in searched.content
 
 
 def test_mcp_call_is_explicitly_unavailable_without_config(tmp_path) -> None:
