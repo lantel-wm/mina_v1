@@ -155,7 +155,7 @@ def main() -> int:
         elif args.scenario == "offline_knowledge_query":
             run_knowledge_query(server, output)
         elif args.scenario == "offline_read_only_command":
-            run_read_only_command(server, output)
+            run_read_only_command(server, output, args.port)
         elif args.scenario == "offline_chop_tree":
             run_chop_tree(server, output, args.timeout)
         elif args.scenario == "offline_follow":
@@ -443,12 +443,22 @@ def run_follow_player(proc: subprocess.Popen[str], output: "OutputReader", timeo
     )
 
 
-def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int | None = None) -> None:
     send(proc, "mina-test request 查询时间")
     found = output.wait_for_any(["我来查询当前游戏时间", "我会执行这个只读查询"], timeout=30)
     if not found:
         raise TimeoutError("read-only command acknowledgement")
     output.wait_for("The time is", timeout=30)
+    if sidecar_port is not None:
+        event = wait_action_event(
+            sidecar_port,
+            lambda item: item.get("event_type") == "action_result"
+            and item.get("action_name") == "run_read_only_command"
+            and "The time is" in str(item.get("payload_json") or ""),
+            timeout=10,
+        )
+        if not event:
+            raise AssertionError("read-only command action_result was not recorded in the sidecar action journal")
 
 
 def run_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader") -> None:
@@ -554,19 +564,10 @@ def run_model_action_barrier(proc: subprocess.Popen[str], output: "OutputReader"
 
 
 def run_model_read_only_command(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int, deepseek_port: int) -> None:
-    run_read_only_command(proc, output)
+    run_read_only_command(proc, output, sidecar_port)
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before read-only command dispatch, got {calls!r}")
-    event = wait_action_event(
-        sidecar_port,
-        lambda item: item.get("event_type") == "action_result"
-        and item.get("action_name") == "run_read_only_command"
-        and "The time is" in str(item.get("payload_json") or ""),
-        timeout=10,
-    )
-    if not event:
-        raise AssertionError("read-only command action_result was not recorded in the sidecar action journal")
 
 
 def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader", deepseek_port: int) -> None:
