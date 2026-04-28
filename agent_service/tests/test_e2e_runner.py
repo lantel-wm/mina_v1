@@ -431,9 +431,11 @@ def test_scenario_artifacts_write_summary_json(tmp_path, monkeypatch) -> None:
                         "request_id": "summary-request",
                         "model": "deepseek-v4-flash",
                         "status": "ok",
+                        "tools_json": json.dumps(["web_search", "run_read_only_command"]),
                         "usage_json": json.dumps(
                             {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7}
                         ),
+                        "response_json": json.dumps({"tool_names": ["web_search"]}),
                         "created_at": 1,
                     }
                 ],
@@ -469,6 +471,8 @@ def test_scenario_artifacts_write_summary_json(tmp_path, monkeypatch) -> None:
     assert summary["status"] == "passed"
     assert summary["duration_seconds"] == 1.25
     assert summary["model_usage"]["total_tokens"] == 7
+    assert summary["model_exposed_tool_names"] == ["run_read_only_command", "web_search"]
+    assert summary["model_requested_tool_names"] == ["web_search"]
     assert summary["tool_call_counts"] == {"web_search:ok": 1}
     assert summary["action_scheduled_counts"] == {"body_move_to_requester": 1}
     assert summary["final_snapshot"]["snapshot_hash"] == "summary123"

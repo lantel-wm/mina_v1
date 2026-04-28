@@ -1119,6 +1119,8 @@ def scenario_summary_payload(
         "event_counts": dict(sorted(event_counts.items())),
         "tool_call_counts": dict(sorted(tool_call_counts.items())),
         "action_scheduled_counts": dict(sorted(action_scheduled_counts.items())),
+        "model_exposed_tool_names": sorted({name for call in model_calls for name in _model_tool_names(call)}),
+        "model_requested_tool_names": sorted({name for call in model_calls for name in _model_requested_tool_names(call)}),
         "model_usage": model_usage_summary(model_calls),
         "final_snapshot": final_snapshot,
     }
@@ -1145,6 +1147,23 @@ def _model_tool_names(call: dict[str, Any]) -> list[str]:
             return [raw_tools] if raw_tools else []
     if isinstance(raw_tools, list):
         return [str(item) for item in raw_tools if item]
+    return []
+
+
+def _model_requested_tool_names(call: dict[str, Any]) -> list[str]:
+    response = call.get("response_json")
+    if response is None:
+        response = call.get("response")
+    if isinstance(response, str):
+        try:
+            response = json.loads(response)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(response, dict):
+        return []
+    tool_names = response.get("tool_names")
+    if isinstance(tool_names, list):
+        return [str(item) for item in tool_names if item]
     return []
 
 
