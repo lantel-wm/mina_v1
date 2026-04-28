@@ -145,7 +145,7 @@ def main() -> int:
         elif args.scenario == "body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "model_action_barrier":
-            run_model_action_barrier(server, output, args.timeout, args.deepseek_port)
+            run_model_action_barrier(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_read_only_command":
             run_model_read_only_command(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_knowledge_query":
@@ -157,9 +157,9 @@ def main() -> int:
         elif args.scenario == "offline_read_only_command":
             run_read_only_command(server, output, args.port)
         elif args.scenario == "offline_chop_tree":
-            run_chop_tree(server, output, args.timeout)
+            run_chop_tree(server, output, args.timeout, args.port)
         elif args.scenario == "offline_follow":
-            run_follow_player(server, output, args.timeout)
+            run_follow_player(server, output, args.timeout, args.port)
         elif args.scenario == "offline_stop_follow":
             run_stop_follow(server, output, args.timeout, args.port)
         elif args.scenario == "offline_replace_follow_with_chop":
@@ -405,8 +405,9 @@ def poll_command(
     raise TimeoutError(f"{command} did not report {success!r} before timeout")
 
 
-def run_chop_tree(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
+def run_chop_tree(proc: subprocess.Popen[str], output: "OutputReader", timeout: float, sidecar_port: int | None = None) -> None:
     send(proc, "mina-test request 砍树")
+    assert_body_task_tool_call(sidecar_port, "chop_tree")
     poll_command(
         proc,
         output,
@@ -418,9 +419,10 @@ def run_chop_tree(proc: subprocess.Popen[str], output: "OutputReader", timeout: 
     )
 
 
-def run_follow_player(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
+def run_follow_player(proc: subprocess.Popen[str], output: "OutputReader", timeout: float, sidecar_port: int | None = None) -> None:
     send(proc, "mina-test request 跟随我")
     output.wait_for("我开始跟随你", timeout=30)
+    assert_body_task_tool_call(sidecar_port, "follow_player")
     poll_command(
         proc,
         output,
@@ -450,6 +452,15 @@ def run_read_only_command(proc: subprocess.Popen[str], output: "OutputReader", s
         raise TimeoutError("read-only command acknowledgement")
     output.wait_for("The time is", timeout=30)
     if sidecar_port is not None:
+        call = wait_tool_call(
+            sidecar_port,
+            lambda item: item.get("tool_name") == "run_read_only_command"
+            and item.get("status") == "ok"
+            and "time query daytime" in str(item.get("args_json") or ""),
+            timeout=10,
+        )
+        if not call:
+            raise AssertionError("read-only command did not record a run_read_only_command tool call")
         event = wait_action_event(
             sidecar_port,
             lambda item: item.get("event_type") == "action_result"
@@ -556,9 +567,16 @@ def run_body_unavailable(proc: subprocess.Popen[str], output: "OutputReader") ->
         raise TimeoutError("body unavailable failure message")
 
 
-def run_model_action_barrier(proc: subprocess.Popen[str], output: "OutputReader", timeout: float, deepseek_port: int) -> None:
+def run_model_action_barrier(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    timeout: float,
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
     send(proc, "mina-test request 跟随我")
     output.wait_for("我开始跟随你", timeout=30)
+    assert_body_task_tool_call(sidecar_port, "follow_player")
     poll_command(
         proc,
         output,
@@ -571,6 +589,20 @@ def run_model_action_barrier(proc: subprocess.Popen[str], output: "OutputReader"
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before Fabric dispatch, got {calls!r}")
+
+
+def assert_body_task_tool_call(sidecar_port: int | None, task_type: str) -> None:
+    if sidecar_port is None:
+        return
+    call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "start_body_task"
+        and item.get("status") == "ok"
+        and f'"task_type": "{task_type}"' in str(item.get("args_json") or ""),
+        timeout=10,
+    )
+    if not call:
+        raise AssertionError(f"{task_type} request did not record a start_body_task tool call")
 
 
 def run_model_read_only_command(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int, deepseek_port: int) -> None:
