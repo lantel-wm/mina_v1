@@ -42,6 +42,8 @@ def main() -> int:
             "offline_read_only_command",
             "offline_chop_tree",
             "offline_follow",
+            "offline_stop_follow",
+            "offline_replace_follow_with_chop",
             "offline_permission_denied",
         ],
     )
@@ -64,6 +66,8 @@ def main() -> int:
         "offline_knowledge_query",
         "offline_chop_tree",
         "offline_body_unavailable",
+        "offline_stop_follow",
+        "offline_replace_follow_with_chop",
         "offline_permission_denied",
     }
     fake_deepseek_scenarios = {"model_action_barrier", "model_read_only_command", "model_knowledge_query"}
@@ -92,7 +96,7 @@ def main() -> int:
         output.wait_for("Done", timeout=args.timeout)
         setup_scenario = (
             "chop_tree"
-            if args.scenario in {"replace_follow_with_chop", "banned_command", "offline_chop_tree"}
+            if args.scenario in {"replace_follow_with_chop", "banned_command", "offline_chop_tree", "offline_replace_follow_with_chop"}
             else "follow_player"
             if args.scenario in {
                 "read_only_command",
@@ -105,6 +109,7 @@ def main() -> int:
                 "model_knowledge_query",
                 "offline_body_unavailable",
                 "offline_follow",
+                "offline_stop_follow",
                 "offline_read_only_command",
                 "offline_knowledge_query",
                 "offline_permission_denied",
@@ -155,6 +160,10 @@ def main() -> int:
             run_chop_tree(server, output, args.timeout)
         elif args.scenario == "offline_follow":
             run_follow_player(server, output, args.timeout)
+        elif args.scenario == "offline_stop_follow":
+            run_stop_follow(server, output, args.timeout)
+        elif args.scenario == "offline_replace_follow_with_chop":
+            run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "offline_permission_denied":
             run_permission_denied(server, output, args.port)
         write_trace_summary(args.port)
