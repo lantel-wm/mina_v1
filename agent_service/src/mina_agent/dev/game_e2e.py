@@ -161,7 +161,7 @@ def main() -> int:
         elif args.scenario == "offline_follow":
             run_follow_player(server, output, args.timeout)
         elif args.scenario == "offline_stop_follow":
-            run_stop_follow(server, output, args.timeout)
+            run_stop_follow(server, output, args.timeout, args.port)
         elif args.scenario == "offline_replace_follow_with_chop":
             run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "offline_permission_denied":
@@ -484,7 +484,7 @@ def run_task_status(proc: subprocess.Popen[str], output: "OutputReader") -> None
     output.wait_for("状态：active", timeout=30)
 
 
-def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
+def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout: float, sidecar_port: int | None = None) -> None:
     send(proc, "mina-test request 跟随我")
     output.wait_for("我开始跟随你", timeout=30)
     output.wait_for("mina monitor start", timeout=30)
@@ -499,6 +499,16 @@ def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout
     found = output.wait_for_any(["Mina test follow_player failed", "Mina test follow_player passed"], timeout=10)
     if found != "Mina test follow_player failed":
         raise AssertionError("follow task still appears active after stop")
+    if sidecar_port is not None:
+        events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5).get("events", [])
+        follow_ups = [
+            event for event in events
+            if isinstance(event, dict)
+            and event.get("event_type") == "action_scheduled"
+            and event.get("step_id") == "follow:2"
+        ]
+        if follow_ups:
+            raise AssertionError(f"stop_follow should not schedule follow:2 after stop: {follow_ups!r}")
 
 
 def run_replace_follow_with_chop(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:
