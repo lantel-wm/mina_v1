@@ -62,6 +62,13 @@ def test_model_tool_specs_do_not_expose_low_level_body_tools() -> None:
     assert "run_safe_command" not in names
 
 
+def test_stop_and_status_task_id_is_optional_for_model() -> None:
+    specs = {spec["function"]["name"]: spec["function"]["parameters"] for spec in tool_specs()}
+
+    assert specs["stop_body_task"]["required"] == []
+    assert specs["task_status"]["required"] == []
+
+
 def test_start_body_task_requires_permission(tmp_path) -> None:
     runner = _runner(tmp_path)
 
@@ -121,6 +128,17 @@ def test_stop_body_task_cancels_active_task(tmp_path) -> None:
     assert stopped.actions
     assert stopped.actions[0]["name"] == "body_stop"
     assert '"status": "cancelled"' in status.content
+
+
+def test_task_status_can_use_current_active_task_without_id(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, turn)
+    status = runner.run("task_status", {}, turn)
+
+    assert '"type": "follow_player"' in status.content
+    assert '"status": "active"' in status.content
 
 
 def test_low_level_body_tool_is_rejected(tmp_path) -> None:

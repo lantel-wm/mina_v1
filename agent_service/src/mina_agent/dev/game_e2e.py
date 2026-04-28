@@ -24,7 +24,15 @@ def main() -> int:
     parser.add_argument(
         "--scenario",
         default="chop_tree",
-        choices=["chop_tree", "follow_player", "read_only_command", "knowledge_query", "stop_follow", "replace_follow_with_chop"],
+        choices=[
+            "chop_tree",
+            "follow_player",
+            "read_only_command",
+            "knowledge_query",
+            "task_status",
+            "stop_follow",
+            "replace_follow_with_chop",
+        ],
     )
     parser.add_argument("--sidecar", default="scripted", choices=["scripted"])
     parser.add_argument("--port", type=int, default=18911)
@@ -45,7 +53,13 @@ def main() -> int:
         output = OutputReader(server)
         output.start()
         output.wait_for("Done", timeout=args.timeout)
-        setup_scenario = "chop_tree" if args.scenario == "replace_follow_with_chop" else "follow_player" if args.scenario in {"read_only_command", "knowledge_query", "stop_follow"} else args.scenario
+        setup_scenario = (
+            "chop_tree"
+            if args.scenario == "replace_follow_with_chop"
+            else "follow_player"
+            if args.scenario in {"read_only_command", "knowledge_query", "task_status", "stop_follow"}
+            else args.scenario
+        )
         send(server, f"mina-test setup {setup_scenario}")
         output.wait_for(f"Mina test {setup_scenario} setup complete", timeout=30)
         poll_command(
@@ -64,6 +78,8 @@ def main() -> int:
             run_read_only_command(server, output)
         elif args.scenario == "knowledge_query":
             run_knowledge_query(server, output)
+        elif args.scenario == "task_status":
+            run_task_status(server, output)
         elif args.scenario == "stop_follow":
             run_stop_follow(server, output, args.timeout)
         elif args.scenario == "replace_follow_with_chop":
@@ -294,6 +310,16 @@ def run_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader") -> 
     send(proc, "mina-test request 查资料 Minecraft Wiki")
     output.wait_for("搜索结果：Minecraft Wiki", timeout=30)
     output.wait_for("联网知识查询链路可用", timeout=30)
+
+
+def run_task_status(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+    send(proc, "mina-test request 状态")
+    output.wait_for("当前没有正在执行的身体任务", timeout=30)
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("我开始跟随你", timeout=30)
+    send(proc, "mina-test request 状态")
+    output.wait_for("当前任务：follow_player", timeout=30)
+    output.wait_for("状态：active", timeout=30)
 
 
 def run_stop_follow(proc: subprocess.Popen[str], output: "OutputReader", timeout: float) -> None:

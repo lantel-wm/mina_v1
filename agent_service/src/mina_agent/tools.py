@@ -120,17 +120,17 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "stop_body_task",
-                "description": "Stop Mina's current high-level body task and release body controls.",
+                "description": "Stop Mina's current high-level body task and release body controls. Omit task_id to stop the current task.",
                 "strict": True,
-                "parameters": _schema({"task_id": {"type": "string"}}, ["task_id"]),
+                "parameters": _schema({"task_id": {"type": "string"}}, []),
             },
         },
         {
             "type": "function",
             "function": {
                 "name": "task_status",
-                "description": "Inspect Mina's current high-level body task status.",
-                "parameters": _schema({"task_id": {"type": "string"}}, ["task_id"]),
+                "description": "Inspect Mina's current high-level body task status. Omit task_id for the current task.",
+                "parameters": _schema({"task_id": {"type": "string"}}, []),
             },
         },
         {

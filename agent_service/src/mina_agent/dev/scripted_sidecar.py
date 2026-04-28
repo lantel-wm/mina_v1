@@ -33,6 +33,19 @@ def turn(payload: dict[str, Any]) -> dict[str, Any]:
     player = payload.get("player") if isinstance(payload.get("player"), dict) else {}
     memory.upsert_player(player)
     message = str(payload.get("message") or "").lower()
+    if "状态" in message or "status" in message:
+        status = skills.task_status(None, payload)
+        if status.get("ok") is False:
+            return {"messages": [{"target": "requester", "content": "当前没有正在执行的身体任务。"}], "actions": []}
+        return {
+            "messages": [
+                {
+                    "target": "requester",
+                    "content": f"当前任务：{status.get('type')}，状态：{status.get('status')}，阶段：{status.get('stage')}。",
+                }
+            ],
+            "actions": [],
+        }
     if "停止" in message or "stop" in message or "取消" in message:
         response = skills.stop_task(None, payload)
         return response.to_dict()
