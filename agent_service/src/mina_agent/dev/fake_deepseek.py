@@ -56,6 +56,14 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
     elif tool_messages and _is_banned_command_message(user_message):
         message = {"role": "assistant", "content": "拒绝执行写命令。"}
         finish_reason = "stop"
+    elif tool_messages and _is_memory_write_message(user_message):
+        message = {"role": "assistant", "content": "我记住了。"}
+        finish_reason = "stop"
+    elif tool_messages and _is_memory_search_message(user_message):
+        tool_content = str(tool_messages[-1].get("content") or "")
+        content = "你说过你的基地在云杉树旁。" if "云杉树旁" in tool_content else "我没有找到相关记忆。"
+        message = {"role": "assistant", "content": content}
+        finish_reason = "stop"
     elif tool_messages:
         message = {"role": "assistant", "content": "错误：action barrier 未生效。"}
         finish_reason = "stop"
@@ -134,6 +142,38 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
                     "function": {
                         "name": "run_read_only_command",
                         "arguments": '{"command":"setblock 2 80 0 minecraft:air"}',
+                    },
+                }
+            ],
+        }
+        finish_reason = "tool_calls"
+    elif _is_memory_write_message(user_message):
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-memory-write",
+                    "type": "function",
+                    "function": {
+                        "name": "memory_write",
+                        "arguments": '{"event_type":"player_note","content":"我的基地在云杉树旁","importance":4}',
+                    },
+                }
+            ],
+        }
+        finish_reason = "tool_calls"
+    elif _is_memory_search_message(user_message):
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-memory-search",
+                    "type": "function",
+                    "function": {
+                        "name": "memory_search",
+                        "arguments": '{"query":"基地","limit":5}',
                     },
                 }
             ],
@@ -219,3 +259,13 @@ def _is_chop_message(message: str) -> bool:
 def _is_banned_command_message(message: str) -> bool:
     normalized = message.lower()
     return "作弊" in message or "写命令" in message or "setblock" in normalized
+
+
+def _is_memory_write_message(message: str) -> bool:
+    normalized = message.lower()
+    return "记住" in message or "remember" in normalized
+
+
+def _is_memory_search_message(message: str) -> bool:
+    normalized = message.lower()
+    return "回忆" in message or "记得" in message or "memory" in normalized

@@ -41,6 +41,7 @@ def main() -> int:
             "model_action_barrier",
             "model_read_only_command",
             "model_knowledge_query",
+            "model_memory_roundtrip",
             "model_task_status",
             "model_stop_follow",
             "model_permission_denied",
@@ -91,6 +92,7 @@ def main() -> int:
         "model_action_barrier",
         "model_read_only_command",
         "model_knowledge_query",
+        "model_memory_roundtrip",
         "model_task_status",
         "model_stop_follow",
         "model_permission_denied",
@@ -141,6 +143,7 @@ def main() -> int:
                 "model_action_barrier",
                 "model_read_only_command",
                 "model_knowledge_query",
+                "model_memory_roundtrip",
                 "model_task_status",
                 "model_stop_follow",
                 "model_permission_denied",
@@ -195,6 +198,8 @@ def main() -> int:
             run_model_read_only_command(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_knowledge_query":
             run_model_knowledge_query(server, output, args.port, args.deepseek_port)
+        elif args.scenario == "model_memory_roundtrip":
+            run_model_memory_roundtrip(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_task_status":
             run_model_task_status(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_stop_follow":
@@ -759,6 +764,39 @@ def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 2:
         raise AssertionError(f"fake DeepSeek should have two calls for web_search tool loop, got {calls!r}")
+
+
+def run_model_memory_roundtrip(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    send(proc, "mina-test request 记住我的基地在云杉树旁")
+    output.wait_for("我记住了", timeout=30)
+    write_call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "memory_write"
+        and item.get("status") == "ok"
+        and "云杉树旁" in str(item.get("args_json") or ""),
+        timeout=10,
+    )
+    if not write_call:
+        raise AssertionError("memory roundtrip did not record a memory_write tool call")
+    send(proc, "mina-test request 回忆我的基地")
+    output.wait_for("云杉树旁", timeout=30)
+    search_call = wait_tool_call(
+        sidecar_port,
+        lambda item: item.get("tool_name") == "memory_search"
+        and item.get("status") == "ok"
+        and "云杉树旁" in str(item.get("result_json") or ""),
+        timeout=10,
+    )
+    if not search_call:
+        raise AssertionError("memory roundtrip did not record a memory_search result containing the remembered note")
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 4:
+        raise AssertionError(f"fake DeepSeek should have four calls for memory write/search tool loops, got {calls!r}")
 
 
 def run_model_task_status(
