@@ -21,6 +21,7 @@ from mina_agent.e2e.runner import (
     select_scenarios,
     scenario_listing_payload,
     scenario_tag_counts,
+    validate_scenarios,
     write_run_manifest,
 )
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
@@ -140,6 +141,29 @@ def test_runner_loads_external_manifest_scenarios(tmp_path) -> None:
 
     assert [scenario.name for scenario in selected] == ["custom_manifest_case"]
     assert selected[0].request_ids() == ["custom-1"]
+
+
+def test_validate_scenarios_rejects_duplicate_request_ids() -> None:
+    first = scenario_from_dict(
+        {
+            "name": "first",
+            "fixture": "follow_player",
+            "steps": [{"kind": "request", "request_id": "duplicate-request", "value": "状态"}],
+        }
+    )
+    second = scenario_from_dict(
+        {
+            "name": "second",
+            "fixture": "follow_player",
+            "steps": [{"kind": "request", "request_id": "duplicate-request", "value": "查询"}],
+        }
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        validate_scenarios([first, second])
+
+    assert "request_id values must be unique" in str(exc.value)
+    assert "duplicate-request" in str(exc.value)
 
 
 def test_live_runner_requires_api_key_by_default(monkeypatch) -> None:

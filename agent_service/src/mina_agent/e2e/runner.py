@@ -51,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv_defaults()
     args = parse_args(argv)
     selected = select_scenarios(args)
+    validate_scenarios(selected)
     if args.list_scenarios:
         print(json.dumps(scenario_listing_payload(args.suite, selected), ensure_ascii=False, indent=2))
         return 0
@@ -119,6 +120,22 @@ def select_scenarios(args: argparse.Namespace) -> list[Scenario]:
     if missing:
         raise SystemExit(f"Unknown Mina E2E scenario(s): {', '.join(missing)}")
     return [scenarios[name] for name in names]
+
+
+def validate_scenarios(scenarios: list[Scenario]) -> None:
+    seen: dict[str, str] = {}
+    duplicates: list[str] = []
+    for scenario in scenarios:
+        for request_id in scenario.request_ids():
+            if request_id in seen:
+                duplicates.append(request_id)
+            else:
+                seen[request_id] = scenario.name
+    if duplicates:
+        raise SystemExit(
+            "Mina E2E request_id values must be unique across the selected run: "
+            + ", ".join(sorted(set(duplicates)))
+        )
 
 
 def suite_names(suite: str, scenarios: dict[str, Scenario]) -> list[str]:
