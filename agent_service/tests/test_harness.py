@@ -598,6 +598,72 @@ def test_harness_body_subagent_treats_negative_follow_as_stop(tmp_path) -> None:
     assert [call["tool_name"] for call in calls] == ["stop_body_task"]
 
 
+def test_harness_body_subagent_handles_short_stop_without_model_call(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    base_turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {"body_state": {"online": True}},
+    }
+
+    harness.run_turn({"request_id": "req-short-stop-start", "message": "跟随我", **base_turn})
+    response = harness.run_turn({"request_id": "req-short-stop", "message": "停下", **base_turn})
+
+    assert deepseek.calls == 0
+    assert "我已经停止当前身体任务" in response["messages"][0]["content"]
+    assert response["actions"][0]["name"] == "body_stop"
+    calls = memory.recent_tool_calls(request_id="req-short-stop", limit=10)
+    assert [call["tool_name"] for call in calls] == ["stop_body_task"]
+
+
+def test_harness_body_subagent_handles_referential_chop_without_model_call(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-referential-chop",
+            "trigger": "command",
+            "message": "帮我把这棵树砍了",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {
+                "body_state": {"online": True},
+                "nearby_blocks": {
+                    "requester": [
+                        {
+                            "block": "minecraft:oak_log",
+                            "category": "log",
+                            "x": 2,
+                            "y": 80,
+                            "z": 0,
+                            "center_x": 2.5,
+                            "center_y": 80.5,
+                            "center_z": 0.5,
+                            "distance": 3.0,
+                            "approach_x": 2.5,
+                            "approach_y": 80,
+                            "approach_z": -0.5,
+                        }
+                    ]
+                },
+            },
+        }
+    )
+
+    assert deepseek.calls == 0
+    assert "我开始砍树" in response["messages"][0]["content"]
+    assert response["actions"][0]["name"] == "body_move_to_position"
+    calls = memory.recent_tool_calls(request_id="req-referential-chop", limit=10)
+    assert [call["tool_name"] for call in calls] == ["start_body_task"]
+
+
 def test_harness_body_subagent_does_not_intercept_tree_planning_request(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

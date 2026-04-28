@@ -5,7 +5,13 @@ import logging
 import time
 from typing import Any
 
-from .body_agent import BodySubagent, is_body_instructional_request, is_body_negative_stop_request
+from .body_agent import (
+    BodySubagent,
+    is_body_chop_tree_request,
+    is_body_follow_request,
+    is_body_instructional_request,
+    is_body_stop_request,
+)
 from .config import Settings
 from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
@@ -503,47 +509,15 @@ def _offline_read_only_command(message: str) -> str:
 
 
 def _offline_follow_intent(message: str) -> bool:
-    if is_body_instructional_request(message):
-        return False
-    return _contains_any(
-        message,
-        {
-            "跟随我",
-            "跟着我",
-            "跟我",
-            "过来",
-            "来我这",
-            "来我这边",
-            "到我这",
-            "follow me",
-            "follow player",
-            "come here",
-            "come to me",
-        },
-    )
+    return is_body_follow_request(message)
 
 
 def _offline_stop_intent(message: str) -> bool:
-    return _contains_any(message, {"停止", "stop", "取消", "cancel"}) or is_body_negative_stop_request(message)
+    return is_body_stop_request(message)
 
 
 def _offline_chop_tree_intent(message: str) -> bool:
-    if is_body_instructional_request(message):
-        return False
-    return _contains_any(
-        message,
-        {
-            "砍树",
-            "砍木头",
-            "伐木",
-            "chop tree",
-            "chop a tree",
-            "cut tree",
-            "cut down tree",
-            "cut down a tree",
-            "chop wood",
-        },
-    )
+    return is_body_chop_tree_request(message)
 
 
 def _deepseek_error_message(exc: DeepSeekError) -> str:

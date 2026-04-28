@@ -104,6 +104,35 @@ SCENARIO_DATA = [
         "rubric": "Stop intent must cancel the active high-level task and schedule body_stop without main-model calls.",
     },
     {
+        "name": "body_short_stop_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-short-stop-start",
+                "value": "跟随我",
+                "wait_for": ["我开始跟随你"],
+            },
+            {
+                "kind": "request",
+                "request_id": "body-short-stop",
+                "value": "停下",
+                "wait_for": ["我已经停止当前身体任务"],
+            },
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "follow_player"'},
+            {"name": "stop_body_task", "status": "ok"},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_requester"},
+            {"name": "body_stop"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "Short stop phrasing such as '停下' must cancel the current high-level body task without a model call.",
+    },
+    {
         "name": "body_negative_follow_stop_router",
         "fixture": "follow_player",
         "tags": ["live", "core", "body", "router", "safety"],
@@ -189,6 +218,32 @@ SCENARIO_DATA = [
         "expected_model": {"mode": "exact", "count": 0},
         "world_asserts": ["chop_tree", "upper_log_absent"],
         "rubric": "Explicit chop intent must stay high-level and clear the reachable stacked trunk through observed Fabric monitor results.",
+    },
+    {
+        "name": "body_referential_chop_tree_router",
+        "fixture": "chop_tree",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-referential-chop-tree-router",
+                "value": "帮我把这棵树砍了",
+                "wait_for": ["我开始砍树"],
+            },
+            {"kind": "assert", "value": "chop_tree", "timeout": 180},
+            {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_position"},
+            {"name": "body_look_at_position"},
+            {"name": "body_chain"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "world_asserts": ["chop_tree", "upper_log_absent"],
+        "rubric": "Referential Chinese chop requests such as '把这棵树砍了' must route to the same high-level chop skill without model calls.",
     },
     {
         "name": "body_chop_target_disappears_router",

@@ -143,10 +143,24 @@ def _status_intent(message: str) -> bool:
 
 
 def _stop_intent(message: str) -> bool:
-    return any(token in message for token in ("停止", "取消", "stop", "cancel")) or is_body_negative_stop_request(message)
+    return is_body_stop_request(message)
 
 
 def _follow_intent(message: str) -> bool:
+    return is_body_follow_request(message)
+
+
+def _chop_tree_intent(message: str) -> bool:
+    return is_body_chop_tree_request(message)
+
+
+def is_body_stop_request(message: str) -> bool:
+    return any(
+        token in message for token in ("停止", "停下", "停一下", "暂停", "取消", "stop", "cancel")
+    ) or is_body_negative_stop_request(message)
+
+
+def is_body_follow_request(message: str) -> bool:
     if is_body_instructional_request(message):
         return False
     return any(
@@ -167,10 +181,10 @@ def _follow_intent(message: str) -> bool:
     )
 
 
-def _chop_tree_intent(message: str) -> bool:
+def is_body_chop_tree_request(message: str) -> bool:
     if is_body_instructional_request(message):
         return False
-    return any(
+    return _contains_chinese_tree_action(message) or any(
         token in message
         for token in (
             "砍树",
@@ -186,10 +200,17 @@ def _chop_tree_intent(message: str) -> bool:
     )
 
 
+def _contains_chinese_tree_action(message: str) -> bool:
+    tree_terms = ("树", "木头", "原木", "树干")
+    action_terms = ("砍", "伐", "采", "采集")
+    return any(tree in message for tree in tree_terms) and any(action in message for action in action_terms)
+
+
 def is_body_instructional_request(message: str) -> bool:
     return any(
         token in message
         for token in (
+            "查",
             "怎么",
             "如何",
             "怎样",
