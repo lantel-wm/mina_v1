@@ -19,6 +19,7 @@ from mina_agent.e2e.runner import (
     scenario_artifact_payload,
     select_scenarios,
     scenario_listing_payload,
+    scenario_tag_counts,
     write_run_manifest,
 )
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
@@ -142,6 +143,8 @@ def test_list_scenarios_does_not_require_api_key(monkeypatch, capsys) -> None:
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["scenario_count"] == 1
+    assert payload["tag_counts"]["companion"] == 1
+    assert payload["tag_counts"]["safety"] == 1
     assert payload["scenarios"][0]["name"] == "companion_healthy_silent"
     assert payload["scenarios"][0]["expected_model"]["count"] == 0
 
@@ -425,6 +428,7 @@ def test_scenario_listing_payload_is_compact_and_auditable() -> None:
     payload = scenario_listing_payload("live", [scenario])
 
     assert payload["scenario_count"] == 1
+    assert payload["tag_counts"] == {"core": 1, "safety": 1}
     assert payload["scenarios"][0]["request_ids"] == ["listing-request"]
     assert payload["scenarios"][0]["expected_tools"] == ["task_status"]
     assert payload["scenarios"][0]["forbidden_actions"] == ["body_chain"]
@@ -463,6 +467,7 @@ def test_write_run_manifest_records_selected_scenarios_and_runner_options(tmp_pa
     payload = json.loads((tmp_path / "run_manifest.json").read_text(encoding="utf-8"))
     assert payload["suite"] == "live"
     assert payload["scenario_names"] == ["manifest_case"]
+    assert payload["tag_counts"] == {"core": 1}
     assert payload["runner"]["port"] == 19001
     assert payload["runner"]["server_port"] == 25570
     assert payload["runner"]["timeout_seconds"] == 12
@@ -471,6 +476,21 @@ def test_write_run_manifest_records_selected_scenarios_and_runner_options(tmp_pa
     assert payload["runner"]["external_searxng"] is True
     assert payload["deepseek"]["model"] == "deepseek-v4-flash"
     assert payload["scenarios"][0]["rubric"] == "manifest should preserve selected scenario config"
+
+
+def test_scenario_tag_counts_are_sorted() -> None:
+    first = scenario_from_dict(
+        {"name": "one", "fixture": "follow_player", "tags": ["safety", "core"], "steps": []}
+    )
+    second = scenario_from_dict(
+        {"name": "two", "fixture": "follow_player", "tags": ["body", "core"], "steps": []}
+    )
+
+    assert list(scenario_tag_counts([first, second]).items()) == [
+        ("body", 1),
+        ("core", 2),
+        ("safety", 1),
+    ]
 
 
 def test_aggregate_run_trace_jsonl_preserves_scenario_and_time_order(tmp_path) -> None:
