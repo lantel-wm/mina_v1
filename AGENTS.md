@@ -160,7 +160,7 @@ UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario read_only_time_live_model
 ```
 
-Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `summary.json`, `trace-summary.json`, `server.log`, `sidecar.log`, `sidecar-stdout.log`, per-scenario `trace.json`, per-scenario `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, `/v1/tasks/{task_id}/events`, and `/v1/traces/{request_id}` for focused debugging. Trace outputs compact large snapshots as `snapshot_hash` plus `snapshot_summary`, not raw world snapshots.
+Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `summary.json`, `trace-summary.json`, `server.log`, `sidecar.log`, `sidecar-stdout.log`, per-scenario `trace.json`, per-scenario `trace.jsonl`, and `model_calls.jsonl`. `summary.json` and `trace-summary.json` include model call counts and token totals. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/tasks`, `/v1/tasks/{task_id}/events`, and `/v1/traces/{request_id}` for focused debugging. Trace outputs compact large snapshots as `snapshot_hash` plus `snapshot_summary`, not raw world snapshots.
 
 The live suite covers deterministic body-router scenarios that should make zero model calls, plus model-facing scenarios that must call real DeepSeek for read-only world queries, web search, prompt-injection resistance, and safety refusals. Do not add E2E scenarios backed by scripted sidecars, fake DeepSeek, or offline fallback mode; keep those concerns in unit tests only.
 

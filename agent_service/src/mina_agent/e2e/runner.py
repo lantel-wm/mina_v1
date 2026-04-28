@@ -20,7 +20,7 @@ from mina_agent.config import load_dotenv_defaults
 
 from .manifest import ActionExpectation, Scenario, ToolExpectation
 from .scenarios import SCENARIOS, SUITES
-from .trace import compact_summary_action_events, compact_summary_model_calls, compact_summary_tool_calls, trace_records
+from .trace import compact_summary_action_events, compact_summary_model_calls, compact_summary_tool_calls, model_usage_summary, trace_records
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -68,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         "scenarios": [result.__dict__ for result in results],
         "artifact_dir": str(artifact_dir),
         "deepseek": live_model,
+        "model_usage": runner.model_usage,
     }
     (artifact_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -132,6 +133,7 @@ class E2ERunner:
         self.server_output: ProcessOutput | None = None
         self.sidecar_output: ProcessOutput | None = None
         self.search_fixture: SearxngFixtureServer | None = None
+        self.model_usage: dict[str, int] = {}
 
     def run(self) -> list[RunResult]:
         results: list[RunResult] = []
@@ -368,6 +370,8 @@ class E2ERunner:
             "model_calls": compact_summary_model_calls(all_model_calls.get("model_calls", [])),
             "tasks": all_tasks.get("tasks", []),
         }
+        self.model_usage = model_usage_summary(payload["model_calls"])
+        payload["model_usage"] = self.model_usage
         (self.artifact_dir / "trace-summary.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         (self.artifact_dir / "model_calls.jsonl").write_text(
             "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in payload["model_calls"]),

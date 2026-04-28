@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from mina_agent.e2e.trace import compact_summary_action_events, compact_summary_tool_calls, compact_trace_payload
+from mina_agent.e2e.trace import compact_summary_action_events, compact_summary_tool_calls, compact_trace_payload, model_usage_summary
 
 
 def test_compact_trace_payload_replaces_raw_snapshot_with_hash_and_summary() -> None:
@@ -73,3 +73,33 @@ def test_trace_summary_parses_tool_call_json_fields() -> None:
     assert compact[0]["result"] == {"content": "ok"}
     assert "args_json" not in compact[0]
     assert "result_json" not in compact[0]
+
+
+def test_model_usage_summary_totals_token_fields() -> None:
+    calls = [
+        {
+            "status": "ok",
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 3,
+                "total_tokens": 13,
+                "prompt_cache_hit_tokens": 4,
+                "prompt_cache_miss_tokens": 6,
+            },
+        },
+        {
+            "status": "error",
+            "usage": {"prompt_tokens": 5, "total_tokens": 5},
+        },
+    ]
+
+    summary = model_usage_summary(calls)
+
+    assert summary["model_call_count"] == 2
+    assert summary["ok_model_call_count"] == 1
+    assert summary["error_model_call_count"] == 1
+    assert summary["prompt_tokens"] == 15
+    assert summary["completion_tokens"] == 3
+    assert summary["total_tokens"] == 18
+    assert summary["cached_prompt_tokens"] == 4
+    assert summary["uncached_prompt_tokens"] == 6

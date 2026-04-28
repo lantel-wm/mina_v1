@@ -127,6 +127,36 @@ def compact_summary_model_calls(calls: Any) -> list[dict[str, Any]]:
     return compact_calls
 
 
+def model_usage_summary(calls: Any) -> dict[str, int]:
+    summary = {
+        "model_call_count": 0,
+        "ok_model_call_count": 0,
+        "error_model_call_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cached_prompt_tokens": 0,
+        "uncached_prompt_tokens": 0,
+    }
+    if not isinstance(calls, list):
+        return summary
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        summary["model_call_count"] += 1
+        if call.get("status") == "ok":
+            summary["ok_model_call_count"] += 1
+        else:
+            summary["error_model_call_count"] += 1
+        usage = call.get("usage") if isinstance(call.get("usage"), dict) else {}
+        summary["prompt_tokens"] += _int_value(usage.get("prompt_tokens"))
+        summary["completion_tokens"] += _int_value(usage.get("completion_tokens"))
+        summary["total_tokens"] += _int_value(usage.get("total_tokens"))
+        summary["cached_prompt_tokens"] += _int_value(usage.get("prompt_cache_hit_tokens"))
+        summary["uncached_prompt_tokens"] += _int_value(usage.get("prompt_cache_miss_tokens"))
+    return summary
+
+
 def parse_json_field(value: Any) -> Any:
     if isinstance(value, str):
         try:
@@ -134,6 +164,13 @@ def parse_json_field(value: Any) -> Any:
         except json.JSONDecodeError:
             return value
     return value
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def snapshot_hash(snapshot: dict[str, Any]) -> str:
