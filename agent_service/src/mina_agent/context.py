@@ -142,6 +142,7 @@ def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
 def _compact_body_state(body_state: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "online",
+        "username",
         "name",
         "x",
         "y",
@@ -150,6 +151,7 @@ def _compact_body_state(body_state: dict[str, Any]) -> dict[str, Any]:
         "pitch",
         "distance_to_requester",
         "selected_item",
+        "targeted_block",
         "target_block",
         "active_task",
     )

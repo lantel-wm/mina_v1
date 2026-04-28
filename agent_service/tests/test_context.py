@@ -92,3 +92,37 @@ def test_target_summary_keeps_model_on_high_level_body_tasks(tmp_path) -> None:
     assert "move_to_position" not in context
     assert "look_at_position" not in context
     assert "inventory" not in context
+
+
+def test_context_includes_body_identity_item_and_raycast(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+
+    messages = build_messages(
+        {
+            "request_id": "req-1",
+            "trigger": "command",
+            "message": "状态",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "snapshot": {
+                "body_state": {
+                    "online": True,
+                    "username": "mina",
+                    "x": 1,
+                    "y": 80,
+                    "z": 1,
+                    "yaw": 90,
+                    "pitch": 10,
+                    "distance_to_requester": 2.5,
+                    "selected_item": {"slot": 0, "item": "minecraft:stone_axe"},
+                    "targeted_block": {"x": 2, "y": 80, "z": 0, "block": "minecraft:spruce_log"},
+                },
+            },
+        },
+        memory,
+    )
+    context = "\n".join(str(message.get("content") or "") for message in messages)
+
+    assert '"username": "mina"' in context
+    assert "minecraft:stone_axe" in context
+    assert '"targeted_block"' in context
+    assert "minecraft:spruce_log" in context
