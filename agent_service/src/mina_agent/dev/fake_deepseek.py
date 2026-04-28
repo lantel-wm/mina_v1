@@ -104,6 +104,22 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
             ],
         }
         finish_reason = "tool_calls"
+    elif _is_chop_message(user_message):
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-chop-tree",
+                    "type": "function",
+                    "function": {
+                        "name": "start_body_task",
+                        "arguments": '{"task_type":"chop_tree","target_hint":"nearby tree"}',
+                    },
+                }
+            ],
+        }
+        finish_reason = "tool_calls"
     elif "时间" in user_message or "time" in user_message.lower():
         message = {
             "role": "assistant",
@@ -174,3 +190,8 @@ def _is_stop_message(message: str) -> bool:
 
 def _is_follow_message(message: str) -> bool:
     return "跟随" in message or "follow" in message.lower()
+
+
+def _is_chop_message(message: str) -> bool:
+    normalized = message.lower()
+    return "砍树" in message or "chop" in normalized or "tree" in normalized

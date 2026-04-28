@@ -35,6 +35,7 @@ def main() -> int:
             "stop_follow",
             "replace_follow_with_chop",
             "body_unavailable",
+            "model_chop_tree",
             "model_action_barrier",
             "model_read_only_command",
             "model_knowledge_query",
@@ -82,6 +83,7 @@ def main() -> int:
         "offline_permission_denied",
     }
     fake_deepseek_scenarios = {
+        "model_chop_tree",
         "model_action_barrier",
         "model_read_only_command",
         "model_knowledge_query",
@@ -115,7 +117,8 @@ def main() -> int:
         output.wait_for("Done", timeout=args.timeout)
         setup_scenario = (
             "chop_tree"
-            if args.scenario in {"replace_follow_with_chop", "banned_command", "offline_chop_tree", "offline_replace_follow_with_chop"}
+            if args.scenario
+            in {"replace_follow_with_chop", "banned_command", "model_chop_tree", "offline_chop_tree", "offline_replace_follow_with_chop"}
             else "follow_player"
             if args.scenario in {
                 "read_only_command",
@@ -168,6 +171,8 @@ def main() -> int:
             run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "body_unavailable":
             run_body_unavailable(server, output)
+        elif args.scenario == "model_chop_tree":
+            run_model_chop_tree(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_action_barrier":
             run_model_action_barrier(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_read_only_command":
@@ -623,6 +628,19 @@ def run_body_unavailable(proc: subprocess.Popen[str], output: "OutputReader") ->
     found = output.wait_for_any(["身体执行不可用", "跟随连续失败"], timeout=30)
     if not found:
         raise TimeoutError("body unavailable failure message")
+
+
+def run_model_chop_tree(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    timeout: float,
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    run_chop_tree(proc, output, timeout, sidecar_port)
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 1:
+        raise AssertionError(f"fake DeepSeek should have one call before chop_tree dispatch, got {calls!r}")
 
 
 def run_model_action_barrier(
