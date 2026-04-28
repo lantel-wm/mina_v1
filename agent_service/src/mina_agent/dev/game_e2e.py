@@ -40,6 +40,7 @@ def main() -> int:
             "model_chop_then_status",
             "model_chop_target_disappears",
             "model_replace_follow_with_chop",
+            "model_follow_player",
             "model_action_barrier",
             "model_read_only_command",
             "model_knowledge_query",
@@ -92,6 +93,7 @@ def main() -> int:
         "model_chop_then_status",
         "model_chop_target_disappears",
         "model_replace_follow_with_chop",
+        "model_follow_player",
         "model_banned_command",
         "model_action_barrier",
         "model_read_only_command",
@@ -146,6 +148,7 @@ def main() -> int:
                 "task_status",
                 "stop_follow",
                 "body_unavailable",
+                "model_follow_player",
                 "model_action_barrier",
                 "model_read_only_command",
                 "model_knowledge_query",
@@ -202,6 +205,8 @@ def main() -> int:
             run_model_chop_target_disappears(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_replace_follow_with_chop":
             run_model_replace_follow_with_chop(server, output, args.timeout, args.port, args.deepseek_port)
+        elif args.scenario == "model_follow_player":
+            run_model_follow_player(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_action_barrier":
             run_model_action_barrier(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "model_read_only_command":
@@ -829,6 +834,19 @@ def run_model_action_barrier(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 1:
         raise AssertionError(f"fake DeepSeek should have one call before Fabric dispatch, got {calls!r}")
+
+
+def run_model_follow_player(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    timeout: float,
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    run_follow_player(proc, output, timeout, sidecar_port)
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 1:
+        raise AssertionError(f"fake DeepSeek should have one call before follow_player dispatch, got {calls!r}")
 
 
 def assert_body_task_tool_call(sidecar_port: int | None, task_type: str) -> None:
