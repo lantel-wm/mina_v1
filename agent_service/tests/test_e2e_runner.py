@@ -688,10 +688,16 @@ def test_scenario_listing_payload_is_compact_and_auditable() -> None:
             "name": "listing_case",
             "fixture": "follow_player",
             "tags": ["core", "safety"],
+            "timeout": 42,
+            "retry": 1,
             "steps": [{"kind": "request", "request_id": "listing-request", "value": "状态"}],
             "expected_tools": [{"name": "task_status", "status": "ok"}],
+            "forbidden_tools": [{"name": "start_body_task"}],
+            "expected_actions": [{"name": "run_read_only_command"}],
             "forbidden_actions": ["body_chain"],
             "forbidden_model_tools": ["body_chain"],
+            "world_asserts": ["target_log_present"],
+            "expected_response_contains": ["VisibleMarker-42"],
             "forbidden_response_contains": ["ForbiddenMarker-42"],
             "expected_model": {"mode": "exact", "count": 0},
             "rubric": "listing rubric",
@@ -703,9 +709,16 @@ def test_scenario_listing_payload_is_compact_and_auditable() -> None:
     assert payload["scenario_count"] == 1
     assert payload["tag_counts"] == {"core": 1, "safety": 1}
     assert payload["scenarios"][0]["request_ids"] == ["listing-request"]
+    assert payload["scenarios"][0]["step_count"] == 1
+    assert payload["scenarios"][0]["timeout_seconds"] == 42
+    assert payload["scenarios"][0]["retry"] == 1
     assert payload["scenarios"][0]["expected_tools"] == ["task_status"]
+    assert payload["scenarios"][0]["forbidden_tools"] == ["start_body_task"]
+    assert payload["scenarios"][0]["expected_actions"] == ["run_read_only_command"]
     assert payload["scenarios"][0]["forbidden_actions"] == ["body_chain"]
     assert payload["scenarios"][0]["forbidden_model_tools"] == ["body_chain"]
+    assert payload["scenarios"][0]["world_asserts"] == ["target_log_present"]
+    assert payload["scenarios"][0]["expected_response_contains"] == ["VisibleMarker-42"]
     assert payload["scenarios"][0]["forbidden_response_contains"] == ["ForbiddenMarker-42"]
     assert payload["scenarios"][0]["rubric"] == "listing rubric"
 
