@@ -1643,6 +1643,11 @@ def test_harness_local_read_only_router_accepts_literal_allowed_commands(tmp_pat
             "请执行只读命令 locate structure minecraft:village_plains",
             "locate structure minecraft:village_plains",
         ),
+        (
+            "req-literal-locate-biome",
+            "请执行只读命令 locate biome minecraft:cherry_grove",
+            "locate biome minecraft:cherry_grove",
+        ),
     ]
     for request_id, message, command in cases:
         response = harness.run_turn(
@@ -1847,6 +1852,8 @@ def test_harness_local_read_only_router_maps_natural_structure_queries(tmp_path)
         ("req-natural-locate-village", "查询最近村庄位置", "locate structure #minecraft:village"),
         ("req-natural-locate-village-en", "where is the nearest village?", "locate structure #minecraft:village"),
         ("req-natural-locate-ancient-city", "找最近远古城市坐标", "locate structure minecraft:ancient_city"),
+        ("req-natural-locate-cherry-grove", "找最近樱花树林坐标", "locate biome minecraft:cherry_grove"),
+        ("req-natural-locate-cherry-grove-en", "where is the nearest cherry grove?", "locate biome minecraft:cherry_grove"),
     ]
     for request_id, message, command in cases:
         response = harness.run_turn(

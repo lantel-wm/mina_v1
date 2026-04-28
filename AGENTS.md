@@ -196,6 +196,8 @@ The live suite covers deterministic body-router, local read-only command-router,
 
 The working target is a usable Minecraft agent that can answer knowledge questions through sidecar tools, run tightly constrained read-only Minecraft commands, route literal allowed read-only command forms without a model call, and control the PuppetPlayers body for simple verified tasks such as following a player and chopping a tree.
 
+Allowed read-only Minecraft command forms are intentionally narrow: `seed`, `time query daytime|gametime|day`, `weather query`, `list`, `list uuids`, `locate structure <identifier>`, and `locate biome <identifier>`. Natural high-confidence locate requests may route directly to these forms; write commands must remain rejected before Fabric execution.
+
 For every behavior change:
 
 1. Keep model-facing tools high-level and safe. Minecraft mutations must go through Fabric actions and monitors; do not expose raw movement, attack, write-command, or unrestricted MCP tools to the model.

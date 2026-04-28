@@ -784,6 +784,10 @@ def _player_inventory_observation_intent(message: str) -> bool:
 def _environment_observation_intent(message: str) -> bool:
     if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
         return False
+    if _literal_read_only_command(message):
+        return False
+    if _natural_locate_command(message):
+        return False
     return any(
         token in message
         for token in (
@@ -1094,7 +1098,7 @@ def _local_read_only_command(message: str) -> str:
     literal = _literal_read_only_command(normalized)
     if literal:
         return literal
-    if "locate structure" in normalized:
+    if "locate structure" in normalized or "locate biome" in normalized:
         return ""
     locate = _natural_locate_command(normalized)
     if locate:
@@ -1421,6 +1425,17 @@ _NATURAL_LOCATE_TARGETS: tuple[tuple[tuple[str, ...], str], ...] = (
 )
 
 
+_NATURAL_LOCATE_BIOME_TARGETS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("樱花树林", "樱花林", "cherry grove"), "minecraft:cherry_grove"),
+    (("红树林沼泽", "mangrove swamp"), "minecraft:mangrove_swamp"),
+    (("蘑菇岛", "蘑菇地", "mushroom fields", "mushroom island"), "minecraft:mushroom_fields"),
+    (("繁花森林", "flower forest"), "minecraft:flower_forest"),
+    (("沙漠", "desert biome"), "minecraft:desert"),
+    (("平原", "plains biome"), "minecraft:plains"),
+    (("沼泽", "swamp biome"), "minecraft:swamp"),
+)
+
+
 def _natural_locate_command(message: str) -> str:
     if _natural_locate_instructional(message):
         return ""
@@ -1449,6 +1464,9 @@ def _natural_locate_command(message: str) -> str:
     for aliases, target in _NATURAL_LOCATE_TARGETS:
         if any(alias in message for alias in aliases):
             return f"locate structure {target}"
+    for aliases, target in _NATURAL_LOCATE_BIOME_TARGETS:
+        if any(alias in message for alias in aliases):
+            return f"locate biome {target}"
     return ""
 
 
@@ -1814,7 +1832,7 @@ _READ_ONLY_COMMAND_AT_END_RE = re.compile(
     r"weather\s+query|"
     r"list(?:\s+uuids)?|"
     r"time\s+query\s+(?:daytime|gametime|day)|"
-    r"locate\s+structure\s+[a-z0-9_:.\-/#]+"
+    r"locate\s+(?:structure|biome)\s+[a-z0-9_:.\-/#]+"
     r")\s*[。.!！?？]?$"
 )
 

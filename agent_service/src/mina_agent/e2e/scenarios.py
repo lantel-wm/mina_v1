@@ -924,6 +924,28 @@ SCENARIO_DATA = [
         "rubric": "High-confidence natural structure location questions should map to a constrained locate command without model calls.",
     },
     {
+        "name": "read_only_natural_locate_biome_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "world_tool", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "read-only-natural-locate-biome",
+                "value": "找最近樱花树林坐标",
+                "wait_for": ["The nearest", "Could not find"],
+                "timeout": 180,
+            },
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "locate biome minecraft:cherry_grove"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "rubric": "High-confidence natural biome location questions should map to constrained locate biome without model calls.",
+    },
+    {
         "name": "read_only_prefix_injection_rejected_live_model",
         "fixture": "chop_tree",
         "tags": ["live", "core", "world_tool", "model", "safety"],

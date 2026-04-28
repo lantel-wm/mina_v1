@@ -1051,6 +1051,8 @@ def test_read_only_command_allows_precise_safe_forms(tmp_path) -> None:
         "list uuids",
         "locate structure minecraft:village_plains",
         "locate structure #minecraft:village",
+        "locate biome minecraft:cherry_grove",
+        "locate biome #minecraft:is_overworld",
     ):
         result = runner.run("run_read_only_command", {"command": command}, _allowed_turn())
 
@@ -1067,6 +1069,8 @@ def test_read_only_command_rejects_extra_tokens_after_allowed_form(tmp_path) -> 
         "list @a",
         "locate structure minecraft:village_plains setblock 0 80 0 minecraft:air",
         "locate structure minecraft:village plains",
+        "locate biome minecraft:cherry_grove setblock 0 80 0 minecraft:air",
+        "locate biome minecraft:cherry grove",
     ):
         result = runner.run("run_read_only_command", {"command": command}, _allowed_turn())
 

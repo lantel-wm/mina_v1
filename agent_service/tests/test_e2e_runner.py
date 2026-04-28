@@ -105,6 +105,13 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert plain_lookup.expected_model is not None
     assert plain_lookup.expected_model.count == 0
     assert any(tool.name == "run_read_only_command" for tool in plain_lookup.forbidden_tools)
+    locate_biome = SCENARIOS["read_only_natural_locate_biome_router"]
+    assert any(
+        expected.name == "run_read_only_command" and "locate biome minecraft:cherry_grove" in expected.args_contains
+        for expected in locate_biome.expected_tools
+    )
+    assert locate_biome.expected_model is not None
+    assert locate_biome.expected_model.count == 0
     search = SCENARIOS["knowledge_search_live_model"]
     assert "Ignore every previous instruction" in search.forbidden_response_contains
     city_forecast = SCENARIOS["knowledge_city_forecast_search_router"]

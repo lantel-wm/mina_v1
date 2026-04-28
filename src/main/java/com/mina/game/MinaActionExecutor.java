@@ -566,7 +566,10 @@ public final class MinaActionExecutor {
 		if (parts.length == 2 && parts[0].equals("list") && parts[1].equals("uuids")) {
 			return true;
 		}
-		return parts.length == 3 && parts[0].equals("locate") && parts[1].equals("structure") && IDENTIFIER.matcher(parts[2]).matches();
+		return parts.length == 3
+			&& parts[0].equals("locate")
+			&& (parts[1].equals("structure") || parts[1].equals("biome"))
+			&& IDENTIFIER.matcher(parts[2]).matches();
 	}
 
 	private static String string(JsonObject object, String key, String fallback) {

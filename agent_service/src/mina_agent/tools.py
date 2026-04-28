@@ -184,7 +184,7 @@ def tool_specs() -> list[dict[str, Any]]:
                 "description": (
                     "Run a tightly constrained read-only Minecraft command and show its output to the requester. "
                     "Allowed forms: seed; time query daytime|gametime|day; weather query; list [uuids]; "
-                    "locate structure <identifier>."
+                    "locate structure <identifier>; locate biome <identifier>."
                 ),
                 "strict": True,
                 "parameters": _schema({"command": {"type": "string"}}, ["command"]),
@@ -341,7 +341,7 @@ class ToolRunner:
                         "ok": False,
                         "error": (
                             "Only read-only commands are allowed: seed; time query daytime|gametime|day; "
-                            "weather query; list [uuids]; locate structure <identifier>."
+                            "weather query; list [uuids]; locate structure <identifier>; locate biome <identifier>."
                         ),
                     },
                     ensure_ascii=False,
@@ -431,6 +431,6 @@ def is_read_only_command(command: str) -> bool:
     return (
         len(parts) == 3
         and parts[0] == "locate"
-        and parts[1] == "structure"
+        and parts[1] in {"structure", "biome"}
         and bool(READ_ONLY_LOCATE_TARGET.fullmatch(parts[2]))
     )
