@@ -39,6 +39,7 @@ def main() -> int:
             "model_read_only_command",
             "model_knowledge_query",
             "model_task_status",
+            "model_stop_follow",
             "offline_body_unavailable",
             "offline_knowledge_query",
             "offline_read_only_command",
@@ -79,6 +80,7 @@ def main() -> int:
         "model_read_only_command",
         "model_knowledge_query",
         "model_task_status",
+        "model_stop_follow",
     }
     service_scenarios = {*offline_service_scenarios, *fake_deepseek_scenarios}
     fake_search = start_fake_search(args.search_port) if args.scenario in {"offline_knowledge_query", "model_knowledge_query"} else None
@@ -117,6 +119,7 @@ def main() -> int:
                 "model_read_only_command",
                 "model_knowledge_query",
                 "model_task_status",
+                "model_stop_follow",
                 "offline_body_unavailable",
                 "offline_follow",
                 "offline_task_status",
@@ -163,6 +166,8 @@ def main() -> int:
             run_model_knowledge_query(server, output, args.port, args.deepseek_port)
         elif args.scenario == "model_task_status":
             run_model_task_status(server, output, args.timeout, args.port, args.deepseek_port)
+        elif args.scenario == "model_stop_follow":
+            run_model_stop_follow(server, output, args.timeout, args.port, args.deepseek_port)
         elif args.scenario == "offline_body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "offline_knowledge_query":
@@ -681,6 +686,19 @@ def run_model_task_status(
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 3:
         raise AssertionError(f"fake DeepSeek should have three calls for follow plus task_status tool loop, got {calls!r}")
+
+
+def run_model_stop_follow(
+    proc: subprocess.Popen[str],
+    output: "OutputReader",
+    timeout: float,
+    sidecar_port: int,
+    deepseek_port: int,
+) -> None:
+    run_stop_follow(proc, output, timeout, sidecar_port)
+    calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
+    if calls.get("count") != 2:
+        raise AssertionError(f"fake DeepSeek should have two calls for follow plus stop, got {calls!r}")
 
 
 def run_permission_denied(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int) -> None:

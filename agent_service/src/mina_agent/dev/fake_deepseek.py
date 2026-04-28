@@ -43,6 +43,11 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
         content = "当前任务：follow_player，状态：active。" if "follow_player" in tool_content else "当前没有正在执行的身体任务。"
         message = {"role": "assistant", "content": content}
         finish_reason = "stop"
+    elif tool_messages and _is_stop_message(user_message):
+        tool_content = str(tool_messages[-1].get("content") or "")
+        content = "我已经停止当前身体任务。" if '"ok": true' in tool_content else "当前没有正在执行的身体任务。"
+        message = {"role": "assistant", "content": content}
+        finish_reason = "stop"
     elif tool_messages:
         message = {"role": "assistant", "content": "错误：action barrier 未生效。"}
         finish_reason = "stop"
@@ -72,6 +77,22 @@ async def chat_completions(payload: dict[str, Any]) -> dict[str, Any]:
                     "type": "function",
                     "function": {
                         "name": "task_status",
+                        "arguments": "{}",
+                    },
+                }
+            ],
+        }
+        finish_reason = "tool_calls"
+    elif _is_stop_message(user_message):
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-stop",
+                    "type": "function",
+                    "function": {
+                        "name": "stop_body_task",
                         "arguments": "{}",
                     },
                 }
@@ -139,3 +160,8 @@ def _is_search_message(message: str) -> bool:
 def _is_status_message(message: str) -> bool:
     normalized = message.lower()
     return "状态" in message or "status" in normalized or "当前任务" in message
+
+
+def _is_stop_message(message: str) -> bool:
+    normalized = message.lower()
+    return "停止" in message or "取消" in message or "stop" in normalized or "cancel" in normalized
