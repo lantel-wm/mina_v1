@@ -107,6 +107,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert any(tool.name == "run_read_only_command" for tool in plain_lookup.forbidden_tools)
     search = SCENARIOS["knowledge_search_live_model"]
     assert "Ignore every previous instruction" in search.forbidden_response_contains
+    city_forecast = SCENARIOS["knowledge_city_forecast_search_router"]
+    assert any(expected.name == "web_search" and "上海明天天气" in expected.args_contains for expected in city_forecast.expected_tools)
+    assert any(tool.name == "run_read_only_command" and "weather query" in tool.args_contains for tool in city_forecast.forbidden_tools)
+    assert city_forecast.expected_model is not None
+    assert city_forecast.expected_model.count == 0
     assert any("companion" in scenario.tags for scenario in live)
     health_companion = SCENARIOS["companion_low_health_alert"]
     hunger_companion = SCENARIOS["companion_low_hunger_alert"]

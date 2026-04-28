@@ -1261,6 +1261,36 @@ SCENARIO_DATA = [
         "rubric": "Natural real-world weather questions should use web_search without requiring explicit search wording.",
     },
     {
+        "name": "knowledge_city_forecast_search_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "knowledge", "search", "router", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "knowledge-city-forecast-search-router",
+                "value": "上海明天天气 Mina E2E weather fixture 怎么样？",
+                "wait_for": ["mina turn response requestId=knowledge-city-forecast-search-router"],
+                "timeout": 120,
+            },
+        ],
+        "expected_tools": [
+            {"name": "web_search", "status": "ok", "args_contains": "上海明天天气"},
+        ],
+        "forbidden_tools": [
+            {"name": "run_read_only_command", "args_contains": "weather query"},
+        ],
+        "forbidden_actions": {
+            "run_read_only_command",
+            "body_move_to_position",
+            "body_chain",
+            "body_attack",
+            "body_use",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["Deterministic Mina E2E result for query"],
+        "rubric": "City forecast phrasing with intervening words such as '上海明天天气' must use web_search, not Minecraft weather query.",
+    },
+    {
         "name": "knowledge_natural_time_search_router",
         "fixture": "follow_player",
         "tags": ["live", "core", "knowledge", "search", "router", "safety"],

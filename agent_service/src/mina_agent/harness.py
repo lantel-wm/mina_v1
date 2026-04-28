@@ -1308,7 +1308,7 @@ def _natural_weather_command(message: str) -> str:
 
 
 def _external_weather_query(message: str) -> bool:
-    return any(
+    if any(
         token in message
         for token in (
             "现实天气",
@@ -1327,7 +1327,43 @@ def _external_weather_query(message: str) -> bool:
             "today's weather",
             "tomorrow's weather",
         )
+    ):
+        return True
+    cn_cities = (
+        "北京",
+        "上海",
+        "广州",
+        "深圳",
+        "杭州",
+        "成都",
+        "纽约",
+        "东京",
+        "伦敦",
+        "洛杉矶",
+        "巴黎",
     )
+    if any(city in message for city in cn_cities) and any(
+        token in message for token in ("天气", "气温", "温度", "预报", "下雨", "降雨")
+    ):
+        return True
+    en_cities = (
+        "beijing",
+        "shanghai",
+        "guangzhou",
+        "shenzhen",
+        "hangzhou",
+        "chengdu",
+        "new york",
+        "tokyo",
+        "london",
+        "los angeles",
+        "paris",
+    )
+    if any(city in message for city in en_cities) and any(
+        token in message for token in ("weather", "forecast", "temperature", "rain", "raining")
+    ):
+        return True
+    return False
 
 
 def _weather_instructional_request(message: str) -> bool:

@@ -830,6 +830,34 @@ def test_harness_routes_explicit_weather_web_search_without_world_weather_hijack
     assert "回答查到" not in calls[0]["args_json"]
 
 
+def test_harness_routes_city_forecast_to_web_search_without_explicit_search_word(tmp_path) -> None:
+    for index, message in enumerate(("上海明天天气 Mina E2E weather fixture 怎么样？", "what is the Shanghai weather Mina E2E weather fixture?")):
+        memory = MemoryStore(tmp_path / f"mina-city-weather-{index}.sqlite3")
+        tools = ToolRunner(memory, FakeSearch())
+        deepseek = FailIfCalledDeepSeek()
+        harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / f"mina-city-weather-{index}.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+        response = harness.run_turn(
+            {
+                "request_id": f"req-city-weather-{index}",
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": True},
+                "snapshot": {},
+            }
+        )
+
+        content = response["messages"][0]["content"]
+        assert "Mina E2E weather fixture" in content
+        assert response["actions"] == []
+        assert response["debug"]["local_web_search"] is True
+        assert deepseek.calls == 0
+        calls = memory.recent_tool_calls(request_id=f"req-city-weather-{index}", limit=10)
+        assert [call["tool_name"] for call in calls] == ["web_search"]
+        assert "weather query" not in calls[0]["args_json"]
+
+
 def test_harness_routes_explicit_seed_map_search_without_world_seed_hijack(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
