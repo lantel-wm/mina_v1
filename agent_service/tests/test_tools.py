@@ -299,6 +299,36 @@ def test_stop_body_task_reports_error_when_no_task_is_active(tmp_path) -> None:
     assert "当前没有正在执行的身体任务" in stopped.content
 
 
+def test_body_unavailable_failure_does_not_retry_repeatedly(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "follow_player", "target_hint": "me"}, turn)
+    action = started.actions[0]
+    response = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": action["id"],
+                    "task_id": action["task_id"],
+                    "step_id": action["step_id"],
+                    "name": action["name"],
+                    "status": "failed",
+                    "command_success": False,
+                    "error": "Mina body is unavailable because PuppetPlayers is not installed or body use is disabled.",
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+
+    assert response.actions == []
+    assert "身体执行不可用" in response.messages[0]["content"]
+    status = runner.run("task_status", {"task_id": action["task_id"]}, turn)
+    assert '"status": "failed"' in status.content
+    assert '"attempts": 1' in status.content
+
+
 def test_task_status_can_use_current_active_task_without_id(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _allowed_turn()

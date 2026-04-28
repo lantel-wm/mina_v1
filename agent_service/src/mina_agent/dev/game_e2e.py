@@ -34,6 +34,7 @@ def main() -> int:
             "stop_follow",
             "replace_follow_with_chop",
             "body_unavailable",
+            "offline_body_unavailable",
             "offline_knowledge_query",
             "offline_read_only_command",
             "offline_chop_tree",
@@ -48,11 +49,17 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
 
-    prepare_runtime(args.port, args.server_port, enable_body=args.scenario != "body_unavailable")
+    prepare_runtime(args.port, args.server_port, enable_body=args.scenario not in {"body_unavailable", "offline_body_unavailable"})
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
-    offline_service_scenarios = {"offline_follow", "offline_read_only_command", "offline_knowledge_query", "offline_chop_tree"}
+    offline_service_scenarios = {
+        "offline_follow",
+        "offline_read_only_command",
+        "offline_knowledge_query",
+        "offline_chop_tree",
+        "offline_body_unavailable",
+    }
     fake_search = start_fake_search(args.search_port) if args.scenario == "offline_knowledge_query" else None
     sidecar_mode = "service" if args.scenario in offline_service_scenarios else args.sidecar
     sidecar = start_sidecar(
@@ -80,6 +87,7 @@ def main() -> int:
                 "task_status",
                 "stop_follow",
                 "body_unavailable",
+                "offline_body_unavailable",
                 "offline_follow",
                 "offline_read_only_command",
                 "offline_knowledge_query",
@@ -113,6 +121,8 @@ def main() -> int:
         elif args.scenario == "replace_follow_with_chop":
             run_replace_follow_with_chop(server, output, args.timeout)
         elif args.scenario == "body_unavailable":
+            run_body_unavailable(server, output)
+        elif args.scenario == "offline_body_unavailable":
             run_body_unavailable(server, output)
         elif args.scenario == "offline_knowledge_query":
             run_knowledge_query(server, output)
@@ -440,7 +450,9 @@ def run_body_unavailable(proc: subprocess.Popen[str], output: "OutputReader") ->
     send(proc, "mina-test request 跟随我")
     output.wait_for("我开始跟随你", timeout=30)
     output.wait_for("mina body unavailable enableBody=false", timeout=30)
-    output.wait_for("跟随连续失败", timeout=30)
+    found = output.wait_for_any(["身体执行不可用", "跟随连续失败"], timeout=30)
+    if not found:
+        raise TimeoutError("body unavailable failure message")
 
 
 def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:

@@ -356,6 +356,19 @@ class SkillRuntime:
         task["attempts"] = int(task.get("attempts") or 0) + 1
         task["last_error"] = str(reason)
         self.memory.record_task_event(task["task_id"], "recovery", {"reason": task["last_error"], "attempts": task["attempts"]})
+        if _body_unavailable_reason(task["last_error"]):
+            task["status"] = "failed"
+            task["stage"] = "failed"
+            self._clear_current_if_terminal(task)
+            self.memory.add_skill_reflection(
+                str(task.get("type") or "unknown"),
+                f"{task.get('type')} unavailable: {task['last_error']}",
+                {"task_id": task["task_id"], "target": task.get("target")},
+            )
+            return TurnResponse(
+                messages=[{"target": "requester", "content": "身体执行不可用：PuppetPlayers 未安装或 Mina body 已被禁用。"}],
+                debug={"task_status": _public_task(task)},
+            )
         if task["attempts"] > 3:
             task["status"] = "failed"
             task["stage"] = "failed"
@@ -444,6 +457,11 @@ def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
 def _body_online(snapshot: dict[str, Any]) -> bool:
     body_state = snapshot.get("body_state")
     return bool(body_state.get("online")) if isinstance(body_state, dict) else False
+
+
+def _body_unavailable_reason(reason: str) -> bool:
+    normalized = reason.lower()
+    return "body is unavailable" in normalized or "puppetplayers is not installed" in normalized or "body use is disabled" in normalized
 
 
 def _public_task(task: dict[str, Any]) -> dict[str, Any]:
