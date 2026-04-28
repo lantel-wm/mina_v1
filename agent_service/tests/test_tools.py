@@ -109,6 +109,53 @@ def test_start_body_task_fails_gracefully_when_logs_have_no_approach(tmp_path) -
 
     assert result.actions == []
     assert "没有找到可安全接近的原木" in result.content
+    assert '"task not found"' in runner.run("task_status", {}, turn).content
+
+
+def test_completed_task_is_not_current_but_remains_queryable_by_id(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    task_id = move["task_id"]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "task_id": task_id,
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    attack = moved.actions[0]
+    runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "task_id": task_id,
+                    "step_id": attack["step_id"],
+                    "name": attack["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "target block is absent"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+
+    assert '"task not found"' in runner.run("task_status", {}, turn).content
+    assert '"status": "completed"' in runner.run("task_status", {"task_id": task_id}, turn).content
+    stopped = runner.run("stop_body_task", {"task_id": task_id}, turn)
+    assert stopped.actions == []
+    assert "当前没有正在执行的身体任务" in stopped.content
 
 
 def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) -> None:

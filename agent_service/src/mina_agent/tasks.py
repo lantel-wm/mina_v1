@@ -62,6 +62,7 @@ class SkillRuntime:
             self._active_by_player[player_id] = task_id
             self.memory.record_task_event(task_id, "started", {"task_type": task_type, "args": args})
             response = self._advance(task, turn.get("snapshot") or {})
+            self._clear_current_if_terminal(task)
             if preamble_actions:
                 response.actions = preamble_actions + response.actions
             if not response.messages:
@@ -74,14 +75,13 @@ class SkillRuntime:
     def stop_task(self, task_id: str | None, turn: dict[str, Any] | None = None) -> TurnResponse:
         with self._lock:
             task = self._find_task(task_id, turn)
-            if task is None:
+            if task is None or task.get("status") != "active":
                 return TurnResponse(messages=[{"target": "requester", "content": "当前没有正在执行的身体任务。"}])
             task["status"] = "cancelled"
             task["stage"] = "cancelled"
             task["updated_at"] = time.time()
             self.memory.record_task_event(task["task_id"], "cancelled", {})
-            if task.get("player_id") in self._active_by_player and self._active_by_player.get(task.get("player_id")) == task["task_id"]:
-                self._active_by_player.pop(task.get("player_id"), None)
+            self._clear_current_if_terminal(task)
             return TurnResponse(
                 messages=[{"target": "requester", "content": "我已经停止当前身体任务。"}],
                 actions=[_action(task, "body_stop", {}, step="stop", monitor=None)],
@@ -151,7 +151,9 @@ class SkillRuntime:
             player_id = str(player.get("uuid") or player.get("id") or "")
             active = self._active_by_player.get(player_id)
             if active:
-                return self._tasks.get(active)
+                task = self._tasks.get(active)
+                if task is not None and task.get("status") == "active":
+                    return task
         return None
 
     def _handle_result(self, task: dict[str, Any], result: dict[str, Any]) -> TurnResponse:
@@ -186,6 +188,7 @@ class SkillRuntime:
             task["stage"] = "done"
             task["updated_at"] = time.time()
             self.memory.record_task_event(task["task_id"], "completed", {"target": task.get("target")})
+            self._clear_current_if_terminal(task)
             self.memory.add_skill_reflection(
                 "chop_tree",
                 "Chop tree completed after observed block removal.",
@@ -242,6 +245,7 @@ class SkillRuntime:
                 task["status"] = "failed"
                 task["last_error"] = "no log target with approach position"
                 self.memory.record_task_event(task["task_id"], "failed", {"reason": task["last_error"]})
+                self._clear_current_if_terminal(task)
                 return TurnResponse(
                     messages=[{"target": "requester", "content": "我附近没有找到可安全接近的原木，先停下。"}],
                     debug={"task_status": _public_task(task)},
@@ -346,6 +350,7 @@ class SkillRuntime:
         if task["attempts"] > 3:
             task["status"] = "failed"
             task["stage"] = "failed"
+            self._clear_current_if_terminal(task)
             self.memory.add_skill_reflection(
                 str(task.get("type") or "unknown"),
                 f"{task.get('type')} failed after repeated recovery: {task['last_error']}",
@@ -368,6 +373,13 @@ class SkillRuntime:
     def _mark_action(self, task: dict[str, Any], action: dict[str, Any]) -> None:
         task["active_action_id"] = action["id"]
         self.memory.record_task_event(task["task_id"], "action_scheduled", action)
+
+    def _clear_current_if_terminal(self, task: dict[str, Any]) -> None:
+        if task.get("status") not in {"completed", "failed", "cancelled"}:
+            return
+        player_id = str(task.get("player_id") or "")
+        if self._active_by_player.get(player_id) == task.get("task_id"):
+            self._active_by_player.pop(player_id, None)
 
 
 def _action(
