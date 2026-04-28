@@ -503,6 +503,28 @@ def test_harness_answers_body_position_from_snapshot_without_model_or_tools(tmp_
     assert memory.recent_tool_calls(request_id="req-body-observation", limit=10) == []
 
 
+def test_harness_sanitizes_model_markdown_for_minecraft_chat(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = DirectAnswerDeepSeek("已保存：**Quartz-1729** ✅\n- 可以运行 `seed` 查询。")
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-chat-style",
+            "trigger": "command",
+            "message": "随便回答一句",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert content == "已保存：Quartz-1729\n可以运行 seed 查询。"
+    assert deepseek.calls == 1
+
+
 def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

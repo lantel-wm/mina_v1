@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from mina_agent.context import SYSTEM_PROMPT
 from mina_agent.context import build_messages
 from mina_agent.memory import MemoryStore
+
+
+def test_system_prompt_keeps_minecraft_chat_plain_text() -> None:
+    assert "Minecraft chat is plain text" in SYSTEM_PROMPT
+    assert "do not use Markdown" in SYSTEM_PROMPT
+    assert "emoji" in SYSTEM_PROMPT
 
 
 def test_context_includes_relevant_player_memory(tmp_path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -146,7 +147,7 @@ class AgentHarness:
                     usage,
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
-                    content = str(assistant_message.get("content") or "").strip()
+                    content = _minecraft_chat_text(str(assistant_message.get("content") or ""))
                     if content and requires_memory_search and not memory_search_seen:
                         messages.append(
                             {
@@ -489,6 +490,23 @@ def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "...<truncated>"
+
+
+def _minecraft_chat_text(content: str) -> str:
+    text = content.strip()
+    if not text:
+        return ""
+    text = re.sub(r"\*\*([^*\n]+)\*\*", r"\1", text)
+    text = re.sub(r"__([^_\n]+)__", r"\1", text)
+    text = text.replace("`", "")
+    text = _EMOJI_RE.sub("", text)
+    text = re.sub(r"(?m)^\s*[-*•]\s+", "", text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+_EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 
 
 def _is_tool_error(content: str) -> bool:
