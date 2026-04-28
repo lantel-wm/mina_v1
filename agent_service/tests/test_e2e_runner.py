@@ -346,6 +346,76 @@ def test_failure_trace_artifacts_record_trace_read_errors(tmp_path, monkeypatch)
     assert "sidecar trace endpoint unavailable" in records[0]["error"]
 
 
+def test_scenario_artifacts_write_final_snapshot(tmp_path, monkeypatch) -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "final_snapshot_case",
+            "fixture": "follow_player",
+            "steps": [{"kind": "request", "request_id": "final-snapshot-request", "value": "状态"}],
+            "rubric": "successful scenarios should keep final world evidence",
+        }
+    )
+    runner = E2ERunner(
+        scenarios=[scenario],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+
+    monkeypatch.setattr(
+        runner,
+        "_capture_world_snapshot",
+        lambda scenario_name, context: {"ok": True, "context": context, "snapshot_hash": "abc123"},
+    )
+    monkeypatch.setattr("mina_agent.e2e.runner.read_json", lambda url, timeout: {"model_calls": []})
+
+    runner._write_scenario_artifacts(scenario)
+
+    snapshot = json.loads((tmp_path / "final_snapshot_case" / "final_snapshot.json").read_text(encoding="utf-8"))
+    assert snapshot == {"ok": True, "context": "final_snapshot", "snapshot_hash": "abc123"}
+
+
+def test_world_snapshot_harness_event_is_compacted(tmp_path, monkeypatch) -> None:
+    runner = E2ERunner(
+        scenarios=[],
+        artifact_dir=tmp_path,
+        port=18911,
+        server_port=25566,
+        timeout=180,
+        searxng_url="",
+    )
+
+    class Proc:
+        def poll(self) -> None:
+            return None
+
+    class Output:
+        def wait_for_line(self, required_texts: list[str], timeout: float) -> str:
+            assert required_texts == ['"trigger":"test_snapshot"', '"snapshot"']
+            return (
+                '[20:00:00] [Server thread/INFO] (Minecraft) '
+                '{"request_id":"mina-test","trigger":"test_snapshot",'
+                '"snapshot":{"player_state":{"health":20,"food":20},'
+                '"body_state":{"online":true,"inventory":[{"slot":0}]},'
+                '"nearby_blocks":[{"category":"log"}]}}'
+            )
+
+    runner.server = Proc()  # type: ignore[assignment]
+    runner.server_output = Output()  # type: ignore[assignment]
+    monkeypatch.setattr(runner, "_send_server_command", lambda scenario_name, command: None)
+
+    snapshot = runner._capture_world_snapshot("snapshot_case", "final_snapshot")
+    event_payload = runner.harness_events["snapshot_case"][0]["payload"]
+
+    assert snapshot["ok"] is True
+    assert event_payload["snapshot_hash"] == snapshot["snapshot_hash"]
+    assert event_payload["snapshot_summary"]["player"]["health"] == 20
+    assert "line" not in event_payload
+    assert "inventory" not in json.dumps(event_payload)
+
+
 def test_response_contains_can_match_player_visible_harness_output(tmp_path, monkeypatch) -> None:
     scenario = scenario_from_dict(
         {
@@ -378,7 +448,7 @@ def test_response_contains_can_match_player_visible_harness_output(tmp_path, mon
 def test_failure_snapshot_line_is_compacted() -> None:
     line = (
         '[20:00:00] [Server thread/INFO] (Minecraft) '
-        '{"request_id":"test_snapshot","snapshot":{"player_state":{"health":20,"food":19},'
+        '{"request_id":"mina-test","trigger":"test_snapshot","snapshot":{"player_state":{"health":20,"food":19},'
         '"body_state":{"online":true,"inventory":[{"slot":0}]},'
         '"nearby_blocks":[{"category":"log"}]}}'
     )

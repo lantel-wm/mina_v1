@@ -556,6 +556,12 @@ class E2ERunner:
         )
         records: list[dict[str, Any]] = []
         traces: dict[str, Any] = {}
+        if not best_effort:
+            final_snapshot = self._capture_world_snapshot(scenario.name, "final_snapshot")
+            (scenario_dir / "final_snapshot.json").write_text(
+                json.dumps(final_snapshot, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         for request_id in scenario.request_ids():
             try:
                 trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
@@ -616,7 +622,7 @@ class E2ERunner:
             "error": error,
             "manifest": scenario_artifact_payload(scenario),
         }
-        payload["world_snapshot"] = self._capture_failure_world_snapshot(scenario.name)
+        payload["world_snapshot"] = self._capture_world_snapshot(scenario.name, "failure_snapshot")
         try:
             payload["tasks"] = read_json(f"http://127.0.0.1:{self.port}/v1/tasks", timeout=5)
             payload["tool_calls"] = read_json(f"http://127.0.0.1:{self.port}/v1/tool-calls", timeout=5)
@@ -630,26 +636,28 @@ class E2ERunner:
             payload["artifact_error"] = str(exc)
         (failure_dir / "failure.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def _capture_failure_world_snapshot(self, scenario_name: str) -> dict[str, Any]:
+    def _capture_world_snapshot(self, scenario_name: str, context: str) -> dict[str, Any]:
         if self.server is None or self.server_output is None or self.server.poll() is not None:
             return {"ok": False, "error": "server is not running"}
         try:
             self._send_server_command(scenario_name, "mina-test snapshot")
-            line = self.server_output.wait_for_line(['"request_id":"test_snapshot"'], timeout=5)
+            required = ['"trigger":"test_snapshot"', '"snapshot"']
+            line = self.server_output.wait_for_line(required, timeout=5)
             if not line:
                 return {"ok": False, "error": "snapshot command did not return a test_snapshot payload"}
+            compact = compact_snapshot_from_server_line(line)
             self._record_harness_event(
                 scenario_name,
                 "server_output_line",
                 {
-                    "context": "failure_snapshot",
-                    "required": ['"request_id":"test_snapshot"'],
-                    "line": line.strip(),
+                    "context": context,
+                    "required": required,
                     "timeout_seconds": 5,
+                    **compact,
                 },
             )
-            compact = compact_snapshot_from_server_line(line)
             compact["ok"] = bool(compact)
+            compact["context"] = context
             return compact
         except Exception as exc:  # noqa: BLE001 - failure capture must never mask the scenario error.
             return {"ok": False, "error": str(exc)}
