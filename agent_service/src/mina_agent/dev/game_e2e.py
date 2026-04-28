@@ -42,6 +42,7 @@ def main() -> int:
             "offline_read_only_command",
             "offline_chop_tree",
             "offline_follow",
+            "offline_permission_denied",
         ],
     )
     parser.add_argument("--sidecar", default="scripted", choices=["scripted", "service"])
@@ -63,12 +64,14 @@ def main() -> int:
         "offline_knowledge_query",
         "offline_chop_tree",
         "offline_body_unavailable",
+        "offline_permission_denied",
     }
     fake_deepseek_scenarios = {"model_action_barrier", "model_read_only_command", "model_knowledge_query"}
     service_scenarios = {*offline_service_scenarios, *fake_deepseek_scenarios}
     fake_search = start_fake_search(args.search_port) if args.scenario in {"offline_knowledge_query", "model_knowledge_query"} else None
     fake_deepseek = start_fake_deepseek(args.deepseek_port) if args.scenario in fake_deepseek_scenarios else None
     sidecar_mode = "service" if args.scenario in service_scenarios else args.sidecar
+    reset_sidecar_db(sidecar_mode)
     sidecar = start_sidecar(
         args.port,
         sidecar_mode,
@@ -104,6 +107,7 @@ def main() -> int:
                 "offline_follow",
                 "offline_read_only_command",
                 "offline_knowledge_query",
+                "offline_permission_denied",
             }
             else args.scenario
         )
@@ -151,6 +155,8 @@ def main() -> int:
             run_chop_tree(server, output, args.timeout)
         elif args.scenario == "offline_follow":
             run_follow_player(server, output, args.timeout)
+        elif args.scenario == "offline_permission_denied":
+            run_permission_denied(server, output, args.port)
         write_trace_summary(args.port)
         return 0
     finally:
@@ -286,6 +292,12 @@ def start_sidecar(
         stderr=subprocess.STDOUT,
         text=True,
     )
+
+
+def reset_sidecar_db(mode: str) -> None:
+    base = ROOT / "build" / "e2e" / f"mina-{mode}.sqlite3"
+    for path in (base, base.with_name(base.name + "-wal"), base.with_name(base.name + "-shm")):
+        path.unlink(missing_ok=True)
 
 
 def start_fake_deepseek(port: int) -> subprocess.Popen[str]:
@@ -542,6 +554,19 @@ def run_model_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader
     calls = read_json(f"http://127.0.0.1:{deepseek_port}/calls", timeout=5)
     if calls.get("count") != 2:
         raise AssertionError(f"fake DeepSeek should have two calls for web_search tool loop, got {calls!r}")
+
+
+def run_permission_denied(proc: subprocess.Popen[str], output: "OutputReader", sidecar_port: int) -> None:
+    send(proc, "mina-test deny_actions")
+    output.wait_for("Mina test actions denied", timeout=10)
+    send(proc, "mina-test request 跟随我")
+    output.wait_for("离线模式无法完成请求：permission denied", timeout=30)
+    tasks = read_json(f"http://127.0.0.1:{sidecar_port}/v1/tasks", timeout=5)
+    if tasks.get("tasks"):
+        raise AssertionError(f"permission denied request should not create body tasks: {tasks!r}")
+    events = read_json(f"http://127.0.0.1:{sidecar_port}/v1/action-events", timeout=5)
+    if events.get("events"):
+        raise AssertionError(f"permission denied request should not schedule Fabric actions: {events!r}")
 
 
 def stop_process(proc: subprocess.Popen[str], command: str | None = None) -> None:

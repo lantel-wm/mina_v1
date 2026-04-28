@@ -50,6 +50,8 @@ public final class MinaTestCommands {
 					.then(argument("content", StringArgumentType.greedyString())
 						.executes(context -> request(context.getSource(), StringArgumentType.getString(context, "content")))))
 				.then(literal("ready").executes(context -> ready(context.getSource())))
+				.then(literal("deny_actions").executes(context -> denyActions(context.getSource())))
+				.then(literal("allow_actions").executes(context -> allowActions(context.getSource())))
 				.then(literal("move_requester_far").executes(context -> moveRequesterFar(context.getSource())))
 				.then(literal("snapshot").executes(context -> snapshot(context.getSource())))
 				.then(literal("assert")
@@ -105,6 +107,19 @@ public final class MinaTestCommands {
 			return 0;
 		}
 		source.sendSuccess(() -> Component.literal("Mina test ready."), false);
+		return 1;
+	}
+
+	private int denyActions(CommandSourceStack source) {
+		config.deny(TEST_PLAYER);
+		run(source.getServer(), "deop " + TEST_PLAYER);
+		source.sendSuccess(() -> Component.literal("Mina test actions denied for " + TEST_PLAYER + "."), false);
+		return 1;
+	}
+
+	private int allowActions(CommandSourceStack source) {
+		config.allow(TEST_PLAYER);
+		source.sendSuccess(() -> Component.literal("Mina test actions allowed for " + TEST_PLAYER + "."), false);
 		return 1;
 	}
 
