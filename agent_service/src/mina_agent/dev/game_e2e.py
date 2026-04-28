@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import queue
@@ -730,7 +731,7 @@ def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:
                 "action_name": event.get("action_name"),
                 "event_type": event.get("event_type"),
                 "created_at": event.get("created_at"),
-                "payload": payload,
+                "payload": compact_trace_payload(payload),
             }
         )
     for call in tasks_payload.get("tool_calls") or []:
@@ -782,7 +783,7 @@ def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:
                     "task_id": event.get("task_id") or task_id,
                     "event_type": event.get("event_type"),
                     "created_at": event.get("created_at"),
-                    "payload": payload,
+                    "payload": compact_trace_payload(payload),
                 }
             )
     trace = ROOT / "build" / "e2e" / "trace.jsonl"
@@ -790,6 +791,71 @@ def write_trace_jsonl(port: int, tasks_payload: dict[str, Any]) -> None:
         "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
         encoding="utf-8",
     )
+
+
+def compact_trace_payload(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    compact = dict(payload)
+    snapshot = compact.pop("snapshot", None)
+    if isinstance(snapshot, dict):
+        compact["snapshot_hash"] = snapshot_hash(snapshot)
+        compact["snapshot_summary"] = trace_snapshot_summary(snapshot)
+    return compact
+
+
+def snapshot_hash(snapshot: dict[str, Any]) -> str:
+    encoded = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def trace_snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
+    player = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    body = snapshot.get("body_state") if isinstance(snapshot.get("body_state"), dict) else {}
+    world = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
+    blocks = flatten_trace_blocks(snapshot.get("nearby_blocks"))
+    entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    return {
+        "player": {
+            "dimension": player.get("dimension"),
+            "x": player.get("x"),
+            "y": player.get("y"),
+            "z": player.get("z"),
+            "health": player.get("health"),
+            "food": player.get("food"),
+        },
+        "body": {
+            "online": body.get("online"),
+            "x": body.get("x"),
+            "y": body.get("y"),
+            "z": body.get("z"),
+            "yaw": body.get("yaw"),
+            "pitch": body.get("pitch"),
+            "distance_to_requester": body.get("distance_to_requester"),
+            "targeted_block": body.get("targeted_block") or body.get("target_block"),
+        },
+        "world": {
+            "day_time": world.get("day_time"),
+            "difficulty": world.get("difficulty"),
+            "weather": "thunder" if world.get("thundering") else "rain" if world.get("raining") else "clear",
+        },
+        "nearby": {
+            "entities": len(entities),
+            "blocks": len(blocks),
+            "logs": sum(1 for block in blocks if block.get("category") == "log"),
+        },
+    }
+
+
+def flatten_trace_blocks(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        blocks: list[dict[str, Any]] = []
+        for nested in value.values():
+            blocks.extend(flatten_trace_blocks(nested))
+        return blocks
+    return []
 
 
 class OutputReader:
