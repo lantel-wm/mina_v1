@@ -59,6 +59,19 @@ def turn(payload: dict[str, Any]) -> dict[str, Any]:
             ],
             "actions": [],
         }
+    if "作弊" in message or "setblock" in message or "写命令" in message:
+        return {
+            "messages": [{"target": "requester", "content": "我会测试写命令拒绝路径。"}],
+            "actions": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": "run_read_only_command",
+                    "args": {"command": "setblock 2 80 0 minecraft:air"},
+                    "requires_permission": False,
+                    "deadline_ticks": 0,
+                }
+            ],
+        }
     if "时间" in message or "time query" in message:
         return {
             "messages": [{"target": "requester", "content": "我来查询当前游戏时间。"}],

@@ -54,7 +54,8 @@ public final class MinaTestCommands {
 				.then(literal("snapshot").executes(context -> snapshot(context.getSource())))
 				.then(literal("assert")
 					.then(literal("chop_tree").executes(context -> assertChopTree(context.getSource())))
-					.then(literal("follow_player").executes(context -> assertFollowPlayer(context.getSource()))))
+					.then(literal("follow_player").executes(context -> assertFollowPlayer(context.getSource())))
+					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource()))))
 				.then(literal("stop").executes(context -> stop(context.getSource())))
 		));
 	}
@@ -150,6 +151,17 @@ public final class MinaTestCommands {
 			return 0;
 		}
 		source.sendSuccess(() -> Component.literal("Mina test chop_tree passed."), false);
+		return 1;
+	}
+
+	private int assertTargetLogPresent(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		boolean present = level.getBlockState(TARGET_LOG).is(Blocks.SPRUCE_LOG);
+		if (!present) {
+			source.sendFailure(Component.literal("Mina test target_log_present failed: target log was changed."));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("Mina test target_log_present passed."), false);
 		return 1;
 	}
 

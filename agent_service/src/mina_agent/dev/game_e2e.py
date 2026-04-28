@@ -29,6 +29,7 @@ def main() -> int:
             "follow_player",
             "read_only_command",
             "knowledge_query",
+            "banned_command",
             "task_status",
             "stop_follow",
             "replace_follow_with_chop",
@@ -56,7 +57,7 @@ def main() -> int:
         output.wait_for("Done", timeout=args.timeout)
         setup_scenario = (
             "chop_tree"
-            if args.scenario == "replace_follow_with_chop"
+            if args.scenario in {"replace_follow_with_chop", "banned_command"}
             else "follow_player"
             if args.scenario in {"read_only_command", "knowledge_query", "task_status", "stop_follow", "body_unavailable"}
             else args.scenario
@@ -79,6 +80,8 @@ def main() -> int:
             run_read_only_command(server, output)
         elif args.scenario == "knowledge_query":
             run_knowledge_query(server, output)
+        elif args.scenario == "banned_command":
+            run_banned_command(server, output)
         elif args.scenario == "task_status":
             run_task_status(server, output)
         elif args.scenario == "stop_follow":
@@ -313,6 +316,22 @@ def run_knowledge_query(proc: subprocess.Popen[str], output: "OutputReader") -> 
     send(proc, "mina-test request 查资料 Minecraft Wiki")
     output.wait_for("搜索结果：Minecraft Wiki", timeout=30)
     output.wait_for("联网知识查询链路可用", timeout=30)
+
+
+def run_banned_command(proc: subprocess.Popen[str], output: "OutputReader") -> None:
+    send(proc, "mina-test request 尝试作弊 setblock")
+    output.wait_for("我会测试写命令拒绝路径", timeout=30)
+    output.wait_for("mina read-only command refused command=setblock 2 80 0 minecraft:air", timeout=30)
+    output.wait_for("Only read-only Minecraft commands are allowed", timeout=30)
+    poll_command(
+        proc,
+        output,
+        "mina-test assert target_log_present",
+        success="Mina test target_log_present passed",
+        pending=["Mina test target_log_present failed"],
+        timeout=30,
+        interval=1.0,
+    )
 
 
 def run_task_status(proc: subprocess.Popen[str], output: "OutputReader") -> None:

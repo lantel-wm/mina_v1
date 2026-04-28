@@ -160,8 +160,7 @@ public final class MinaActionExecutor {
 		String normalized = stripSlash(command);
 		if (normalized.isBlank() || !isReadOnlyCommand(normalized)) {
 			MinaMod.LOGGER.info("mina read-only command refused command={}", command);
-			message(requester, "Mina refused a non-read-only command.");
-			return;
+			throw new IllegalArgumentException("Only read-only Minecraft commands are allowed.");
 		}
 		runCommand(server, requester, normalized);
 	}
