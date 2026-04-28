@@ -1304,7 +1304,20 @@ def test_harness_body_subagent_handles_configured_follow_without_model_call(tmp_
 
 
 def test_harness_body_subagent_handles_colloquial_follow_and_terse_stop_without_model_call(tmp_path) -> None:
-    for index, message in enumerate(("跟紧我", "跟上我", "保持跟随", "stay with me", "stick with me")):
+    for index, message in enumerate(
+        (
+            "跟紧我",
+            "跟上我",
+            "保持跟随",
+            "跟在我身边",
+            "保持在我旁边",
+            "别走远",
+            "stay with me",
+            "stick with me",
+            "stay close to me",
+            "walk with me",
+        )
+    ):
         memory = MemoryStore(tmp_path / f"mina-colloquial-follow-{index}.sqlite3")
         tools = ToolRunner(memory, FakeSearch())
         deepseek = FailIfCalledDeepSeek()

@@ -93,7 +93,7 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     colloquial_follow = SCENARIOS["body_colloquial_follow_and_terse_stop_router"]
     assert any(expected.name == "start_body_task" and expected.status == "ok" for expected in colloquial_follow.expected_tools)
     assert any(expected.name == "stop_body_task" and expected.status == "ok" for expected in colloquial_follow.expected_tools)
-    assert any(step.value == "跟紧我" for step in colloquial_follow.steps)
+    assert any(step.value == "跟在我身边" for step in colloquial_follow.steps)
     assert any(step.value == "停" for step in colloquial_follow.steps)
     assert colloquial_follow.expected_model is not None
     assert colloquial_follow.expected_model.count == 0

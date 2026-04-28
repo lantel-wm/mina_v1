@@ -82,7 +82,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "body-colloquial-follow-start",
-                "value": "跟紧我",
+                "value": "跟在我身边",
                 "wait_for": ["我开始跟随你"],
             },
             {
@@ -101,7 +101,7 @@ SCENARIO_DATA = [
             {"name": "body_stop"},
         ],
         "expected_model": {"mode": "exact", "count": 0},
-        "rubric": "Colloquial follow phrasing such as '跟紧我' and terse stop phrasing such as '停' must stay inside the deterministic body router.",
+        "rubric": "Colloquial follow phrasing such as '跟在我身边' and terse stop phrasing such as '停' must stay inside the deterministic body router.",
     },
     {
         "name": "body_stop_router",
