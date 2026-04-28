@@ -13,6 +13,7 @@ from mina_agent.e2e.runner import (
     main,
     parse_args,
     require_live_deepseek_env,
+    scenario_artifact_payload,
     select_scenarios,
 )
 from mina_agent.e2e.scenarios import SCENARIOS, SUITES
@@ -185,3 +186,23 @@ def test_failure_snapshot_line_is_compacted() -> None:
     assert compact["snapshot_summary"]["nearby"]["logs"] == 1
     assert "snapshot" not in compact
     assert "inventory" not in json.dumps(compact)
+
+
+def test_scenario_artifact_payload_serializes_rubric_and_sets() -> None:
+    scenario = scenario_from_dict(
+        {
+            "name": "artifact_case",
+            "fixture": "follow_player",
+            "tags": ["core", "safety"],
+            "steps": [{"kind": "request", "request_id": "artifact-1", "value": "状态"}],
+            "forbidden_actions": ["body_chain", "body_attack"],
+            "rubric": "artifact rubric",
+        }
+    )
+
+    payload = scenario_artifact_payload(scenario)
+
+    assert payload["rubric"] == "artifact rubric"
+    assert payload["tags"] == ["core", "safety"]
+    assert payload["forbidden_actions"] == ["body_attack", "body_chain"]
+    json.dumps(payload)

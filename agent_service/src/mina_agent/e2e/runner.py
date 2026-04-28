@@ -12,7 +12,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -513,6 +513,10 @@ class E2ERunner:
     def _write_scenario_artifacts(self, scenario: Scenario) -> None:
         scenario_dir = self.artifact_dir / scenario.name
         scenario_dir.mkdir(parents=True, exist_ok=True)
+        (scenario_dir / "manifest.json").write_text(
+            json.dumps(scenario_artifact_payload(scenario), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         records: list[dict[str, Any]] = []
         traces: dict[str, Any] = {}
         for request_id in scenario.request_ids():
@@ -554,7 +558,11 @@ class E2ERunner:
     def _write_failure_snapshot(self, scenario: Scenario, error: str) -> None:
         failure_dir = self.artifact_dir / scenario.name
         failure_dir.mkdir(parents=True, exist_ok=True)
-        payload: dict[str, Any] = {"scenario": scenario.name, "error": error}
+        payload: dict[str, Any] = {
+            "scenario": scenario.name,
+            "error": error,
+            "manifest": scenario_artifact_payload(scenario),
+        }
         payload["world_snapshot"] = self._capture_failure_world_snapshot(scenario.name)
         try:
             payload["tasks"] = read_json(f"http://127.0.0.1:{self.port}/v1/tasks", timeout=5)
@@ -912,6 +920,13 @@ def compact_snapshot_from_server_line(line: str) -> dict[str, Any]:
         return {}
     compact = compact_trace_payload({"snapshot": payload["snapshot"]})
     return compact if isinstance(compact, dict) else {}
+
+
+def scenario_artifact_payload(scenario: Scenario) -> dict[str, Any]:
+    payload = asdict(scenario)
+    payload["tags"] = sorted(scenario.tags)
+    payload["forbidden_actions"] = sorted(scenario.forbidden_actions)
+    return payload
 
 
 def urlopen_no_proxy(url: str, timeout: float):
