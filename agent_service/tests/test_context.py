@@ -28,6 +28,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
     assert "Player name/username" in SYSTEM_PROMPT
     assert "online player count/names" in SYSTEM_PROMPT
+    assert "server/world identity" in SYSTEM_PROMPT
     assert "server rules (PVP/command blocks)" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
     assert "game mode" in SYSTEM_PROMPT
@@ -672,6 +673,8 @@ def test_companion_context_summary_omits_player_name() -> None:
 def test_context_summary_includes_world_state_for_observation() -> None:
     turn = {
         "trigger": "command",
+        "server_id": "fabric",
+        "world_id": "world",
         "player": {"uuid": "player-1", "name": "Tester"},
         "permissions": {"can_use_actions": True},
         "snapshot": {
@@ -698,6 +701,8 @@ def test_context_summary_includes_world_state_for_observation() -> None:
 
     summary = build_context_summary(turn)
 
+    assert '"server_id": "fabric"' in summary
+    assert '"world_id": "world"' in summary
     assert '"day_time": 1000' in summary
     assert '"day_count": 0' in summary
     assert '"difficulty": "peaceful"' in summary
@@ -712,6 +717,26 @@ def test_context_summary_includes_world_state_for_observation() -> None:
     assert '"online_player_names": ["Tester"]' in summary
     assert '"pvp_allowed": true' in summary
     assert '"command_blocks_enabled": true' in summary
+
+
+def test_build_messages_loads_world_memory_from_turn_world_id(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("world", "world", "village", "村庄在出生点东侧", importance=4)
+    memory.add_agent_memory("world", "other-world", "village", "另一个世界的村庄在西侧", importance=4)
+    turn = {
+        "request_id": "req-world-memory",
+        "trigger": "command",
+        "message": "村庄在哪里？",
+        "world_id": "world",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"world_state": {"day_time": 1200}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "村庄在出生点东侧" in content
+    assert "另一个世界的村庄在西侧" not in content
 
 
 def test_build_messages_does_not_add_explicit_command_keyword_hint(tmp_path) -> None:

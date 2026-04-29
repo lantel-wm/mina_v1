@@ -341,6 +341,9 @@ def _player_name(turn: dict[str, Any]) -> str:
 
 
 def _world_id(turn: dict[str, Any]) -> str | None:
+    value = turn.get("world_id") or turn.get("world")
+    if value:
+        return str(value)
     snapshot = turn.get("snapshot")
     if not isinstance(snapshot, dict):
         return None

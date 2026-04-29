@@ -180,6 +180,34 @@ def test_memory_write_and_search_round_trip(tmp_path) -> None:
     assert any("spruce bases" in result["content"] for result in payload["results"])
 
 
+def test_world_scoped_memory_uses_top_level_world_id(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = {**_turn(), "world_id": "world"}
+
+    written = runner.run(
+        "memory_write",
+        {
+            "event_type": "world_fact",
+            "content": "村庄在出生点东侧",
+            "label": "village",
+            "scope": "world",
+        },
+        turn,
+    )
+    same_world = runner.run("memory_search", {"query": "村庄", "limit": 3}, turn)
+    other_world = runner.run("memory_search", {"query": "村庄", "limit": 3}, {**_turn(), "world_id": "other-world"})
+
+    assert _payload(written.content)["memory"]["scope"] == "world"
+    assert any(
+        result["kind"] == "remembered_fact" and "村庄在出生点东侧" in result["content"]
+        for result in _payload(same_world.content)["results"]
+    )
+    assert all(
+        not (result["kind"] == "remembered_fact" and "村庄在出生点东侧" in result["content"])
+        for result in _payload(other_world.content)["results"]
+    )
+
+
 def test_memory_write_sanitizes_current_player_name_from_player_memory(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _turn()

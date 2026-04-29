@@ -31,7 +31,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -95,7 +95,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
     snapshot = turn.get("snapshot") or {}
     user_content = str(turn.get("message") or "").strip()
     recent = memory.recent_conversation(player_id, limit=12)
-    agent_memory = memory.agent_context(player_id, world_id=_world_id(snapshot), limit=10, max_chars=1600)
+    agent_memory = memory.agent_context(player_id, world_id=_world_id(turn), limit=10, max_chars=1600)
     recent_action_results = memory.recent_action_results_for_player(player_id, limit=4)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -387,7 +387,13 @@ def _string_items(value: Any, *, limit: int) -> list[str]:
     return items
 
 
-def _world_id(snapshot: dict[str, Any]) -> str | None:
+def _world_id(turn: dict[str, Any]) -> str | None:
+    value = turn.get("world_id") or turn.get("world")
+    if value:
+        return str(value)
+    snapshot = turn.get("snapshot")
+    if not isinstance(snapshot, dict):
+        return None
     value = snapshot.get("world_id") or snapshot.get("world")
     if value:
         return str(value)
@@ -440,6 +446,8 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         player_context = {"present": bool(player_context)}
     payload = {
         "trigger": turn.get("trigger"),
+        "server_id": turn.get("server_id"),
+        "world_id": turn.get("world_id"),
         "player": player_context,
         "permissions": permissions,
         "player_state": {

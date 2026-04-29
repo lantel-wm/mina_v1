@@ -110,6 +110,39 @@ SCENARIO_DATA = [
         "rubric": "Natural online-player questions should answer from Fabric world_state.online_player_names without executing the exact list command.",
     },
     {
+        "name": "world_identity_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "world-identity-snapshot-live-model",
+                "value": "当前存档世界名是什么？只回答 world。",
+                "wait_for": ["mina send message target=requester content=world"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["content=world"],
+        "forbidden_response_contains": [
+            "fabric",
+            "minecraft:",
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "World identity questions should answer from the top-level Fabric turn world_id without command execution.",
+    },
+    {
         "name": "selected_item_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
