@@ -121,37 +121,21 @@ class AgentHarness:
                                 requested_read_only_command,
                             )
                             continue
-                        result = self.tools.run(
-                            "run_read_only_command",
-                            {"command": requested_read_only_command},
-                            turn,
-                        )
-                        result_actions = state.collect_result_actions(result)
-                        self.memory.record_tool_call(
+                        content = "我没有通过工具执行这个只读命令，请再试一次或换个说法。"
+                        self.memory.add_conversation(request_id, player_id, "assistant", content)
+                        self._debug(
+                            "turn stopped_missing_read_only_tool request_id=%s command=%s",
                             request_id,
-                            "run_read_only_command",
-                            {"command": requested_read_only_command},
-                            {"content": result.content, "actions": result_actions},
-                            "ok" if result_actions or not is_tool_error(result.content) else "error",
+                            requested_read_only_command,
                         )
-                        if result_actions:
-                            content = _action_ack("run_read_only_command")
-                            self.memory.add_conversation(request_id, player_id, "assistant", content)
-                            self._debug(
-                                "turn command_contract_fallback request_id=%s command=%s actions=%s",
-                                request_id,
-                                requested_read_only_command,
-                                len(result_actions),
-                            )
-                            return TurnResponse(
-                                messages=[{"target": "requester", "content": content}],
-                                actions=state.actions,
-                                debug={
-                                    "usage": state.usage,
-                                    "tool_subturns": subturn,
-                                    "read_only_command_contract_fallback": True,
-                                },
-                            ).to_dict()
+                        return TurnResponse(
+                            messages=[{"target": "requester", "content": content}],
+                            debug={
+                                "usage": state.usage,
+                                "tool_subturns": subturn,
+                                "read_only_command_tool_missing": True,
+                            },
+                        ).to_dict()
                     review = policy.review_final_content(
                         str(assistant_message.get("content") or ""),
                         can_repair=subturn < self.settings.max_tool_turns,

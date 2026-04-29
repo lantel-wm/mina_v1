@@ -55,12 +55,17 @@ class FakeSearch:
         ]
 
 
-def _harness(tmp_path, deepseek: FakeDeepSeek | None = None) -> tuple[AgentHarness, MemoryStore, FakeDeepSeek, FakeSearch]:  # noqa: ANN001
+def _harness(
+    tmp_path,
+    deepseek: FakeDeepSeek | None = None,
+    settings: Settings | None = None,
+) -> tuple[AgentHarness, MemoryStore, FakeDeepSeek, FakeSearch]:  # noqa: ANN001
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     search = FakeSearch()
     model = deepseek or FakeDeepSeek()
     tools = ToolRunner(memory, search)  # type: ignore[arg-type]
-    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, model, tools)  # type: ignore[arg-type]
+    resolved = settings or Settings(api_key="test", db_path=tmp_path / "mina.sqlite3")
+    harness = AgentHarness(resolved, memory, model, tools)  # type: ignore[arg-type]
     return harness, memory, model, search
 
 
@@ -248,6 +253,35 @@ def test_explicit_read_only_command_repairs_model_answer_without_tool(tmp_path) 
     assert "Call run_read_only_command with exactly this command" in repair_context
     calls = memory.recent_tool_calls("req-time-repair")
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+
+
+def test_explicit_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "当前是第 0 天。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "The time is 0"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    settings = Settings(api_key="test", db_path=tmp_path / "mina.sqlite3", max_tool_turns=2)
+    harness, memory, _model, _search = _harness(tmp_path, model, settings=settings)
+
+    response = harness.run_turn(_turn("执行 time query day", "req-time-no-tool"))
+
+    assert response["messages"][0]["content"] == "我没有通过工具执行这个只读命令，请再试一次或换个说法。"
+    assert response.get("actions", []) == []
+    assert response["debug"]["read_only_command_tool_missing"] is True
+    assert len(model.calls) == 2
+    assert memory.recent_tool_calls("req-time-no-tool") == []
 
 
 def test_snapshot_status_request_blocks_unrequested_command_tool_before_repair(tmp_path) -> None:
