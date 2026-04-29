@@ -6,6 +6,7 @@ from typing import Any
 
 from .memory import MemoryStore
 from .policy import UNSAFE_WRITE_REFUSAL
+from .tools import normalize_read_only_command
 
 
 BASE_SYSTEM_SECTIONS = (
@@ -76,9 +77,14 @@ COMMAND_POLICY_REMINDER = (
     "Must call the tool for: time query day; weather query; list; list uuids; seed; locate structure <id>; locate biome <id>. "
     "For command requests, never answer from snapshot or recent results. Natural-language weather/time/status questions "
     "are observations; answer from Observed Minecraft state without tools. The exact command `list` must call "
-    "run_read_only_command and must not be answered from online_players. memory_write args: no current Minecraft username "
-    "unless it is the fact. Explicit remember/save: memory_write must be the first tool call; do not call memory_search "
-    "first unless Remembered facts conflict."
+    "run_read_only_command and must not be answered from online_players."
+)
+
+MEMORY_WRITE_POLICY_REMINDER = (
+    "Memory save reminder: for an explicit remember/save request about a new stable fact, use a tool call only "
+    "in the tool subturn. Do not include assistant-visible prose before that tool call, and do not mention tool "
+    "names or internal policy. Stored player-scoped content and labels must omit the current Minecraft username "
+    "unless the username itself is the fact. Do not search first unless loaded remembered facts conflict."
 )
 
 
@@ -126,7 +132,12 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
                 ),
             }
         )
-    messages.append({"role": "system", "content": COMMAND_POLICY_REMINDER})
+    command_policy = _command_policy_reminder(user_content)
+    if command_policy:
+        messages.append({"role": "system", "content": command_policy})
+    memory_save_policy = _memory_save_policy_reminder(user_content)
+    if memory_save_policy:
+        messages.append({"role": "system", "content": memory_save_policy})
     if not user_content:
         user_content = _companion_tick_prompt(turn)
     messages.append({"role": "user", "content": user_content})
@@ -186,6 +197,68 @@ def _mentions_player_name(user_content: str, player_name: str) -> bool:
 def _mentions_mcp(user_content: str) -> bool:
     normalized = str(user_content or "").lower()
     return "mcp" in normalized or "模型上下文协议" in normalized
+
+
+def _command_policy_reminder(user_content: str) -> str:
+    content = str(user_content or "").strip()
+    if not content:
+        return ""
+    if normalize_read_only_command(content) is not None:
+        return COMMAND_POLICY_REMINDER
+    if not _has_command_request_marker(content):
+        return ""
+    return COMMAND_POLICY_REMINDER if _read_only_command_mentions(content) else ""
+
+
+def _has_command_request_marker(content: str) -> bool:
+    normalized = str(content or "").lower()
+    return any(
+        marker in normalized
+        for marker in (
+            "执行",
+            "运行",
+            "调用",
+            "只读命令",
+            "命令查询",
+            "run",
+            "execute",
+            "call",
+            "use the command",
+            "run command",
+            "execute command",
+            "read-only command",
+        )
+    )
+
+
+def _read_only_command_mentions(content: str) -> bool:
+    tokens = [token.lstrip("/") for token in re.split(r"[^a-z0-9_:.\-/#]+", content.lower()) if token]
+    for index in range(len(tokens)):
+        for size in (1, 2, 3):
+            candidate = " ".join(tokens[index:index + size])
+            if normalize_read_only_command(candidate) is not None:
+                return True
+    return False
+
+
+def _memory_save_policy_reminder(user_content: str) -> str:
+    normalized = str(user_content or "").lower()
+    if not normalized:
+        return ""
+    if any(
+        marker in normalized
+        for marker in (
+            "记住",
+            "记下",
+            "记好",
+            "保存",
+            "remember",
+            "save this",
+            "note that",
+        )
+    ):
+        return MEMORY_WRITE_POLICY_REMINDER
+    return ""
 
 
 def _render_agent_memory(memories: list[dict[str, Any]]) -> str:

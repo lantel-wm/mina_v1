@@ -184,20 +184,95 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Recent verified Minecraft command/action results" in context
     assert "follow-up recall only" in context
     assert "Seed: [98765]" in context
-    assert "Tool selection reminder" in context
-    assert "never answer from snapshot" in context
-    assert "final user message itself is an allowed command text" in context
-    assert "Do not answer exact command text with recent output" in context
-    assert "Exact command strings are commands, not observations" in context
-    assert "The exact command `list` must call run_read_only_command" in context
-    assert "must not be answered from online_players" in context
-    assert "Natural-language weather/time/status questions" in context
-    assert "memory_write args: no current Minecraft username" in context
-    assert "memory_write must be the first tool call" in context
-    assert "do not call memory_search first" in context
+    assert "Tool selection reminder" not in context
+    assert "final user message itself is an allowed command text" not in context
+    assert "The exact command `list` must call run_read_only_command" not in context
+    assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 7400
+    assert len(context) < 7000
+
+
+def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-command",
+        "trigger": "command",
+        "message": "time query day",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Tool selection reminder" in context
+    assert "final user message itself is an allowed command text" in context
+    assert "Do not answer exact command text with recent output" in context
+    assert "The exact command `list` must call run_read_only_command" in context
+
+
+def test_command_policy_reminder_is_dynamic_for_explicit_command_request(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-weather",
+        "trigger": "command",
+        "message": "请执行 weather query，只用只读命令查询天气。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Tool selection reminder" in context
+    assert "weather query" in context
+
+
+def test_command_policy_reminder_skips_command_result_followup(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("req-command", "player-1", "user", "执行 time query day")
+    memory.record_action_event(
+        "req-command",
+        "action_result",
+        {
+            "action_id": "action-1",
+            "name": "run_read_only_command",
+            "status": "completed",
+            "command_success": True,
+            "command_results": [{"command": "time query day", "outputs": ["The time is 0"]}],
+        },
+    )
+    turn = {
+        "request_id": "req-followup",
+        "trigger": "command",
+        "message": "刚才 time query day 的 Minecraft 命令输出是什么？请原样回答完整输出字符串。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Recent verified Minecraft command/action results" in context
+    assert "The time is 0" in context
+    assert "Tool selection reminder" not in context
+
+
+def test_memory_save_policy_reminder_is_dynamic_for_explicit_save(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-memory",
+        "trigger": "command",
+        "message": "请记住：Tester 的基地在樱花林旁边",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Memory save reminder" in context
+    assert "tool call only" in context
+    assert "Do not include assistant-visible prose before that tool call" in context
+    assert "omit the current Minecraft username" in context
+    assert "Tool selection reminder" not in context
 
 
 def test_context_summary_labels_health_points_and_hearts() -> None:

@@ -413,6 +413,7 @@ public final class MinaTestCommands {
 				}
 			}
 		}
+		clearSkyColumnsAroundRequester(level);
 		level.setBlock(SETUP_MARKER, Blocks.GRASS_BLOCK.defaultBlockState(), 3);
 		if (!includeTree) {
 			return;
@@ -424,5 +425,19 @@ public final class MinaTestCommands {
 		level.setBlock(new BlockPos(TREE_X - 1, TREE_Y + 2, TREE_Z), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z + 1), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z - 1), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
+	}
+
+	private static void clearSkyColumn(ServerLevel level, BlockPos pos) {
+		for (int y = pos.getY(); y < level.getMaxY(); y++) {
+			level.setBlock(new BlockPos(pos.getX(), y, pos.getZ()), Blocks.AIR.defaultBlockState(), 3);
+		}
+	}
+
+	private static void clearSkyColumnsAroundRequester(ServerLevel level) {
+		for (int x = -1; x <= 1; x++) {
+			for (int z = -4; z <= -2; z++) {
+				clearSkyColumn(level, new BlockPos(x, TREE_Y, z));
+			}
+		}
 	}
 }
