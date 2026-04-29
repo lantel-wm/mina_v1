@@ -215,6 +215,41 @@ SCENARIO_DATA = [
         "rubric": "Game-mode questions should answer from Fabric player_state.game_mode without command execution or unrelated player status.",
     },
     {
+        "name": "difficulty_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "difficulty-snapshot-live-model",
+                "value": "当前世界难度是什么？只回答英文难度值。",
+                "wait_for": ["peaceful"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["peaceful"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "minecraft:",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Difficulty questions should answer from Fabric world_state.difficulty without command execution or unrelated player status.",
+    },
+    {
         "name": "spawn_distance_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
