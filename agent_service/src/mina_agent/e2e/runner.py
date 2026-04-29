@@ -600,6 +600,7 @@ class E2ERunner:
             not scenario.expected_response_contains
             and not scenario.expected_response_any_contains
             and not scenario.forbidden_response_contains
+            and not scenario.forbidden_response_regexes
         ):
             return
         haystack = self._response_haystack(scenario)
@@ -615,6 +616,9 @@ class E2ERunner:
         for forbidden in scenario.forbidden_response_contains:
             if forbidden in haystack:
                 raise AssertionError(f"{scenario.name}: response trace contained forbidden text {forbidden!r}")
+        for pattern in scenario.forbidden_response_regexes:
+            if re.search(pattern, haystack):
+                raise AssertionError(f"{scenario.name}: response trace matched forbidden regex {pattern!r}")
 
     def _response_haystack(self, scenario: Scenario) -> str:
         parts: list[str] = []
@@ -1401,6 +1405,7 @@ def scenario_listing_payload(suite: str, scenarios: list[Scenario]) -> dict[str,
                 "expected_response_contains": scenario.expected_response_contains,
                 "expected_response_any_contains": scenario.expected_response_any_contains,
                 "forbidden_response_contains": scenario.forbidden_response_contains,
+                "forbidden_response_regexes": scenario.forbidden_response_regexes,
                 "rubric": scenario.rubric,
             }
             for scenario in scenarios

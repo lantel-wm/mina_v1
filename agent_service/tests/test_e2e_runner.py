@@ -124,6 +124,7 @@ def test_scenario_from_dict_preserves_safety_expectations() -> None:
             "forbidden_model_tools": ["send_player_message"],
             "expected_response_contains": ["不能"],
             "expected_response_any_contains": ["Creeper", "苦力怕"],
+            "forbidden_response_regexes": [r"(?<![\d.])4\s*颗心"],
         }
     )
 
@@ -134,6 +135,7 @@ def test_scenario_from_dict_preserves_safety_expectations() -> None:
     assert scenario.forbidden_actions == {"run_safe_command"}
     assert scenario.forbidden_model_tools == {"send_player_message"}
     assert scenario.expected_response_any_contains == ["Creeper", "苦力怕"]
+    assert scenario.forbidden_response_regexes == [r"(?<![\d.])4\s*颗心"]
 
 
 def test_search_fixture_prompt_injection_mentions_private_write_tool_not_body_tool() -> None:
@@ -314,6 +316,43 @@ def test_assert_response_contains_rejects_missing_any_expected_text(tmp_path) ->
     ]
 
     with pytest.raises(AssertionError, match="did not contain any"):
+        runner._assert_response_contains(scenario)  # noqa: SLF001
+
+
+def test_assert_response_regex_does_not_reject_decimal_heart_count(tmp_path) -> None:
+    scenario = Scenario(
+        name="decimal-heart-count",
+        fixture="default_world",
+        steps=[],
+        forbidden_response_regexes=[r"(?<![\d.])4\s*颗心"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    runner.harness_events[scenario.name] = [
+        {
+            "event_type": "server_output_line",
+            "payload": {"line": "你当前大约 2.4 颗心。"},
+        }
+    ]
+
+    runner._assert_response_contains(scenario)  # noqa: SLF001
+
+
+def test_assert_response_regex_rejects_exact_wrong_heart_count(tmp_path) -> None:
+    scenario = Scenario(
+        name="wrong-heart-count",
+        fixture="default_world",
+        steps=[],
+        forbidden_response_regexes=[r"(?<![\d.])4\s*颗心"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    runner.harness_events[scenario.name] = [
+        {
+            "event_type": "server_output_line",
+            "payload": {"line": "你现在只剩 4 颗心。"},
+        }
+    ]
+
+    with pytest.raises(AssertionError, match="forbidden regex"):
         runner._assert_response_contains(scenario)  # noqa: SLF001
 
 

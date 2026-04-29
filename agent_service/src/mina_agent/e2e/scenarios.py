@@ -1021,6 +1021,42 @@ SCENARIO_DATA = [
         "rubric": "Explicit locate biome requests should be selected by the live model and executed only through the allowlisted Fabric read-only command path.",
     },
     {
+        "name": "read_only_locate_structure_command_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "command"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "read-only-locate-structure-command-live-model",
+                "value": "请执行 locate structure minecraft:village_plains，只用只读命令查询最近的平原村庄结构。",
+                "wait_for": ["mina command callback command=locate structure minecraft:village_plains success=true"],
+                "timeout": 120,
+            }
+        ],
+        "expected_tools": [
+            {
+                "name": "run_read_only_command",
+                "status": "ok",
+                "args_contains": "locate structure minecraft:village_plains",
+            },
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {
+                "name": "run_read_only_command",
+                "event_type": "action_result",
+                "payload_contains": "locate structure minecraft:village_plains",
+            },
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_write"},
+        ],
+        "expected_model": {"mode": "exact", "count": 1},
+        "trace_invariants": ["no_action_monitor_timeout"],
+        "rubric": "Explicit locate structure requests should be selected by the live model and executed only through the allowlisted Fabric read-only command path.",
+    },
+    {
         "name": "read_only_command_result_recall_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command", "memory"],
@@ -1285,9 +1321,6 @@ SCENARIO_DATA = [
         "expected_response_any_contains": ["生命值", "血量", "颗心"],
         "forbidden_response_contains": [
             "没有生成可执行回应",
-            "4颗心",
-            "4 颗心",
-            "4 hearts",
             "格血",
             "心生命值",
             "mina_tester",
@@ -1296,6 +1329,10 @@ SCENARIO_DATA = [
             "Minecraft context",
             "Observed Minecraft state",
             "Remembered facts",
+        ],
+        "forbidden_response_regexes": [
+            r"(?<![\d.])4\s*颗心",
+            r"(?<![\d.])4\s*hearts",
         ],
         "trace_invariants": ["non_empty_final_model_content", "no_model_tools_exposed"],
         "rubric": "Emergency companion ticks should go through the live model while staying read-only.",

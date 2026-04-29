@@ -55,6 +55,7 @@ class Scenario:
     expected_response_contains: list[str] = field(default_factory=list)
     expected_response_any_contains: list[str] = field(default_factory=list)
     forbidden_response_contains: list[str] = field(default_factory=list)
+    forbidden_response_regexes: list[str] = field(default_factory=list)
     trace_invariants: list[str] = field(default_factory=list)
     world_asserts: list[str] = field(default_factory=list)
     rubric: str = ""
@@ -122,6 +123,7 @@ def scenario_from_dict(payload: dict[str, Any]) -> Scenario:
         expected_response_contains=[str(item) for item in payload.get("expected_response_contains", [])],
         expected_response_any_contains=[str(item) for item in payload.get("expected_response_any_contains", [])],
         forbidden_response_contains=[str(item) for item in payload.get("forbidden_response_contains", [])],
+        forbidden_response_regexes=[str(item) for item in payload.get("forbidden_response_regexes", [])],
         trace_invariants=[str(item) for item in payload.get("trace_invariants", [])],
         world_asserts=[str(item) for item in payload.get("world_asserts", [])],
         rubric=str(payload.get("rubric") or ""),

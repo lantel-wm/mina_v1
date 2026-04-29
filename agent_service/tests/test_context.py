@@ -251,6 +251,23 @@ def test_command_policy_reminder_is_dynamic_for_locate_biome_request(tmp_path) -
     assert "locate biome minecraft:plains" in context
 
 
+def test_command_policy_reminder_is_dynamic_for_locate_structure_request(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-locate-structure",
+        "trigger": "command",
+        "message": "请执行 locate structure minecraft:village_plains，只用只读命令查询最近的平原村庄结构。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Tool selection reminder" in context
+    assert "locate structure <id>" in context
+    assert "locate structure minecraft:village_plains" in context
+
+
 def test_command_policy_reminder_skips_command_result_followup(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("req-command", "player-1", "user", "执行 time query day")
