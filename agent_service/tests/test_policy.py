@@ -35,6 +35,17 @@ def test_policy_repairs_memory_claim_until_memory_write_succeeds() -> None:
     assert "樱花林" in second.content
 
 
+def test_policy_normalizes_successful_memory_write_ack() -> None:
+    policy = ResponsePolicyRuntime()
+    policy.note_successful_tool_result("memory_write", json.dumps({"ok": True}))
+
+    review = policy.review_final_content("已记好了！你的基地在樱花林旁边。", can_repair=True)
+
+    assert not review.needs_repair
+    assert review.content.startswith("已记住。")
+    assert "樱花林" in review.content
+
+
 def test_is_tool_error_reads_standard_tool_result_envelope() -> None:
     assert is_tool_error(json.dumps({"ok": False, "error": "missing query"}))
     assert not is_tool_error(json.dumps({"ok": True}))

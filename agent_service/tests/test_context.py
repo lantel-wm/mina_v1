@@ -44,6 +44,18 @@ def test_target_summary_is_observation_only(tmp_path) -> None:
 def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_agent_memory("player", "player-1", "base", "玩家基地在樱花林旁边", importance=4)
+    memory.add_conversation("req-command", "player-1", "user", "执行 seed")
+    memory.record_action_event(
+        "req-command",
+        "action_result",
+        {
+            "action_id": "action-1",
+            "name": "run_read_only_command",
+            "status": "completed",
+            "command_success": True,
+            "command_results": [{"command": "seed", "outputs": ["Seed: [98765]"]}],
+        },
+    )
     turn = {
         "request_id": "req-1",
         "trigger": "command",
@@ -64,6 +76,8 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "nearby_hostiles" in context
     assert "Agent memory loaded for this turn" in context
     assert "玩家基地在樱花林旁边" in context
+    assert "Recent verified Minecraft command/action results" in context
+    assert "Seed: [98765]" in context
     assert "body_state" not in context
     assert len(context) < 6000
 

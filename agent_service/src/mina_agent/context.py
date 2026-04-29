@@ -34,6 +34,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     user_content = str(turn.get("message") or "").strip()
     recent = memory.recent_conversation(player_id, limit=12)
     agent_memory = memory.agent_context(player_id, world_id=_world_id(snapshot), limit=10, max_chars=1600)
+    recent_action_results = memory.recent_action_results_for_player(player_id, limit=4)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     if agent_memory:
@@ -44,6 +45,14 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
             {
                 "role": "system",
                 "content": "Recent player messages for continuity only:\n" + "\n".join(recent_player_messages),
+            }
+        )
+    action_result_context = _render_recent_action_results(recent_action_results)
+    if action_result_context:
+        messages.append(
+            {
+                "role": "system",
+                "content": "Recent verified Minecraft command/action results:\n" + action_result_context,
             }
         )
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
@@ -76,6 +85,64 @@ def _recent_player_messages(recent: list[dict[str, Any]], limit: int = 6) -> lis
         if content:
             messages.append("user: " + content[:260])
     return messages[-limit:]
+
+
+def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for row in action_results[-4:]:
+        payload = _json_object(row.get("payload_json"))
+        action_name = str(row.get("action_name") or payload.get("name") or payload.get("action_name") or "action")
+        status = str(payload.get("status") or "unknown")
+        command_results = payload.get("command_results")
+        output_parts: list[str] = []
+        if isinstance(command_results, list):
+            for command_result in command_results[:3]:
+                if not isinstance(command_result, dict):
+                    continue
+                command = str(command_result.get("command") or "").strip()
+                outputs = command_result.get("outputs")
+                rendered_outputs = _string_items(outputs, limit=3)
+                if command or rendered_outputs:
+                    output_parts.append(
+                        "command="
+                        + (command or "<unknown>")
+                        + " output="
+                        + " | ".join(rendered_outputs)
+                    )
+        error = str(payload.get("error") or "").strip()
+        if error:
+            output_parts.append("error=" + error)
+        if not output_parts:
+            continue
+        summary = "; ".join(output_parts)
+        lines.append(
+            f"- request={row.get('request_id')} action={action_name} status={status} "
+            f"success={payload.get('command_success')} {summary[:700]}"
+        )
+    return "\n".join(lines)
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    try:
+        payload = json.loads(str(value or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _string_items(value: Any, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = " ".join(str(item).split())
+        if text:
+            items.append(text[:220])
+        if len(items) >= limit:
+            break
+    return items
 
 
 def _world_id(snapshot: dict[str, Any]) -> str | None:

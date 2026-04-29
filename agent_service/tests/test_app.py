@@ -59,6 +59,66 @@ def test_app_exposes_tool_and_model_call_journals(tmp_path, monkeypatch) -> None
     assert "run_read_only_command" in recorded_model_calls[0]["tools_json"]
 
 
+def test_action_results_are_loaded_into_next_turn_context(tmp_path, monkeypatch) -> None:
+    fake = _FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-read-only",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "time query day"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "刚才的查询结果是 The time is 1200。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    monkeypatch.setattr(app_module, "DeepSeekClient", lambda settings: fake)
+    app = app_module.create_app(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+    turn = _route(app, "/v1/turn")
+    action_results = _route(app, "/v1/action-results")
+
+    first_response = asyncio.run(turn(_turn("查询时间", "req-time")))
+    asyncio.run(
+        action_results(
+            {
+                "request_id": "req-time",
+                "action_results": [
+                    {
+                        "action_id": first_response["actions"][0]["id"],
+                        "name": "run_read_only_command",
+                        "status": "completed",
+                        "command_success": True,
+                        "command_results": [{"command": "time query day", "outputs": ["The time is 1200"]}],
+                    }
+                ],
+            }
+        )
+    )
+    second_response = asyncio.run(turn(_turn("刚才查询结果是什么？", "req-followup")))
+    second_context = "\n".join(message["content"] for message in fake.calls[1]["messages"])
+
+    assert "The time is 1200" in second_response["messages"][0]["content"]
+    assert "Recent verified Minecraft command/action results" in second_context
+    assert "The time is 1200" in second_context
+
+
 def test_app_trace_contains_model_tool_and_action_sections_without_tasks(tmp_path, monkeypatch) -> None:
     app = _app_with_read_only_model(tmp_path, monkeypatch)
     turn = _route(app, "/v1/turn")
@@ -126,11 +186,13 @@ def _app_with_read_only_model(tmp_path, monkeypatch, command: str = "time query 
 class _FakeDeepSeek:
     def __init__(self, responses: list[DeepSeekResponse]) -> None:
         self.responses = responses
+        self.calls: list[dict] = []
 
     def configured(self) -> bool:
         return True
 
     def chat(self, messages, tools=None):  # noqa: ANN001, ANN201
+        self.calls.append({"messages": messages, "tools": tools})
         if not self.responses:
             raise AssertionError("unexpected extra model call")
         return self.responses.pop(0)

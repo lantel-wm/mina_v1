@@ -379,6 +379,25 @@ class MemoryStore:
                 ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
+    def recent_action_results_for_player(self, player_id: str, limit: int = 6) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                select ae.request_id, ae.action_id, ae.action_name, ae.event_type, ae.payload_json, ae.created_at
+                from action_events ae
+                where ae.event_type = 'action_result'
+                  and exists (
+                    select 1
+                    from conversations c
+                    where c.request_id = ae.request_id and c.player_id = ?
+                  )
+                order by ae.id desc
+                limit ?
+                """,
+                (player_id, limit),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     def recent_conversation(self, player_id: str, limit: int = 12) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -483,7 +502,22 @@ class MemoryStore:
                 """,
                 (player_id, pattern, limit),
             ).fetchall()
-        merged = [dict(row) for row in fts_rows + agent_memories + conversations + events]
+            action_events = conn.execute(
+                """
+                select 'action_event' as kind, ae.event_type as label, ae.payload_json as content, ae.created_at
+                from action_events ae
+                where ae.payload_json like ?
+                  and exists (
+                    select 1
+                    from conversations c
+                    where c.request_id = ae.request_id and c.player_id = ?
+                  )
+                order by ae.id desc
+                limit ?
+                """,
+                (pattern, player_id, limit),
+            ).fetchall()
+        merged = [dict(row) for row in fts_rows + agent_memories + conversations + events + action_events]
         return merged[:limit]
 
 

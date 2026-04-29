@@ -37,8 +37,20 @@ def test_agent_context_loads_scoped_memory_by_importance(tmp_path) -> None:
 def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
 
+    memory.add_conversation("req-1", "player-1", "user", "查询种子")
     memory.record_tool_call("req-1", "run_read_only_command", {"command": "seed"}, {"content": "{}"}, "ok")
     memory.record_action_event("req-1", "action_scheduled", {"id": "action-1", "name": "run_read_only_command"})
+    memory.record_action_event(
+        "req-1",
+        "action_result",
+        {
+            "action_id": "action-1",
+            "name": "run_read_only_command",
+            "status": "completed",
+            "command_success": True,
+            "command_results": [{"command": "seed", "outputs": ["Seed: [12345]"]}],
+        },
+    )
     memory.record_model_call(
         request_id="req-2",
         subturn=1,
@@ -53,6 +65,11 @@ def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:
 
     assert memory.recent_tool_calls("req-1")[0]["tool_name"] == "run_read_only_command"
     assert memory.recent_action_events("req-1")[0]["action_name"] == "run_read_only_command"
+    action_results = memory.recent_action_results_for_player("player-1")
+    assert len(action_results) == 1
+    assert "Seed: [12345]" in action_results[0]["payload_json"]
+    search_results = memory.search("player-1", "12345", limit=5)
+    assert any(result["kind"] == "action_event" for result in search_results)
     model = memory.recent_model_calls("req-2")[0]
     assert model["model"] == "deepseek-v4-flash"
     assert "web_search" in model["tools_json"]

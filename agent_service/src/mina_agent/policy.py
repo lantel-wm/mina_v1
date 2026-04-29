@@ -65,6 +65,9 @@ class ResponsePolicyRuntime:
                     ),
                 )
 
+        if self.memory_write_seen:
+            return FinalContentReview(content=normalize_memory_write_ack(cleaned))
+
         return FinalContentReview(content=cleaned)
 
 
@@ -95,6 +98,9 @@ def claims_memory_saved(content: str) -> bool:
             "已记住",
             "已经记住",
             "我会记住",
+            "记好了",
+            "已记好",
+            "已经记好",
             "记下了",
             "已记下",
             "保存好了",
@@ -106,6 +112,12 @@ def claims_memory_saved(content: str) -> bool:
             "saved this",
         )
     )
+
+
+def normalize_memory_write_ack(content: str) -> str:
+    if _CANONICAL_MEMORY_ACK_RE.search(content):
+        return content
+    return f"已记住。{content}"
 
 
 def is_tool_error(content: str) -> bool:
@@ -121,3 +133,4 @@ _WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(^|[\s:：/])"
     r"(setblock|fill|fillbiome|tp|teleport|gamemode|give|clear|summon|kill|execute|gamerule|op|deop|ban|stop)\b"
 )
+_CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")
