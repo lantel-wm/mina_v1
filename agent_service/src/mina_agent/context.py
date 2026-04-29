@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from .memory import MemoryStore
+from .policy import UNSAFE_WRITE_REFUSAL
 
 
 SYSTEM_PROMPT = """Identity:
@@ -82,9 +83,15 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     command_execution_hint = _command_execution_request_hint(user_content)
     if command_execution_hint:
         messages.append({"role": "system", "content": command_execution_hint})
+    write_refusal_hint = _write_command_refusal_hint(user_content)
+    if write_refusal_hint:
+        messages.append({"role": "system", "content": write_refusal_hint})
     snapshot_observation_hint = _snapshot_observation_request_hint(user_content, turn)
     if snapshot_observation_hint:
         messages.append({"role": "system", "content": snapshot_observation_hint})
+    memory_recall_hint = _memory_recall_request_hint(user_content)
+    if memory_recall_hint:
+        messages.append({"role": "system", "content": memory_recall_hint})
     memory_write_hint = _memory_write_request_hint(user_content)
     if memory_write_hint:
         messages.append({"role": "system", "content": memory_write_hint})
@@ -251,6 +258,51 @@ def _command_execution_request_hint(user_content: str) -> str:
     )
 
 
+def _write_command_refusal_hint(user_content: str) -> str:
+    normalized = " ".join(str(user_content or "").lower().replace("/", " / ").split())
+    if not normalized:
+        return ""
+    write_markers = (
+        " setblock",
+        " fill",
+        " fillbiome",
+        " clone",
+        " place ",
+        " tp",
+        " teleport",
+        " gamemode",
+        " gamerule",
+        " give",
+        " summon",
+        " kill",
+        " clear",
+        " execute",
+        " op",
+        " deop",
+        " ban",
+        " ban-ip",
+        " whitelist",
+        " stop",
+        " save-all",
+        " save-off",
+        " save-on",
+        "删掉",
+        "删除",
+        "放置",
+        "传送",
+        "改成",
+    )
+    padded = " " + normalized + " "
+    if not any(marker in padded or marker in normalized for marker in write_markers):
+        return ""
+    return (
+        "Current user message asks for a Minecraft write-capable, low-level, or banned command/action. "
+        "Refuse directly; do not call tools. Do not repeat the requested command name, coordinates, selector, "
+        "syntax, command whitelist, or workaround. For Chinese, reply exactly: "
+        f"{UNSAFE_WRITE_REFUSAL}"
+    )
+
+
 def _snapshot_observation_request_hint(user_content: str, turn: dict[str, Any]) -> str:
     normalized = " ".join(str(user_content or "").lower().split())
     if not normalized:
@@ -312,6 +364,46 @@ def _snapshot_observation_request_hint(user_content: str, turn: dict[str, Any]) 
         "Answer directly from Current Minecraft context. Do not call run_read_only_command for time, weather, "
         "coordinates, health, food, nearby entities, nearby blocks, or safety questions unless the player explicitly "
         "asked to execute a command."
+    )
+
+
+def _memory_recall_request_hint(user_content: str) -> str:
+    if is_explicit_memory_write_request(user_content):
+        return ""
+    normalized = " ".join(str(user_content or "").lower().split())
+    if not normalized:
+        return ""
+    cjk_recall_markers = (
+        "还记得",
+        "记得",
+        "我之前",
+        "之前说",
+        "我的基地在哪里",
+        "我基地在哪里",
+        "基地在哪里",
+        "基地在哪",
+        "我的家在哪里",
+        "我家在哪里",
+        "家在哪里",
+        "家在哪",
+    )
+    english_recall_markers = (
+        "do you remember",
+        "remember where",
+        "where is my base",
+        "where's my base",
+        "where is my home",
+        "where's my home",
+        "recall",
+    )
+    cjk_match = any(marker in normalized for marker in cjk_recall_markers)
+    english_match = any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_recall_markers)
+    if not cjk_match and not english_match:
+        return ""
+    return (
+        "Current user message asks about remembered or stored context. Answer only the relevant remembered fact. "
+        "If no relevant memory is loaded, say you do not have it saved. Do not add current coordinates, safety, "
+        "biome, weather, time, inventory, nearby entities, or command/search offers unless the player explicitly asks."
     )
 
 

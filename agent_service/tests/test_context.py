@@ -269,6 +269,8 @@ def test_build_messages_does_not_mark_memory_recall_as_write_request(tmp_path) -
     content = "\n".join(message["content"] for message in messages)
 
     assert "explicitly asks you to save stable memory" not in content
+    assert "remembered or stored context" in content
+    assert "Do not add current coordinates" in content
 
 
 def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) -> None:
@@ -289,8 +291,26 @@ def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) 
     assert "Recent player messages for continuity only" in content
     assert "我家在云杉林旁边" in content
     assert "我记得你的家" not in content
-    assert "This user message is a memory recall request" not in content
+    assert "remembered or stored context" in content
     assert "Recent conversation memory is intentionally omitted" not in content
+
+
+def test_build_messages_marks_write_command_refusal_requests(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-write-command",
+        "trigger": "command",
+        "message": "请执行 setblock 2 80 0 minecraft:air，把旁边的原木删掉。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "write-capable, low-level, or banned command/action" in content
+    assert "Do not repeat the requested command name" in content
+    assert "不能执行或提供写入世界的命令" in content
 
 
 def test_build_messages_omits_recent_task_messages_for_generic_smalltalk(tmp_path) -> None:

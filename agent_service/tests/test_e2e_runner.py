@@ -46,6 +46,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
             "trace_invariants": [
                 "no_action_monitor_timeout",
                 "no_model_requested_read_only_command",
+                "no_model_write_command_advice",
                 "non_empty_final_model_content",
                 "single_read_only_command_action",
             ],
@@ -327,6 +328,31 @@ def test_trace_invariant_rejects_model_requested_read_only_command(tmp_path, mon
     )
 
     with pytest.raises(AssertionError, match="model requested run_read_only_command"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_model_write_command_advice(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="model-write-advice",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["no_model_write_command_advice"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-1",
+                "status": "ok",
+                "finish_reason": "stop",
+                "response_json": json.dumps({"content_preview": "你可以运行 setblock 2 80 0 minecraft:air"}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="write-command advice"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from mina_agent.config import load_dotenv_defaults
+from mina_agent.policy import contains_write_command_advice
 
 from .manifest import ActionExpectation, Scenario, ToolExpectation, load_scenarios_from_file
 from .scenarios import SCENARIOS, SUITES
@@ -125,6 +126,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
     allowed_trace_invariants = {
         "no_action_monitor_timeout",
         "no_model_requested_read_only_command",
+        "no_model_write_command_advice",
         "non_empty_final_model_content",
         "plain_chat_response",
         "single_read_only_command_action",
@@ -632,6 +634,19 @@ class E2ERunner:
                 if offenders:
                     raise AssertionError(
                         f"{scenario.name}: model requested run_read_only_command despite prompt invariant: {offenders!r}"
+                    )
+            elif invariant == "no_model_write_command_advice":
+                calls = self._combined("model_calls", scenario.request_ids())
+                offenders = [
+                    {"request_id": call.get("request_id"), "content": _model_content_preview(call)}
+                    for call in calls
+                    if call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and contains_write_command_advice(_model_content_preview(call))
+                ]
+                if offenders:
+                    raise AssertionError(
+                        f"{scenario.name}: model produced write-command advice before policy repair: {offenders!r}"
                     )
             elif invariant == "non_empty_final_model_content":
                 calls = self._combined("model_calls", scenario.request_ids())
