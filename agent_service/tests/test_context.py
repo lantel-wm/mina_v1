@@ -18,6 +18,8 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Do not answer command requests from snapshot or recent results" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
+    assert "Do not use the Minecraft username as greeting/filler" in SYSTEM_PROMPT
+    assert "For player-scoped memories" in SYSTEM_PROMPT
     assert "MCP" not in SYSTEM_PROMPT
     assert "companion tick" not in SYSTEM_PROMPT.lower()
     assert "separate Minecraft character" in SYSTEM_PROMPT

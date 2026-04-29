@@ -360,6 +360,30 @@ def test_trace_invariant_rejects_model_write_command_advice(tmp_path, monkeypatc
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
+def test_trace_invariant_rejects_test_username_in_memory_write(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="test-username-memory",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["no_test_username_in_memory_write"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-1",
+                "tool_name": "memory_write",
+                "args_json": json.dumps({"content": "mina_tester 的基地在樱花林旁边"}, ensure_ascii=False),
+            }
+        ] if key == "tool_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="memory_write args contained test username"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
 def test_trace_invariant_rejects_mcp_tool_exposure(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="mcp-exposed",

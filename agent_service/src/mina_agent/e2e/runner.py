@@ -129,6 +129,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "no_model_tools_exposed",
         "no_model_requested_read_only_command",
         "no_model_write_command_advice",
+        "no_test_username_in_memory_write",
         "non_empty_final_model_content",
         "plain_chat_response",
         "single_read_only_command_action",
@@ -667,6 +668,18 @@ class E2ERunner:
                 if offenders:
                     raise AssertionError(
                         f"{scenario.name}: model produced write-command advice before policy repair: {offenders!r}"
+                    )
+            elif invariant == "no_test_username_in_memory_write":
+                calls = self._combined("tool_calls", scenario.request_ids())
+                offenders = [
+                    {"request_id": call.get("request_id"), "args": call.get("args_json")}
+                    for call in calls
+                    if call.get("tool_name") == "memory_write"
+                    and "mina_tester" in str(call.get("args_json") or "")
+                ]
+                if offenders:
+                    raise AssertionError(
+                        f"{scenario.name}: memory_write args contained test username: {offenders!r}"
                     )
             elif invariant == "non_empty_final_model_content":
                 calls = self._combined("model_calls", scenario.request_ids())
