@@ -144,6 +144,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "no_model_tools_exposed",
         "no_model_requested_read_only_command",
         "no_model_write_command_advice",
+        "no_memory_search_before_memory_write",
         "no_test_username_in_memory_write",
         "non_empty_final_model_content",
         "plain_chat_response",
@@ -720,6 +721,23 @@ class E2ERunner:
                 ]
                 if len(calls) > 1:
                     raise AssertionError(f"{scenario.name}: duplicate memory_write tool calls found: {calls!r}")
+            elif invariant == "no_memory_search_before_memory_write":
+                calls = self._combined("tool_calls", scenario.request_ids())
+                memory_write_request_ids = {
+                    str(call.get("request_id") or "")
+                    for call in calls
+                    if call.get("tool_name") == "memory_write"
+                }
+                offenders = [
+                    {"request_id": call.get("request_id"), "args": call.get("args_json")}
+                    for call in calls
+                    if call.get("tool_name") == "memory_search"
+                    and str(call.get("request_id") or "") in memory_write_request_ids
+                ]
+                if offenders:
+                    raise AssertionError(
+                        f"{scenario.name}: memory_search ran before explicit memory_write request: {offenders!r}"
+                    )
             elif invariant == "non_empty_final_model_content":
                 calls = self._combined("model_calls", scenario.request_ids())
                 final_calls = [

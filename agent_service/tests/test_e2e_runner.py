@@ -408,6 +408,27 @@ def test_trace_invariant_rejects_duplicate_memory_write_tool_calls(tmp_path, mon
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
+def test_trace_invariant_rejects_memory_search_before_memory_write(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="memory-search-before-write",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["no_memory_search_before_memory_write"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {"request_id": "req-save", "tool_name": "memory_search", "args_json": "{}"},
+            {"request_id": "req-save", "tool_name": "memory_write", "args_json": "{}"},
+        ] if key == "tool_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="memory_search ran before explicit memory_write request"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
 def test_trace_invariant_rejects_mcp_tool_exposure(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="mcp-exposed",

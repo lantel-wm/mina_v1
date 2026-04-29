@@ -94,6 +94,7 @@ def test_model_facing_tool_specs_are_text_query_and_read_only_only() -> None:
     assert all("body" not in name for name in names)
     assert "run_safe_command" not in names
     assert "agent memory" not in descriptions
+    assert "not as a preflight duplicate check" in descriptions
     command_spec = next(spec for spec in tool_specs() if spec["function"]["name"] == "run_read_only_command")
     assert "exactly or mainly an allowed command form" in command_spec["function"]["description"]
 

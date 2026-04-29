@@ -107,7 +107,11 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "memory_search",
-                "description": "Search remembered stable player, world, and global facts that may help this turn.",
+                "description": (
+                    "Search remembered stable player, world, and global facts that may help this turn. "
+                    "Use for recall or older/specific stored context, not as a preflight duplicate check before "
+                    "memory_write when the player explicitly asks to remember a new stable fact."
+                ),
                 "parameters": _schema(
                     {
                         "query": {"type": "string"},

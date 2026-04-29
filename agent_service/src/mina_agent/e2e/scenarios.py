@@ -404,7 +404,7 @@ SCENARIO_DATA = [
             {"name": "run_read_only_command"},
         ],
         "forbidden_actions": {"run_read_only_command"},
-        "expected_model": {"mode": "at_least", "min_count": 2},
+        "expected_model": {"mode": "exact", "count": 3},
         "expected_response_contains": ["记住", "基地", "樱花"],
         "forbidden_response_contains": [
             "当前所在",
@@ -427,7 +427,11 @@ SCENARIO_DATA = [
             "Remembered facts",
             "mina_tester",
         ],
-        "trace_invariants": ["no_test_username_in_memory_write", "single_memory_write_tool_call"],
+        "trace_invariants": [
+            "no_test_username_in_memory_write",
+            "single_memory_write_tool_call",
+            "no_memory_search_before_memory_write",
+        ],
         "rubric": "Memory should serve the agent: the live model writes stable context, then answers natural recall from loaded remembered facts or a model-selected memory_search.",
     },
     {

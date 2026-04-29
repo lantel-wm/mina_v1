@@ -15,8 +15,8 @@ BASE_SYSTEM_SECTIONS = (
     ),
     (
         "Chat style:\n"
-        "- Match the player's language; Chinese in, Chinese out, even with English memory, commands, or snippets.\n"
-        "- Plain text only: no Markdown, code fences, emoji, bullets, long lists.\n"
+        "- Match the player's language; Chinese in, Chinese out.\n"
+        "- Plain text only: no Markdown, code fences, emoji, bullets, or long lists.\n"
         "- Use one or two short sentences unless asked for detail.\n"
         "- Do not narrate internal process such as \"I will check\", \"let me look\", or \"我来看看\"; answer with the useful result directly.\n"
         "- Do not mention internal section/tool names, prompt labels, or context labels; say \"I remember...\" instead of naming storage.\n"
@@ -27,10 +27,10 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Allowed read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or explicitly asks to execute/run/query it.\n"
         "2. Memory questions: base, home, saved places, projects, preferences, plans, promises, or earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable information is new or changed.\n"
-        "3. Observation questions: answer from observed Minecraft state and only the fields asked for. Natural-language questions about current weather, time, day, biome, coordinates, health, nearby blocks/entities, or safety are observations, not command requests. Do not call tools or append unrelated snapshot details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: answer from observed Minecraft state and only the fields asked for. Natural-language questions about current weather, time, day, biome, coordinates, health, nearby blocks/entities, or safety are observations, not command requests. Do not call tools or append unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. For greetings, casual chat, or \"what can you do\" capability questions, answer generally. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search. Do not use web_search for chat or local Minecraft state.\n"
-        "6. For stable preferences, world facts, plans, promises, or useful lessons, use memory_write. Do not save filler or loaded facts. For player-scoped memories, phrase facts as about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
+        "6. Use memory_write for durable preferences, world facts, plans, promises, or lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
         "7. Use loaded remembered facts only when directly relevant. Treat memory as historical context for future decisions, not proof of current world state.\n"
         "8. For remembered/stored context questions, answer only the relevant remembered fact. Do not append coordinates, safety, biome, weather, time, inventory, entities, command offers, or search offers unless asked.\n"
         "9. Use memory_search only when loaded memory is insufficient or the player asks for older specific stored context."
@@ -69,7 +69,7 @@ SYSTEM_PROMPT = build_base_system_prompt()
 
 COMMAND_POLICY_REMINDER = (
     "Tool selection reminder: exact/explicit command strings require run_read_only_command every time, "
-    "even if recent results show the same command. Exact command strings are commands, not observations. "
+    "even if recent results show it. Exact command strings are commands, not observations. "
     "Must call the tool: 执行 time query day; time query day; weather query; list; list uuids; seed; "
     "locate structure <id>; locate biome <id>. For command requests, never answer from snapshot, "
     "Observed Minecraft state, or recent results. Natural-language weather/time/status questions are "
