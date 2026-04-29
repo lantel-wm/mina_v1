@@ -412,17 +412,11 @@ def test_model_private_tool_call_is_recorded_as_tool_error_not_action(tmp_path) 
     assert calls[0]["status"] == "error"
 
 
-def test_write_command_advice_is_repaired_before_chat_response(tmp_path) -> None:
+def test_write_command_advice_is_replaced_before_chat_response(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
                 message={"role": "assistant", "content": "我不能执行，但你可以自己运行 /setblock 2 80 0 minecraft:air。"},
-                finish_reason="stop",
-                usage={},
-                raw={},
-            ),
-            DeepSeekResponse(
-                message={"role": "assistant", "content": "抱歉，我不能执行或提供写入世界的命令；我可以帮你查询附近方块状态。"},
                 finish_reason="stop",
                 usage={},
                 raw={},
@@ -435,7 +429,7 @@ def test_write_command_advice_is_repaired_before_chat_response(tmp_path) -> None
 
     assert "/setblock" not in response["messages"][0]["content"]
     assert "不能执行" in response["messages"][0]["content"]
-    assert len(model.calls) == 2
+    assert len(model.calls) == 1
 
 
 def test_companion_low_health_goes_through_model(tmp_path) -> None:
@@ -458,4 +452,54 @@ def test_companion_low_health_goes_through_model(tmp_path) -> None:
     response = harness.run_turn(turn)
 
     assert "血量很低" in response["messages"][0]["content"]
+    assert len(model.calls) == 1
+
+
+def test_companion_empty_model_low_health_uses_safety_fallback(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": ""},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+    snapshot = _snapshot()
+    snapshot["player_state"]["health"] = 4
+    snapshot["nearby_entities"] = []
+    turn = _turn("", "req-companion-empty-alert", snapshot)
+    turn["trigger"] = "companion_tick"
+
+    response = harness.run_turn(turn)
+
+    assert "生命值偏低" in response["messages"][0]["content"]
+    assert response["debug"]["empty_companion_safety_fallback"] is True
+    assert len(model.calls) == 1
+
+
+def test_companion_empty_model_without_alert_is_silent(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": ""},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+    snapshot = _snapshot()
+    snapshot["player_state"]["health"] = 20
+    snapshot["nearby_entities"] = []
+    turn = _turn("", "req-companion-empty-noop", snapshot)
+    turn["trigger"] = "companion_tick"
+
+    response = harness.run_turn(turn)
+
+    assert response["messages"] == []
+    assert response["debug"]["empty_companion_noop"] is True
     assert len(model.calls) == 1

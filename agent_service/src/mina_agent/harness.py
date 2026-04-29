@@ -119,6 +119,28 @@ class AgentHarness:
                             actions=state.actions,
                             debug={"usage": state.usage, "tool_subturns": subturn},
                         ).to_dict()
+                    companion_empty = _companion_empty_message(turn)
+                    if companion_empty is not None:
+                        if companion_empty:
+                            self.memory.add_conversation(request_id, player_id, "assistant", companion_empty)
+                            self._debug(
+                                "turn final request_id=%s messages=1 actions=0 content=empty_companion_safety_fallback",
+                                request_id,
+                            )
+                            return TurnResponse(
+                                messages=[{"target": "requester", "content": companion_empty}],
+                                debug={
+                                    "usage": state.usage,
+                                    "tool_subturns": subturn,
+                                    "empty_companion_safety_fallback": True,
+                                },
+                            ).to_dict()
+                        self._debug("turn final request_id=%s messages=0 actions=0 content=empty_companion_noop", request_id)
+                        return TurnResponse(
+                            messages=[],
+                            debug={"usage": state.usage, "tool_subturns": subturn, "empty_companion_noop": True},
+                        ).to_dict()
+
                     content = "我没有生成可执行回应，请换个说法或补充目标。"
                     self.memory.add_conversation(request_id, player_id, "assistant", content)
                     self._debug("turn final request_id=%s messages=1 actions=0 content=empty_model_fallback", request_id)
@@ -218,6 +240,40 @@ def _parse_args(raw: Any) -> dict[str, Any]:
         return parsed if isinstance(parsed, dict) else {}
     except json.JSONDecodeError:
         return {}
+
+
+def _companion_empty_message(turn: dict[str, Any]) -> str | None:
+    if str(turn.get("trigger") or "") != "companion_tick":
+        return None
+    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
+    player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    health = _float_value(player_state.get("health"))
+    max_health = _float_value(player_state.get("max_health")) or 20.0
+    if health is not None and health <= max(6.0, max_health * 0.5):
+        return f"你的生命值偏低（{_format_number(health)}/{_format_number(max_health)}），先注意安全并尽快恢复。"
+    nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    for entity in nearby_entities:
+        if not isinstance(entity, dict) or entity.get("category") != "hostile":
+            continue
+        entity_type = str(entity.get("type") or "敌对生物")
+        distance = _float_value(entity.get("distance"))
+        if distance is not None:
+            return f"附近有 {entity_type}，距离约 {_format_number(distance)} 格，注意安全。"
+        return f"附近有 {entity_type}，注意安全。"
+    return ""
+
+
+def _float_value(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_number(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
 def _log_preview(value: str, limit: int) -> str:

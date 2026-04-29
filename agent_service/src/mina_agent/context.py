@@ -60,7 +60,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     if target_summary:
         messages.append({"role": "system", "content": target_summary})
     if not user_content:
-        user_content = "这是一次 companion tick。如果没有重要、及时的理由要提醒玩家，请回复空字符串；如果需要提醒，请使用玩家最近使用的语言。"
+        user_content = _companion_tick_prompt(turn)
     messages.append({"role": "user", "content": user_content})
     return messages
 
@@ -187,6 +187,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         "permissions": permissions,
         "player_state": {
             "health": player_state.get("health"),
+            "max_health": player_state.get("max_health"),
             "food": player_state.get("food"),
             "dimension": player_state.get("dimension"),
             "x": player_state.get("x"),
@@ -197,6 +198,49 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         "nearby_hostiles": hostile,
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _companion_tick_prompt(turn: dict[str, Any]) -> str:
+    reason = _companion_tick_alert_reason(turn)
+    if reason:
+        return (
+            "这是一次 companion tick。当前 Minecraft context 已显示及时提醒理由："
+            + reason
+            + "。请用玩家最近使用的语言简短提醒玩家，不要调用工具。"
+        )
+    return "这是一次 companion tick。如果没有重要、及时的理由要提醒玩家，请回复空字符串；如果需要提醒，请使用玩家最近使用的语言。"
+
+
+def _companion_tick_alert_reason(turn: dict[str, Any]) -> str:
+    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
+    player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    health = _float_value(player_state.get("health"))
+    max_health = _float_value(player_state.get("max_health")) or 20.0
+    if health is not None and health <= max(6.0, max_health * 0.5):
+        return f"玩家生命值较低（{_format_number(health)}/{_format_number(max_health)}）"
+    nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    hostiles = [entity for entity in nearby_entities if isinstance(entity, dict) and entity.get("category") == "hostile"]
+    if hostiles:
+        nearest = hostiles[0]
+        entity_type = str(nearest.get("type") or "hostile entity")
+        distance = _float_value(nearest.get("distance"))
+        if distance is not None:
+            return f"附近有敌对生物 {entity_type}，距离约 {_format_number(distance)} 格"
+        return f"附近有敌对生物 {entity_type}"
+    return ""
+
+
+def _float_value(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_number(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
 def _flatten_blocks(value: Any) -> list[dict[str, Any]]:

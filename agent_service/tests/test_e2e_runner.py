@@ -20,6 +20,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
 
     assert "player_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
+    assert "read_only_command_result_recall_live_model" in names
     assert "web_search_fixture_filters_injection_live_model" in names
     assert "write_command_refused_live_model" in names
     assert PRIVATE_MODEL_TOOLS == ["send_player_message", "send_global_message", "run_safe_command"]
@@ -36,7 +37,11 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
             "name": "sample",
             "fixture": "default_world",
             "steps": [{"kind": "request", "request_id": "req-sample", "value": "hi"}],
-            "trace_invariants": ["no_action_monitor_timeout"],
+            "trace_invariants": [
+                "no_action_monitor_timeout",
+                "non_empty_final_model_content",
+                "single_read_only_command_action",
+            ],
             "expected_model": {"mode": "exact", "count": 0},
         }
     )
@@ -170,3 +175,49 @@ def test_assert_actions_rejects_forbidden_write_action(tmp_path, monkeypatch) ->
 
     with pytest.raises(AssertionError, match="forbidden Fabric actions"):
         runner._assert_actions(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_duplicate_read_only_command_actions(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="duplicate-read-only",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["single_read_only_command_action"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {"event_type": "action_scheduled", "action_name": "run_read_only_command", "request_id": "req-1"},
+            {"event_type": "action_scheduled", "action_name": "run_read_only_command", "request_id": "req-2"},
+        ] if key == "action_events" else [],
+    )
+
+    with pytest.raises(AssertionError, match="duplicate read-only command"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_empty_final_model_content(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="empty-final-content",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["non_empty_final_model_content"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-1",
+                "status": "ok",
+                "finish_reason": "stop",
+                "response_json": json.dumps({"content_preview": ""}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="final model call content was empty"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001

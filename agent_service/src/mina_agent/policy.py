@@ -38,17 +38,6 @@ class ResponsePolicyRuntime:
 
         if contains_write_command_advice(cleaned):
             self.unsafe_response_repairs += 1
-            if self.unsafe_response_repairs <= 1 and can_repair:
-                return FinalContentReview(
-                    content=cleaned,
-                    repair_reason="unsafe_write_command_advice",
-                    repair_message=(
-                        "The previous assistant draft contained an executable write-capable Minecraft "
-                        "command or workaround. Rewrite the refusal without any slash command, command "
-                        "recipe, coordinates, or suggestion that the player run it themselves. Keep it "
-                        "brief and offer only safe read-only alternatives."
-                    ),
-                )
             return FinalContentReview(content=UNSAFE_WRITE_REFUSAL)
 
         if not self.memory_write_seen and claims_memory_saved(cleaned):

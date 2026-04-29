@@ -103,3 +103,24 @@ def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) 
     assert "我记得你的家" not in content
     assert "This user message is a memory recall request" not in content
     assert "Recent conversation memory is intentionally omitted" not in content
+
+
+def test_companion_low_health_prompt_marks_alert_reason(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-companion",
+        "trigger": "companion_tick",
+        "message": "",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {"health": 5, "max_health": 20, "food": 20},
+            "nearby_entities": [],
+        },
+    }
+
+    messages = build_messages(turn, memory)
+    user_message = messages[-1]["content"]
+
+    assert "及时提醒理由" in user_message
+    assert "生命值较低" in user_message
+    assert "不要调用工具" in user_message

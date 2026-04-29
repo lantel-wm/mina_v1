@@ -122,6 +122,8 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
     }
     allowed_trace_invariants = {
         "no_action_monitor_timeout",
+        "non_empty_final_model_content",
+        "single_read_only_command_action",
     }
     seen: dict[str, str] = {}
     duplicates: list[str] = []
@@ -593,6 +595,24 @@ class E2ERunner:
                 ]
                 if offenders:
                     raise AssertionError(f"{scenario.name}: action monitor timeout/failure events found: {offenders!r}")
+            elif invariant == "single_read_only_command_action":
+                scheduled = [
+                    event for event in events
+                    if event.get("event_type") == "action_scheduled"
+                    and event.get("action_name") == "run_read_only_command"
+                ]
+                if len(scheduled) > 1:
+                    raise AssertionError(f"{scenario.name}: duplicate read-only command actions found: {scheduled!r}")
+            elif invariant == "non_empty_final_model_content":
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_calls = [
+                    call for call in calls
+                    if call.get("status") == "ok" and call.get("finish_reason") != "tool_calls"
+                ]
+                if not final_calls:
+                    raise AssertionError(f"{scenario.name}: no final non-tool model call found")
+                if not any(_model_content_preview(call).strip() for call in final_calls):
+                    raise AssertionError(f"{scenario.name}: final model call content was empty: {final_calls!r}")
 
     def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
         combined: list[dict[str, Any]] = []
@@ -1235,6 +1255,20 @@ def _model_requested_tool_names(call: dict[str, Any]) -> list[str]:
     if isinstance(tool_names, list):
         return [str(item) for item in tool_names if item]
     return []
+
+
+def _model_content_preview(call: dict[str, Any]) -> str:
+    response = call.get("response_json")
+    if response is None:
+        response = call.get("response")
+    if isinstance(response, str):
+        try:
+            response = json.loads(response)
+        except json.JSONDecodeError:
+            return ""
+    if not isinstance(response, dict):
+        return ""
+    return str(response.get("content_preview") or "")
 
 
 def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:
