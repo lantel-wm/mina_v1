@@ -857,7 +857,7 @@ class _TestSearxngHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         query = urllib.parse.parse_qs(parsed.query).get("q", [""])[0]
-        payload = {"query": query, "results": _test_search_results(query)}
+        payload = {"query": query, "answers": _test_search_answers(query), "results": _test_search_results(query)}
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -899,6 +899,13 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
             "content": f"Deterministic Mina E2E result for query: {query}",
         }
     ]
+
+
+def _test_search_answers(query: str) -> list[str]:
+    normalized = query.lower()
+    if "top answer" in normalized or "直接答案" in normalized:
+        return ["MinaE2E-TopAnswer-Chunk-Preserved"]
+    return []
 
 
 def prepare_runtime(port: int, server_port: int) -> None:

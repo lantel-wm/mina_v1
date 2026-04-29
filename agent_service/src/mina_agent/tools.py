@@ -399,6 +399,7 @@ def _safe_web_search_results(results: Any, *, max_results: int) -> tuple[list[di
         safe_results.append(
             {
                 "source_index": source_index,
+                "source_type": str(item.get("source_type") or "result"),
                 "title": title,
                 "url": url,
                 "content": content,

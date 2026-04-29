@@ -57,6 +57,19 @@ class LongSearch:
         ]
 
 
+class AnswerSearch:
+    def search(self, query: str, max_results: int = 5):  # noqa: ANN201, ARG002
+        return [
+            {
+                "title": "SearXNG answer 1",
+                "url": "http://127.0.0.1:8888/search?q=answer",
+                "content": "MinaE2E-Search-Answer-Value",
+                "source_type": "answer",
+            },
+            {"title": "Organic", "url": "https://example.invalid/organic", "content": "organic", "source_type": "result"},
+        ]
+
+
 def _runner(tmp_path) -> ToolRunner:  # noqa: ANN001
     return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearch())  # type: ignore[arg-type]
 
@@ -175,8 +188,20 @@ def test_web_search_returns_full_tool_content(tmp_path) -> None:
     assert search.queries == [("diamond ore", 10)]
     assert payload["query"] == "diamond ore"
     assert payload["safe_result_count"] == 1
+    assert payload["results"][0]["source_type"] == "result"
     assert payload["results"][0]["content"] == "content"
     assert payload["results"][0]["content_truncated"] is False
+
+
+def test_web_search_preserves_top_level_answer_source_type(tmp_path) -> None:
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), AnswerSearch())  # type: ignore[arg-type]
+
+    result = runner.run("web_search", {"query": "answer", "max_results": 2}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is True
+    assert payload["results"][0]["source_type"] == "answer"
+    assert payload["results"][0]["content"] == "MinaE2E-Search-Answer-Value"
 
 
 def test_web_search_preserves_long_safe_snippets_and_marks_truncation(tmp_path) -> None:

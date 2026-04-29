@@ -31,6 +31,18 @@ class SearxngClient:
             payload = json.loads(response.read().decode("utf-8"))
         seen: set[str] = set()
         results: list[dict[str, str]] = []
+        for answer_index, answer in enumerate(_search_answers(payload), start=1):
+            source_url = f"{self.base_url}/search?{urllib.parse.urlencode({'q': query})}"
+            results.append(
+                {
+                    "title": f"SearXNG answer {answer_index}",
+                    "url": source_url,
+                    "content": answer,
+                    "source_type": "answer",
+                }
+            )
+            if len(results) >= max_results:
+                return results
         for item in payload.get("results", []):
             link = str(item.get("url") or "")
             if not link or link in seen:
@@ -41,6 +53,7 @@ class SearxngClient:
                     "title": str(item.get("title") or ""),
                     "url": link,
                     "content": str(item.get("content") or ""),
+                    "source_type": "result",
                 }
             )
             if len(results) >= max_results:
@@ -57,3 +70,20 @@ def _build_opener(base_url: str):
 def _is_loopback(base_url: str) -> bool:
     host = urllib.parse.urlparse(base_url).hostname or ""
     return host == "localhost" or host == "::1" or host.startswith("127.")
+
+
+def _search_answers(payload: dict[str, Any]) -> list[str]:
+    answers = payload.get("answers")
+    if not isinstance(answers, list):
+        return []
+    rendered: list[str] = []
+    for answer in answers:
+        if isinstance(answer, str):
+            content = answer.strip()
+        elif isinstance(answer, dict):
+            content = str(answer.get("answer") or answer.get("content") or answer.get("text") or "").strip()
+        else:
+            content = ""
+        if content:
+            rendered.append(content)
+    return rendered

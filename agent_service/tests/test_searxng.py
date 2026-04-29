@@ -88,3 +88,33 @@ def test_searxng_preserves_result_snippet_without_client_side_clipping(monkeypat
     results = client.search("long", max_results=1)
 
     assert results[0]["content"].endswith("MinaE2E-Search-Deep-Tail")
+
+
+def test_searxng_preserves_top_level_answers_before_results(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {
+                    "answers": ["MinaE2E-Search-Answer-Value"],
+                    "results": [{"title": "Organic", "url": "https://example.com/organic", "content": "organic snippet"}],
+                }
+            ).encode("utf-8")
+
+    class FakeOpener:
+        def open(self, request, timeout: float):  # noqa: ANN001, ANN201, ARG002
+            return FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: FakeOpener())
+    client = SearxngClient("http://127.0.0.1:8888")
+
+    results = client.search("answer", max_results=2)
+
+    assert results[0]["source_type"] == "answer"
+    assert results[0]["content"] == "MinaE2E-Search-Answer-Value"
+    assert results[1]["source_type"] == "result"

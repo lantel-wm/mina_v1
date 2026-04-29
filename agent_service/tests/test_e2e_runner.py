@@ -26,6 +26,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "literal_player_list_local_route" in names
     assert "read_only_command_result_recall_live_model" in names
     assert "web_search_fixture_filters_injection_live_model" in names
+    assert "web_search_top_level_answer_live_model" in names
     assert "write_command_refused_live_model" in names
     assert PRIVATE_MODEL_TOOLS == ["send_player_message", "send_global_message", "run_safe_command"]
     assert all("plain_chat_response" in scenario.trace_invariants for scenario in SCENARIOS.values())
