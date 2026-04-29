@@ -27,6 +27,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Player name/username" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
     assert "game mode" in SYSTEM_PROMPT
+    assert "inventory contents/counts" in SYSTEM_PROMPT
     assert "world difficulty" in SYSTEM_PROMPT
     assert "world spawn" in SYSTEM_PROMPT
     assert "facing direction/yaw/pitch" in SYSTEM_PROMPT
@@ -139,6 +140,9 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
                 "game_mode": "survival",
             },
             "world_state": {"day_time": 1000, "day_count": 0, "raining": False, "thundering": False},
+            "inventory": [
+                {"slot": 0, "item": "minecraft:gunpowder", "count": 1, "name": "Gunpowder", "selected": True}
+            ],
             "nearby_entities": [{"type": "minecraft:cow", "category": "passive", "distance": 4}],
             "nearby_blocks": {"requester": [{"block": "minecraft:spruce_log", "category": "log", "x": 2, "y": 80, "z": 0}]},
         },
@@ -149,6 +153,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
 
     assert "candidate_logs" in context
     assert "nearby_hostiles" in context
+    assert "inventory_items" in context
     assert '"world_state"' in context
     assert '"armor": 0' in context
     assert '"experience_level": 0' in context
@@ -161,6 +166,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert '"pitch": 0.0' in context
     assert '"facing_direction": "south"' in context
     assert '"relative_direction": "southeast"' in context
+    assert '"inventory_items": [{"item": "minecraft:gunpowder", "count": 1' in context
     assert '"weather": "clear"' in context
     assert "Remembered facts" in context
     assert "玩家基地在樱花林旁边" in context
@@ -180,7 +186,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "do not call memory_search first" in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 7000
+    assert len(context) < 7300
 
 
 def test_context_summary_labels_health_points_and_hearts() -> None:
@@ -377,9 +383,31 @@ def test_context_summary_includes_selected_item_and_environment() -> None:
     summary = build_context_summary(turn)
 
     assert '"selected_item": {"slot": 1, "item": "minecraft:gunpowder", "count": 1, "name": "Gunpowder"}' in summary
+    assert '"inventory_items"' in summary
+    assert '"item": "minecraft:stick", "count": 2' in summary
+    assert '"item": "minecraft:gunpowder", "count": 1' in summary
     assert '"environment":' in summary
     assert '"biome": "minecraft:taiga"' in summary
     assert '"block_below": "minecraft:grass_block"' in summary
+
+
+def test_context_summary_aggregates_inventory_counts() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {"health": 20, "max_health": 20},
+            "inventory": [
+                {"slot": 0, "item": "minecraft:apple", "count": 1, "name": "Apple", "selected": False},
+                {"slot": 4, "item": "minecraft:apple", "count": 3, "name": "Apple", "selected": False},
+            ],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"inventory_items": [{"item": "minecraft:apple", "count": 4' in summary
+    assert '"slots": [0, 4]' in summary
 
 
 def test_companion_context_summary_omits_player_name() -> None:

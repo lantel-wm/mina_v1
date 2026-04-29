@@ -216,6 +216,7 @@ public final class MinaTestCommands {
 			case "poisoned" -> poisoned(source);
 			case "on_fire" -> onFire(source);
 			case "nearby_hostile" -> nearbyHostile(source);
+			case "inventory_sample" -> inventorySample(source);
 			default -> {
 				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
 				yield 0;
@@ -301,6 +302,21 @@ public final class MinaTestCommands {
 		run(source.getServer(), "difficulty normal");
 		run(source.getServer(), "summon minecraft:creeper 1.5 " + TREE_Y + " -2.5 {NoAI:1b,Silent:1b,PersistenceRequired:1b}");
 		source.sendSuccess(() -> Component.literal("Mina test world mutate nearby_hostile complete."), false);
+		return 1;
+	}
+
+	private int inventorySample(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		int selectedSlot = requester.getInventory().getSelectedSlot();
+		int appleSlot = selectedSlot == 1 ? 2 : 1;
+		requester.getInventory().clearContent();
+		requester.getInventory().setItem(selectedSlot, new ItemStack(Items.GUNPOWDER, 1));
+		requester.getInventory().setItem(appleSlot, new ItemStack(Items.APPLE, 3));
+		source.sendSuccess(() -> Component.literal("Mina test world mutate inventory_sample complete."), false);
 		return 1;
 	}
 

@@ -21,6 +21,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "player_status_snapshot_live_model" in names
     assert "player_name_snapshot_live_model" in names
     assert "selected_item_snapshot_live_model" in names
+    assert "inventory_count_snapshot_live_model" in names
     assert "facing_direction_snapshot_live_model" in names
     assert "survival_stats_snapshot_live_model" in names
     assert "hazard_state_snapshot_live_model" in names

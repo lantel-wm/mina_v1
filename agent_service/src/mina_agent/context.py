@@ -29,7 +29,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -411,6 +411,9 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     selected_item = _selected_inventory_item(inventory)
     if selected_item:
         payload["selected_item"] = selected_item
+    compact_inventory = _compact_inventory(inventory)
+    if compact_inventory:
+        payload["inventory_items"] = compact_inventory
     compact_environment = _compact_environment(environment)
     if compact_environment:
         payload["environment"] = compact_environment
@@ -539,6 +542,51 @@ def _selected_inventory_item(inventory: list[Any]) -> dict[str, Any]:
                 "name": item.get("name"),
             }
     return {}
+
+
+def _compact_inventory(inventory: list[Any], *, limit: int = 20) -> list[dict[str, Any]]:
+    totals: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for raw_item in inventory:
+        if not isinstance(raw_item, dict):
+            continue
+        item_id = str(raw_item.get("item") or "").strip()
+        if not item_id:
+            continue
+        count = _int_value(raw_item.get("count"))
+        entry = totals.get(item_id)
+        if entry is None:
+            entry = {
+                "item": item_id,
+                "count": 0,
+                "slots": [],
+            }
+            if raw_item.get("name") is not None:
+                entry["name"] = raw_item.get("name")
+            totals[item_id] = entry
+            order.append(item_id)
+        if count is not None:
+            entry["count"] += count
+        slot = raw_item.get("slot")
+        if slot is not None:
+            entry["slots"].append(slot)
+        if raw_item.get("selected") is True:
+            entry["selected"] = True
+    items = [totals[item_id] for item_id in order[:limit]]
+    for item in items:
+        if item.get("count") == 0:
+            item.pop("count", None)
+        if not item.get("slots"):
+            item.pop("slots", None)
+    return items
+
+
+def _int_value(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed
 
 
 def _compact_effects(value: Any) -> list[dict[str, Any]]:
