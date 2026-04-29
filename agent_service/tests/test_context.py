@@ -26,6 +26,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
     assert "Player name/username" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
+    assert "game mode" in SYSTEM_PROMPT
     assert "held item" in SYSTEM_PROMPT
     assert "dimension" in SYSTEM_PROMPT
     assert "block at/below feet" in SYSTEM_PROMPT
@@ -110,7 +111,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
         "player": {"uuid": "player-1", "name": "Tester"},
         "permissions": {"can_use_actions": True},
         "snapshot": {
-            "player_state": {"x": 0.5, "y": 80, "z": -2.5, "health": 20, "food": 20},
+            "player_state": {"x": 0.5, "y": 80, "z": -2.5, "health": 20, "food": 20, "game_mode": "survival"},
             "world_state": {"day_time": 1000, "day_count": 0, "raining": False, "thundering": False},
             "nearby_entities": [{"type": "minecraft:cow", "category": "passive", "distance": 4}],
             "nearby_blocks": {"requester": [{"block": "minecraft:spruce_log", "category": "log", "x": 2, "y": 80, "z": 0}]},
@@ -123,6 +124,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "candidate_logs" in context
     assert "nearby_hostiles" in context
     assert '"world_state"' in context
+    assert '"game_mode": "survival"' in context
     assert '"weather": "clear"' in context
     assert "Remembered facts" in context
     assert "玩家基地在樱花林旁边" in context

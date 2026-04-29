@@ -180,6 +180,41 @@ SCENARIO_DATA = [
         "rubric": "Dimension questions should answer from Fabric player/world snapshot without command execution or unrelated player status.",
     },
     {
+        "name": "game_mode_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "game-mode-snapshot-live-model",
+                "value": "我现在是什么游戏模式？只回答英文游戏模式值。",
+                "wait_for": ["survival"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["survival"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "minecraft:",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Game-mode questions should answer from Fabric player_state.game_mode without command execution or unrelated player status.",
+    },
+    {
         "name": "spawn_distance_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],

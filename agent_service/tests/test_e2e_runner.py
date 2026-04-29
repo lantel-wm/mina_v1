@@ -23,6 +23,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "selected_item_snapshot_live_model" in names
     assert "block_below_snapshot_live_model" in names
     assert "dimension_snapshot_live_model" in names
+    assert "game_mode_snapshot_live_model" in names
     assert "spawn_distance_snapshot_live_model" in names
     assert "world_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
