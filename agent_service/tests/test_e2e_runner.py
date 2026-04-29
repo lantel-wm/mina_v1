@@ -23,6 +23,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "selected_item_snapshot_live_model" in names
     assert "inventory_count_snapshot_live_model" in names
     assert "nearby_item_drop_snapshot_live_model" in names
+    assert "nearby_passive_mob_snapshot_live_model" in names
     assert "facing_direction_snapshot_live_model" in names
     assert "survival_stats_snapshot_live_model" in names
     assert "hazard_state_snapshot_live_model" in names

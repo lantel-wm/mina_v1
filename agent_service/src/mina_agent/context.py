@@ -355,6 +355,11 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
     logs = [block for block in nearby_blocks if block.get("category") == "log"][:12]
     hostile = [entity for entity in nearby_entities if entity.get("category") == "hostile"][:8]
+    mobs = [
+        entity
+        for entity in nearby_entities
+        if entity.get("category") in {"passive", "neutral"} and not entity.get("item")
+    ][:8]
     dropped_items = [entity for entity in nearby_entities if entity.get("item")][:8]
     player_context: dict[str, Any] = turn.get("player") or {}
     if str(turn.get("trigger") or "") == "companion_tick":
@@ -405,6 +410,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         },
         "candidate_logs": [_compact_block_target(block, player_state) for block in logs],
         "nearby_hostiles": [_compact_entity_target(entity, player_state) for entity in hostile],
+        "nearby_mobs": [_compact_entity_target(entity, player_state) for entity in mobs],
         "nearby_items": [_compact_entity_target(entity, player_state) for entity in dropped_items],
     }
     distance_display = _distance_display(world_state.get("player_distance_from_spawn"))

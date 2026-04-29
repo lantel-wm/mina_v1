@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from mina_agent.context import (
     BASE_SYSTEM_SECTIONS,
     SYSTEM_PROMPT,
@@ -154,6 +156,8 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
 
     assert "candidate_logs" in context
     assert "nearby_hostiles" in context
+    assert "nearby_mobs" in context
+    assert '"type": "minecraft:cow"' in context
     assert "nearby_items" in context
     assert "inventory_items" in context
     assert '"world_state"' in context
@@ -188,7 +192,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "do not call memory_search first" in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 7300
+    assert len(context) < 7400
 
 
 def test_context_summary_labels_health_points_and_hearts() -> None:
@@ -332,6 +336,69 @@ def test_context_summary_includes_nearby_item_drops() -> None:
     assert '"count": 2' in summary
     assert '"item_category": "log"' in summary
     assert '"relative_direction": "east"' in summary
+
+
+def test_context_summary_includes_nearby_passive_mobs() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "x": 0.5,
+                "y": 80.0,
+                "z": -2.5,
+            },
+            "nearby_entities": [
+                {
+                    "type": "minecraft:sheep",
+                    "name": "Sheep",
+                    "category": "passive",
+                    "distance": 2.0,
+                    "x": 2.5,
+                    "y": 80.0,
+                    "z": -2.5,
+                    "health": 8.0,
+                    "max_health": 8.0,
+                },
+                {
+                    "type": "minecraft:item",
+                    "name": "Oak Log",
+                    "category": "misc",
+                    "distance": 3.0,
+                    "x": 3.5,
+                    "y": 80.0,
+                    "z": -2.5,
+                    "item": "minecraft:oak_log",
+                    "count": 2,
+                },
+            ],
+        },
+    }
+
+    summary = build_context_summary(turn)
+    payload = json.loads(summary)
+
+    assert payload["nearby_mobs"] == [
+        {
+            "type": "minecraft:sheep",
+            "name": "Sheep",
+            "category": "passive",
+            "distance": 2.0,
+            "x": 2.5,
+            "y": 80.0,
+            "z": -2.5,
+            "health": 8.0,
+            "max_health": 8.0,
+            "relative_direction": "east",
+            "relative_x": 2,
+            "relative_z": 0,
+            "relative_y": 0,
+            "relative_vertical": "same_level",
+        }
+    ]
+    assert payload["nearby_items"][0]["item"] == "minecraft:oak_log"
 
 
 def test_context_summary_includes_active_effects() -> None:

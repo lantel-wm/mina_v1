@@ -127,6 +127,7 @@ public final class MinaTestCommands {
 		prepareWorld(source.getLevel(), includeTree);
 		run(server, "difficulty peaceful");
 		run(server, "kill @e[type=minecraft:creeper]");
+		run(server, "kill @e[type=minecraft:sheep]");
 		run(server, "kill @e[type=minecraft:item]");
 		run(server, "time set day");
 		run(server, "weather clear");
@@ -217,6 +218,7 @@ public final class MinaTestCommands {
 			case "poisoned" -> poisoned(source);
 			case "on_fire" -> onFire(source);
 			case "nearby_hostile" -> nearbyHostile(source);
+			case "nearby_passive_mob" -> nearbyPassiveMob(source);
 			case "nearby_item_drop" -> nearbyItemDrop(source);
 			case "inventory_sample" -> inventorySample(source);
 			default -> {
@@ -304,6 +306,12 @@ public final class MinaTestCommands {
 		run(source.getServer(), "difficulty normal");
 		run(source.getServer(), "summon minecraft:creeper 1.5 " + TREE_Y + " -2.5 {NoAI:1b,Silent:1b,PersistenceRequired:1b}");
 		source.sendSuccess(() -> Component.literal("Mina test world mutate nearby_hostile complete."), false);
+		return 1;
+	}
+
+	private int nearbyPassiveMob(CommandSourceStack source) {
+		run(source.getServer(), "summon minecraft:sheep 2.5 " + TREE_Y + " -2.5 {NoAI:1b,Silent:1b,PersistenceRequired:1b}");
+		source.sendSuccess(() -> Component.literal("Mina test world mutate nearby_passive_mob complete."), false);
 		return 1;
 	}
 
