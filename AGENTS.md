@@ -136,26 +136,28 @@ Mina memory should follow the same design spirit as Codex `AGENTS.md` and Claude
 
 Allowed read-only Minecraft command forms are intentionally narrow: `seed`, `time query daytime|gametime|day`, `weather query`, `list`, `list uuids`, `locate structure <identifier>`, and `locate biome <identifier>`. These are selected through the model-facing `run_read_only_command` tool and then validated by sidecar/Fabric policy; write commands must remain rejected before Fabric execution.
 
-For every behavior change:
+For each iteration, use this workflow:
 
-1. Keep model-facing tools high-level and safe. Do not expose private Fabric action primitives, write-capable Minecraft commands, or unrestricted MCP tools to the model.
-2. Add or update declarative E2E coverage in `agent_service/src/mina_agent/e2e/` and extend `/mina-test` only through safe fixture/assertion commands. E2E must use the real sidecar and real DeepSeek API for player-facing behavior; use unit tests for isolated safety policy or parser checks.
-3. Run the baseline checks:
+1. Review the current repository state before choosing work. Check `git status`, recent commits, relevant changed files, and the latest `build/e2e/runs/<timestamp>/summary.json` plus `trace-summary.json`. When failures exist, inspect per-scenario `trace.jsonl`, `server.log`, and `sidecar.log` before changing code.
+2. Refresh agent-architecture context from primary sources or source-level material for Codex, Claude Code, OpenClaw, or similar modern agent systems. Capture only actionable takeaways: instruction layering, context budgeting, memory boundaries, tool policy, harness design, or prompt sectioning.
+3. Refresh Minecraft-agent context when the change touches Minecraft behavior. Prefer Voyager, MineDojo, JARVIS-style papers/repos, or other concrete systems. Translate findings into Mina's current text-agent scope; do not reintroduce body control.
+4. Choose one small feature, fix, or test improvement. State a concrete plan before development, keep model-facing tools high-level and safe, and avoid private Fabric action primitives, write-capable Minecraft commands, unrestricted MCP tools, or hardcoded player-intent routes.
+5. Implement the focused increment. Add or update declarative E2E coverage in `agent_service/src/mina_agent/e2e/` for player-facing behavior, and use unit tests for isolated safety policy, prompt construction, parser checks, or memory behavior. Extend `/mina-test` only through safe fixture/assertion commands.
+6. Run baseline checks:
 
 ```sh
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test pytest -q
 GRADLE_USER_HOME=$PWD/.gradle ./gradlew build --no-daemon
 ```
 
-4. Run relevant headless E2E scenarios with a real DeepSeek key configured in `agent_service/.env` or the environment:
+Then run relevant headless E2E scenarios with a real DeepSeek key configured in `agent_service/.env` or the environment:
 
 ```sh
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety --require-live-model
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --require-live-model
 ```
 
-5. Inspect `build/e2e/runs/<timestamp>/summary.json`, `trace-summary.json`, per-scenario `trace.jsonl`, `server.log`, and `sidecar.log` when E2E fails. Fix routing, policy, context, or snapshot formatting first.
-6. Commit after a coherent, tested increment. Push only when a git remote is configured and relevant live E2E scenarios pass.
+7. Inspect new artifacts, iterate on failures, then commit after a coherent tested increment. Push only when a git remote is configured and the relevant live E2E scenarios pass; otherwise state that push was skipped because no remote exists.
 
 ## Run Sidecar
 

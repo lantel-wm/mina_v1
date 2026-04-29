@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from mina_agent.context import SYSTEM_PROMPT, build_context_summary, build_messages, build_target_summary
+from mina_agent.context import (
+    BASE_SYSTEM_SECTIONS,
+    SYSTEM_PROMPT,
+    build_base_system_prompt,
+    build_context_summary,
+    build_messages,
+    build_target_summary,
+)
 from mina_agent.memory import MemoryStore
 
 
@@ -16,15 +23,35 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Do not mention internal section/tool names" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "never answer them from snapshot or recent results" in SYSTEM_PROMPT
+    assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
+    assert "Natural-language questions about current weather, time, day" in SYSTEM_PROMPT
+    assert "For weather/time/day-only questions" in SYSTEM_PROMPT
+    assert "do not mention safety, monsters, entities" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "Do not use the Minecraft username as greeting/filler" in SYSTEM_PROMPT
     assert "For player-scoped memories" in SYSTEM_PROMPT
+    assert "memory_write content/label must omit the current Minecraft username" in SYSTEM_PROMPT
     assert "MCP" not in SYSTEM_PROMPT
     assert "companion tick" not in SYSTEM_PROMPT.lower()
     assert "separate Minecraft character" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
     assert "body_chain" not in SYSTEM_PROMPT
+
+
+def test_system_prompt_is_built_from_named_base_sections() -> None:
+    assert SYSTEM_PROMPT == build_base_system_prompt()
+    assert [section.split(":", 1)[0] for section in BASE_SYSTEM_SECTIONS] == [
+        "Identity",
+        "Chat style",
+        "Decision order",
+        "Tool policy",
+        "Safety",
+        "Answer authority",
+    ]
+    assert all(section.strip() == section for section in BASE_SYSTEM_SECTIONS)
+    assert "MCP policy for this turn" not in SYSTEM_PROMPT
+    assert "Companion tick policy" not in SYSTEM_PROMPT
 
 
 def test_target_summary_is_observation_only(tmp_path) -> None:
@@ -92,10 +119,17 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Remembered facts" in context
     assert "玩家基地在樱花林旁边" in context
     assert "Recent verified Minecraft command/action results" in context
+    assert "follow-up recall only" in context
     assert "Seed: [98765]" in context
     assert "Tool selection reminder" in context
+    assert "never answer from snapshot" in context
+    assert "Exact command strings are commands, not observations" in context
+    assert "The exact command `list` must call run_read_only_command" in context
+    assert "must not be answered from online_players" in context
+    assert "Natural-language weather/time/status questions" in context
+    assert "memory_write args: no current Minecraft username" in context
     assert "body_state" not in context
-    assert len(context) < 6000
+    assert len(context) < 6500
 
 
 def test_context_summary_labels_health_points_and_hearts() -> None:
