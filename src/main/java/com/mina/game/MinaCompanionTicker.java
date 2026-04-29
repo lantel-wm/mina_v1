@@ -35,9 +35,6 @@ public final class MinaCompanionTicker {
 			return;
 		}
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			if (player.getGameProfile().name().equalsIgnoreCase(config.bodyUsername)) {
-				continue;
-			}
 			UUID uuid = player.getUUID();
 			if (!inFlight.add(uuid)) {
 				continue;

@@ -16,13 +16,11 @@ import static net.minecraft.commands.Commands.literal;
 public final class MinaCommands {
 	private final MinaConfig config;
 	private final SidecarClient sidecarClient;
-	private final MinaActionExecutor actionExecutor;
 	private final MinaTurnController turnController;
 
-	public MinaCommands(MinaConfig config, SidecarClient sidecarClient, MinaActionExecutor actionExecutor, MinaTurnController turnController) {
+	public MinaCommands(MinaConfig config, SidecarClient sidecarClient, MinaTurnController turnController) {
 		this.config = config;
 		this.sidecarClient = sidecarClient;
-		this.actionExecutor = actionExecutor;
 		this.turnController = turnController;
 	}
 
@@ -38,7 +36,6 @@ public final class MinaCommands {
 				.requires(this::isOperator)
 				.then(literal("status").executes(context -> status(context.getSource())))
 				.then(literal("reload").executes(context -> reload(context.getSource())))
-				.then(literal("stop").executes(context -> stop(context.getSource())))
 				.then(literal("allow")
 					.then(argument("player", StringArgumentType.word())
 						.executes(context -> allow(context.getSource(), StringArgumentType.getString(context, "player")))))
@@ -59,12 +56,10 @@ public final class MinaCommands {
 			return 0;
 		}
 
-			return turnController.submitPlayerTurn(source.getServer(), player, "command", content, true);
+		return turnController.submitPlayerTurn(source.getServer(), player, "command", content, true);
 	}
 
 	private int status(CommandSourceStack source) {
-		ServerPlayer requester = source.getPlayer();
-		source.sendSuccess(() -> Component.literal("Mina body available: " + actionExecutor.isBodyAvailable(config)), false);
 		sidecarClient.health(config).whenComplete((response, throwable) -> source.getServer().executeIfPossible(() -> {
 			if (throwable != null) {
 				source.sendFailure(Component.literal("Mina sidecar unhealthy: " + rootMessage(throwable)));
@@ -80,13 +75,6 @@ public final class MinaCommands {
 	private int reload(CommandSourceStack source) {
 		config.reload();
 		source.sendSuccess(() -> Component.literal("Reloaded Mina config."), false);
-		return 1;
-	}
-
-	private int stop(CommandSourceStack source) {
-		ServerPlayer requester = source.getPlayer();
-		actionExecutor.stopBody(source.getServer(), requester, config);
-		source.sendSuccess(() -> Component.literal("Mina body control is temporarily disabled."), false);
 		return 1;
 	}
 

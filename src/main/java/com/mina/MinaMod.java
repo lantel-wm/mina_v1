@@ -2,7 +2,6 @@ package com.mina;
 
 import com.mina.config.MinaConfig;
 import com.mina.game.MinaActionExecutor;
-import com.mina.game.MinaActionMonitor;
 import com.mina.game.MinaCommands;
 import com.mina.game.MinaCompanionTicker;
 import com.mina.game.MinaSnapshotter;
@@ -22,22 +21,19 @@ public final class MinaMod implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		MinaConfig config = MinaConfig.load();
-			SidecarClient sidecarClient = new SidecarClient();
-			MinaSnapshotter snapshotter = new MinaSnapshotter();
-			MinaActionExecutor actionExecutor = new MinaActionExecutor();
-			MinaActionMonitor actionMonitor = new MinaActionMonitor(config);
-			MinaTurnController turnController = new MinaTurnController(config, sidecarClient, snapshotter, actionExecutor, actionMonitor);
-			actionMonitor.setController(turnController);
-			MinaCommands commands = new MinaCommands(config, sidecarClient, actionExecutor, turnController);
-			MinaTestCommands testCommands = new MinaTestCommands(config, snapshotter, turnController, actionExecutor);
-			MinaCompanionTicker companionTicker = new MinaCompanionTicker(config, sidecarClient, snapshotter, actionExecutor);
+		SidecarClient sidecarClient = new SidecarClient();
+		MinaSnapshotter snapshotter = new MinaSnapshotter();
+		MinaActionExecutor actionExecutor = new MinaActionExecutor();
+		MinaTurnController turnController = new MinaTurnController(config, sidecarClient, snapshotter, actionExecutor);
+		MinaCommands commands = new MinaCommands(config, sidecarClient, turnController);
+		MinaTestCommands testCommands = new MinaTestCommands(config, snapshotter, turnController);
+		MinaCompanionTicker companionTicker = new MinaCompanionTicker(config, sidecarClient, snapshotter, actionExecutor);
 
-			commands.register();
-			testCommands.register();
-			ServerTickEvents.END_SERVER_TICK.register(server -> {
-				companionTicker.onEndServerTick(server);
-				actionMonitor.onEndServerTick(server);
-			});
+		commands.register();
+		testCommands.register();
+		ServerTickEvents.END_SERVER_TICK.register(server -> {
+			companionTicker.onEndServerTick(server);
+		});
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> sidecarClient.close());
 
 		LOGGER.info("Initialized mina");

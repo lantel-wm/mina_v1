@@ -6,22 +6,12 @@ import re
 import time
 from typing import Any
 
-from .body_agent import (
-    is_body_chop_tree_request,
-    is_body_follow_request,
-    is_body_instructional_request,
-    is_body_stop_request,
-    is_body_task_status_request,
-)
 from .config import Settings
 from .context import build_messages, is_memory_recall_request
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
-from .schemas import ToolResult, TurnResponse
+from .schemas import TurnResponse
 from .tools import (
-    BODY_CONTROL_DISABLED_ERROR,
-    BODY_CONTROL_TOOLS,
-    FABRIC_ACTION_TOOLS,
     MINECRAFT_WRITE_COMMANDS,
     ToolRunner,
     is_read_only_command,
@@ -29,10 +19,6 @@ from .tools import (
 )
 
 LOGGER = logging.getLogger("mina_agent.harness")
-
-BODY_CONTROL_DISABLED_MESSAGE = (
-    "假人控制功能暂时停用。我现在先专注于文字交流、联网知识、只读命令执行，以及玩家和世界状态读取。"
-)
 
 MINECRAFT_KNOWLEDGE_MARKERS = (
     "minecraft",
@@ -94,15 +80,6 @@ class AgentHarness:
                     self.memory.add_conversation(request_id, player_id, "assistant", content)
             self._debug("turn local_observation request_id=%s intent=%s", request_id, local_observation.debug.get("intent"))
             return local_observation.to_dict()
-
-        disabled_body_response = _disabled_body_control_response(turn)
-        if disabled_body_response is not None:
-            for message_item in disabled_body_response.messages:
-                content = str(message_item.get("content") or "").strip()
-                if content:
-                    self.memory.add_conversation(request_id, player_id, "assistant", content)
-            self._debug("turn disabled_body_control request_id=%s", request_id)
-            return disabled_body_response.to_dict()
 
         local_read_only = self._local_read_only_response(turn)
         if local_read_only is not None:
@@ -245,16 +222,6 @@ class AgentHarness:
                         name,
                         _log_preview(json.dumps(args, ensure_ascii=False), 1200),
                     )
-                    if name in BODY_CONTROL_TOOLS or name in FABRIC_ACTION_TOOLS:
-                        content = BODY_CONTROL_DISABLED_MESSAGE
-                        result = ToolResult(content=json.dumps({"ok": False, "error": BODY_CONTROL_DISABLED_ERROR}, ensure_ascii=False))
-                        self._record_tool_call(turn, name, args, result, [])
-                        self.memory.add_conversation(request_id, player_id, "assistant", content)
-                        self._debug("turn rejected_body_tool request_id=%s subturn=%s name=%s", request_id, subturn, name)
-                        return TurnResponse(
-                            messages=[{"target": "requester", "content": content}],
-                            debug={"usage": usage, "tool_subturns": subturn, "body_control_disabled": True},
-                        ).to_dict()
                     result = self.tools.run(name, args, turn)
                     result_actions = []
                     if result.action:
@@ -414,10 +381,6 @@ class AgentHarness:
         normalized = message.lower()
         if not normalized:
             return None
-
-        disabled_body = _disabled_body_control_response(turn)
-        if disabled_body is not None:
-            return disabled_body
 
         if _offline_memory_search_intent(normalized):
             args = {"query": _offline_memory_query(message), "limit": 5}
@@ -661,29 +624,6 @@ def _action_ack(tool_name: str) -> str:
     return "我开始执行。"
 
 
-def _disabled_body_control_response(turn: dict[str, Any]) -> TurnResponse | None:
-    if turn.get("trigger") != "command":
-        return None
-    message = str(turn.get("message") or "").strip().lower()
-    if not message or is_body_instructional_request(message):
-        return None
-    if (
-        _body_observation_intent(message)
-        or is_body_task_status_request(message)
-        or is_body_stop_request(message)
-        or _offline_stop_intent(message)
-        or _offline_follow_intent(message)
-        or _offline_chop_tree_intent(message)
-        or is_body_follow_request(message)
-        or is_body_chop_tree_request(message)
-    ):
-        return TurnResponse(
-            messages=[{"target": "requester", "content": BODY_CONTROL_DISABLED_MESSAGE}],
-            debug={"body_control_disabled": True},
-        )
-    return None
-
-
 def _local_observation_response(turn: dict[str, Any]) -> TurnResponse | None:
     if turn.get("trigger") != "command":
         return None
@@ -694,7 +634,6 @@ def _local_observation_response(turn: dict[str, Any]) -> TurnResponse | None:
     if is_memory_recall_request(normalized):
         return None
     snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
-    task_status_request = is_body_task_status_request(normalized)
     if _player_inventory_observation_intent(normalized):
         return TurnResponse(
             messages=[{"target": "requester", "content": _player_inventory_observation_message(snapshot)}],
@@ -715,12 +654,7 @@ def _local_observation_response(turn: dict[str, Any]) -> TurnResponse | None:
             messages=[{"target": "requester", "content": _nearby_observation_message(snapshot)}],
             debug={"local_observation": True, "intent": "nearby_observation"},
         )
-    if _body_observation_intent(normalized):
-        return TurnResponse(
-            messages=[{"target": "requester", "content": BODY_CONTROL_DISABLED_MESSAGE}],
-            debug={"local_observation": True, "intent": "body_observation"},
-        )
-    if _player_observation_intent(normalized) or (task_status_request and _ambiguous_player_status_intent(normalized)):
+    if _player_observation_intent(normalized) or _ambiguous_player_status_intent(normalized):
         return TurnResponse(
             messages=[{"target": "requester", "content": _player_observation_message(snapshot)}],
             debug={"local_observation": True, "intent": "player_observation"},
@@ -733,8 +667,6 @@ def _ambiguous_player_status_intent(message: str) -> bool:
 
 
 def _player_observation_intent(message: str) -> bool:
-    if any(token in message for token in ("身体", "假人", "mina body", "body")):
-        return False
     return any(
         token in message
         for token in (
@@ -766,8 +698,6 @@ def _player_observation_intent(message: str) -> bool:
 
 
 def _player_inventory_observation_intent(message: str) -> bool:
-    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
-        return False
     if any(token in message for token in ("背包", "物品栏", "inventory", "my items")):
         return True
     has_player_subject = any(token in message for token in ("我", "my ", "am i", "i "))
@@ -789,8 +719,6 @@ def _player_inventory_observation_intent(message: str) -> bool:
 
 
 def _environment_observation_intent(message: str) -> bool:
-    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
-        return False
     if _literal_read_only_command(message):
         return False
     if _natural_locate_command(message):
@@ -812,10 +740,6 @@ def _environment_observation_intent(message: str) -> bool:
 
 
 def _nearby_observation_intent(message: str) -> bool:
-    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
-        return False
-    if is_body_chop_tree_request(message) or is_body_follow_request(message) or is_body_stop_request(message):
-        return False
     return any(
         token in message
         for token in (
@@ -840,10 +764,6 @@ def _nearby_observation_intent(message: str) -> bool:
 
 
 def _danger_observation_intent(message: str) -> bool:
-    if any(token in message for token in ("mina", "身体", "假人", "mina body", "body")):
-        return False
-    if is_body_chop_tree_request(message) or is_body_follow_request(message) or is_body_stop_request(message):
-        return False
     if any(token in message for token in ("命令", "工具", "调用", "command", "tool")):
         return False
     has_local_context = any(
@@ -895,33 +815,6 @@ def _danger_observation_intent(message: str) -> bool:
     return has_explicit_hostile or (has_local_context and has_danger_signal)
 
 
-def _body_observation_intent(message: str) -> bool:
-    has_body_subject = any(token in message for token in ("mina", "身体", "假人", "body"))
-    has_observation = any(
-        token in message
-        for token in (
-            "在哪",
-            "位置",
-            "坐标",
-            "离我",
-            "距离",
-            "状态",
-            "手里",
-            "手上",
-            "拿着",
-            "选中",
-            "物品",
-            "where",
-            "position",
-            "coordinates",
-            "holding",
-            "held item",
-            "selected item",
-        )
-    )
-    return has_body_subject and has_observation
-
-
 def _player_observation_message(snapshot: dict[str, Any]) -> str:
     player = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
     if not player:
@@ -944,26 +837,6 @@ def _player_observation_message(snapshot: dict[str, Any]) -> str:
     if mode:
         parts.append(f"模式 {mode}")
     return "；".join(parts) + "。" if parts else "我还没有拿到你的当前状态快照。"
-
-
-def _body_observation_message(snapshot: dict[str, Any]) -> str:
-    body = snapshot.get("body_state") if isinstance(snapshot.get("body_state"), dict) else {}
-    if not body or not body.get("online"):
-        return "Mina body 当前不在线。"
-    parts = ["Mina body 当前在线"]
-    position = _position_phrase(body)
-    if position:
-        parts.append(f"位置：{position}")
-    distance = _number_phrase(body.get("distance_to_requester"))
-    if distance:
-        parts.append(f"距离你 {distance} 格")
-    health = _number_phrase(body.get("health"))
-    if health:
-        parts.append(f"生命 {health}")
-    held = _item_phrase(body.get("selected_item"))
-    if held:
-        parts.append(f"手持 {held}")
-    return "；".join(parts) + "。"
 
 
 def _player_inventory_observation_message(snapshot: dict[str, Any]) -> str:
@@ -1626,8 +1499,6 @@ def _fresh_or_reference_lookup_query(message: str) -> bool:
     subject_markers = (
         *MINECRAFT_KNOWLEDGE_MARKERS,
         "fabric",
-        "puppetplayers",
-        "puppet players",
         "deepseek",
         "mina e2e",
     )
@@ -1683,8 +1554,6 @@ def _natural_external_lookup_query(message: str) -> bool:
             *MINECRAFT_KNOWLEDGE_MARKERS,
             "fabric",
             "fabric api",
-            "puppetplayers",
-            "puppet players",
             "deepseek",
             "modrinth",
             "mcp",
@@ -1871,9 +1740,9 @@ def _unsafe_search_text(value: str) -> bool:
             "忽略之前",
             "忽略以上",
             "调用工具",
-            "call body_",
-            "body_chain",
-            "body_attack",
+            "call run_safe_command",
+            "send_player_message",
+            "send_global_message",
             "run setblock",
             "execute command",
         )
@@ -1945,18 +1814,6 @@ def _mentions_minecraft_write_command(message: str) -> bool:
         if command in MINECRAFT_WRITE_COMMANDS:
             return True
     return False
-
-
-def _offline_follow_intent(message: str) -> bool:
-    return is_body_follow_request(message)
-
-
-def _offline_stop_intent(message: str) -> bool:
-    return is_body_stop_request(message)
-
-
-def _offline_chop_tree_intent(message: str) -> bool:
-    return is_body_chop_tree_request(message)
 
 
 def _offline_memory_write_intent(message: str) -> bool:

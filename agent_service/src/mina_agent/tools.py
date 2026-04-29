@@ -10,7 +10,6 @@ from .mcp import McpRegistry
 from .memory import MemoryStore
 from .schemas import ToolResult
 from .searxng import SearxngClient
-from .tasks import SkillRuntime
 
 LOGGER = logging.getLogger("mina_agent.tools")
 
@@ -24,31 +23,10 @@ def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
     }
 
 
-# These are private Fabric executor actions. The model must not call them
-# directly; SkillRuntime emits them as observed, resumable steps.
-FABRIC_ACTION_TOOLS = {
+PRIVATE_FABRIC_TOOLS = {
     "send_player_message",
     "send_global_message",
-    "body_spawn",
-    "body_move_to_position",
-    "body_move_to_entity",
-    "body_move_to_requester",
-    "body_look_at_position",
-    "body_look_at_requester",
-    "body_move_to",
-    "body_look_at",
-    "body_attack",
-    "body_use",
-    "body_chain",
-    "body_swap_slot",
-    "body_stop",
 }
-
-BODY_CONTROL_TOOLS = {"start_body_task", "stop_body_task", "task_status"}
-BODY_CONTROL_DISABLED_ERROR = (
-    "Puppet/body control is temporarily disabled; Mina now focuses on chat, knowledge/search, "
-    "read-only command execution, and player/world state observation"
-)
 
 READ_ONLY_TIME_QUERIES = {"daytime", "gametime", "day"}
 READ_ONLY_LOCATE_TARGET = re.compile(r"^[a-z0-9_:.\-/#]+$")
@@ -188,33 +166,28 @@ class ToolRunner:
         memory: MemoryStore,
         searxng: SearxngClient,
         mcp: McpRegistry | None = None,
-        skills: SkillRuntime | None = None,
     ):
         self.memory = memory
         self.searxng = searxng
         self.mcp = mcp or McpRegistry()
-        self.skills = skills or SkillRuntime(memory)
 
     def run(self, name: str, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         local: dict[str, Callable[[dict[str, Any], dict[str, Any]], ToolResult]] = {
             "web_search": self._web_search,
             "memory_search": self._memory_search,
             "memory_write": self._memory_write,
-            "start_body_task": self._start_body_task,
-            "stop_body_task": self._stop_body_task,
-            "task_status": self._task_status,
             "run_read_only_command": self._run_read_only_command,
             "mcp_call": self._mcp_call,
         }
         if name in local:
             return local[name](args if isinstance(args, dict) else {}, turn)
-        if name in FABRIC_ACTION_TOOLS or name == "run_safe_command":
+        if name in PRIVATE_FABRIC_TOOLS or name == "run_safe_command":
             LOGGER.info("rejected_private_fabric_tool name=%s args=%s", name, args)
             return ToolResult(
                 content=json.dumps(
                     {
                         "ok": False,
-                        "error": f"{name} is a private executor primitive and body control is temporarily disabled.",
+                        "error": f"{name} is a private Fabric executor primitive.",
                     },
                     ensure_ascii=False,
                 )
@@ -255,53 +228,6 @@ class ToolRunner:
         self.memory.add_event(player_id, event_type, {"content": content}, importance=importance)
         LOGGER.info("memory_write player=%s event_type=%s importance=%s content=%s", player_id, event_type, importance, content[:500])
         return ToolResult(content=json.dumps({"ok": True}, ensure_ascii=False))
-
-    def _start_body_task(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
-        permissions = turn.get("permissions") or {}
-        if not permissions.get("can_use_actions", False):
-            return ToolResult(content=json.dumps({"ok": False, "error": "permission denied"}, ensure_ascii=False))
-        task_type = str(args.get("task_type") or "")
-        if task_type not in {"chop_tree", "follow_player"}:
-            return ToolResult(content=json.dumps({"ok": False, "error": f"unsupported body task: {task_type}"}, ensure_ascii=False))
-        response = self.skills.start_task(task_type, args, turn)
-        task_status = response.debug.get("task_status") if isinstance(response.debug.get("task_status"), dict) else {}
-        ok = bool(response.actions) or bool(response.messages)
-        error = ""
-        if task_status.get("status") == "failed":
-            ok = False
-            error = str(task_status.get("last_error") or "")
-        payload = {
-            "ok": ok,
-            "task_type": task_type,
-            "messages": response.messages,
-            "actions": response.actions,
-            "debug": response.debug,
-        }
-        if error:
-            payload["error"] = error
-        return ToolResult(content=json.dumps(payload, ensure_ascii=False), actions=response.actions)
-
-    def _stop_body_task(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
-        permissions = turn.get("permissions") or {}
-        if not permissions.get("can_use_actions", False):
-            return ToolResult(content=json.dumps({"ok": False, "error": "permission denied"}, ensure_ascii=False))
-        response = self.skills.stop_task(str(args.get("task_id") or "") or None, turn)
-        ok = bool(response.actions)
-        payload: dict[str, Any] = {"ok": ok, "messages": response.messages, "actions": response.actions}
-        if not ok:
-            payload["error"] = "no active body task"
-        return ToolResult(
-            content=json.dumps(payload, ensure_ascii=False),
-            actions=response.actions,
-        )
-
-    def _task_status(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
-        status = self.skills.task_status(
-            str(args.get("task_id") or "") or None,
-            turn,
-            include_recent=bool(args.get("include_recent")),
-        )
-        return ToolResult(content=json.dumps(status, ensure_ascii=False))
 
     def _run_read_only_command(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         command = _strip_slash(str(args.get("command") or ""))

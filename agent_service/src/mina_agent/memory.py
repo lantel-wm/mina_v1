@@ -83,13 +83,6 @@ class MemoryStore:
                     error text not null,
                     created_at real not null
                 );
-                create table if not exists task_events (
-                    id integer primary key autoincrement,
-                    task_id text not null,
-                    event_type text not null,
-                    payload_json text not null,
-                    created_at real not null
-                );
                 create table if not exists action_events (
                     id integer primary key autoincrement,
                     request_id text not null,
@@ -98,13 +91,6 @@ class MemoryStore:
                     step_id text not null,
                     action_name text not null,
                     event_type text not null,
-                    payload_json text not null,
-                    created_at real not null
-                );
-                create table if not exists skill_reflections (
-                    id integer primary key autoincrement,
-                    skill_name text not null,
-                    reflection text not null,
                     payload_json text not null,
                     created_at real not null
                 );
@@ -140,16 +126,8 @@ class MemoryStore:
             from events;
 
             insert into memory_fts_v2(kind, scope_id, label, content)
-            select 'task_event', task_id, event_type, payload_json
-            from task_events;
-
-            insert into memory_fts_v2(kind, scope_id, label, content)
             select 'action_event', request_id, event_type, payload_json
             from action_events;
-
-            insert into memory_fts_v2(kind, scope_id, label, content)
-            select 'skill_reflection', skill_name, skill_name, reflection
-            from skill_reflections;
             """
         )
 
@@ -299,18 +277,6 @@ class MemoryStore:
                 ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
-    def record_task_event(self, task_id: str, event_type: str, payload: dict[str, Any]) -> None:
-        content = json.dumps(payload, ensure_ascii=False)
-        with self._connect() as conn:
-            conn.execute(
-                "insert into task_events(task_id, event_type, payload_json, created_at) values(?, ?, ?, ?)",
-                (task_id, event_type, content, time.time()),
-            )
-            conn.execute(
-                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
-                ("task_event", task_id, event_type, content),
-            )
-
     def record_action_event(self, request_id: str, event_type: str, payload: dict[str, Any]) -> None:
         content = json.dumps(payload, ensure_ascii=False)
         action_id = str(payload.get("action_id") or payload.get("id") or "")
@@ -329,31 +295,6 @@ class MemoryStore:
                 "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
                 ("action_event", request_id, event_type, content),
             )
-
-    def add_skill_reflection(self, skill_name: str, reflection: str, payload: dict[str, Any]) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                "insert into skill_reflections(skill_name, reflection, payload_json, created_at) values(?, ?, ?, ?)",
-                (skill_name, reflection, json.dumps(payload, ensure_ascii=False), time.time()),
-            )
-            conn.execute(
-                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
-                ("skill_reflection", skill_name, skill_name, reflection),
-            )
-
-    def recent_task_events(self, task_id: str, limit: int = 20) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                select task_id, event_type, payload_json, created_at
-                from task_events
-                where task_id = ?
-                order by id desc
-                limit ?
-                """,
-                (task_id, limit),
-            ).fetchall()
-        return [dict(row) for row in reversed(rows)]
 
     def recent_action_events(self, request_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -380,20 +321,6 @@ class MemoryStore:
                 ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
-    def recent_skill_reflections(self, skill_name: str, limit: int = 6) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                select skill_name, reflection, payload_json, created_at
-                from skill_reflections
-                where skill_name = ?
-                order by id desc
-                limit ?
-                """,
-                (skill_name, limit),
-            ).fetchall()
-        return [dict(row) for row in rows]
-
     def recent_conversation(self, player_id: str, limit: int = 12) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -418,7 +345,6 @@ class MemoryStore:
                     where memory_fts_v2 match ?
                       and (
                         (kind in ('conversation', 'event') and scope_id = ?)
-                        or kind = 'skill_reflection'
                       )
                     order by score
                     limit ?

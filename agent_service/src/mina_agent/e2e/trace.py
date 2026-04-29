@@ -68,18 +68,6 @@ def trace_records(trace_id: str, trace: dict[str, Any]) -> list[dict[str, Any]]:
                 "created_at": event.get("created_at"),
             }
         )
-    for event in trace.get("task_events") or []:
-        if not isinstance(event, dict):
-            continue
-        records.append(
-            {
-                "trace_id": trace_id,
-                "task_id": event.get("task_id"),
-                "event_type": "task_" + str(event.get("event_type") or ""),
-                "payload": compact_trace_payload(parse_json_field(event.get("payload_json"))),
-                "created_at": event.get("created_at"),
-            }
-        )
     records.sort(key=lambda item: float(item.get("created_at") or 0))
     return records
 
@@ -180,7 +168,6 @@ def snapshot_hash(snapshot: dict[str, Any]) -> str:
 
 def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
     player = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
-    body = snapshot.get("body_state") if isinstance(snapshot.get("body_state"), dict) else {}
     world = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
     blocks = flatten_blocks(snapshot.get("nearby_blocks"))
     entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
@@ -192,14 +179,6 @@ def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
             "z": player.get("z"),
             "health": player.get("health"),
             "food": player.get("food"),
-        },
-        "body": {
-            "online": body.get("online"),
-            "x": body.get("x"),
-            "y": body.get("y"),
-            "z": body.get("z"),
-            "distance_to_requester": body.get("distance_to_requester"),
-            "targeted_block": body.get("targeted_block") or body.get("target_block"),
         },
         "world": {
             "day_time": world.get("day_time"),

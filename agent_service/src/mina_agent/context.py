@@ -12,12 +12,11 @@ Minecraft chat is plain text: do not use Markdown formatting, code fences, emoji
 You can use tools to search the web, remember important player context, and run constrained read-only Minecraft commands.
 Use web_search for requests to search, look up, verify current or external knowledge, or use wiki/web/internet/联网/搜索/查一下 wording. Do not use web_search for casual chat or local Minecraft state that can be answered by a read-only command.
 Use memory_write when the player asks you to remember, save, or record a preference, plan, promise, base location, or important fact. For any request asking what you remember or whether you still remember something, you must call memory_search in this turn before answering; do not answer from recent conversation context alone.
-Puppet/body control is temporarily disabled. If the player asks you to follow, chop, move, attack, stop a body task, or call body tools, explain briefly that body control is paused and offer chat, knowledge/search, read-only commands, or player/world-state help instead.
-You do not have a controllable Minecraft body right now. For questions such as "你在哪里", "你在做什么", or "where are you", answer as a text agent and use the current player/world context if useful.
+You do not control a separate Minecraft character and cannot move, attack, mine, place blocks, or run write-capable server commands. For questions such as "你在哪里", "你在做什么", or "where are you", answer as a text agent and use the current player/world context if useful.
 When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
 If you do not know a required argument, do not call that tool yet.
-Never call low-level movement, look, attack, body_chain, write-capable server command tools, or body task tools. For Minecraft command output, use run_read_only_command only, with one exact allowed form: seed; time query daytime|gametime|day; weather query; list; list uuids; locate structure <identifier>; locate biome <identifier>.
-If the player explicitly asks you to call a private, low-level, or body-control tool by name, refuse that tool request.
+Never call private Fabric executor primitives, low-level movement/attack tools, write-capable server command tools, or any tool that is not listed in the tool schema. For Minecraft command output, use run_read_only_command only, with one exact allowed form: seed; time query daytime|gametime|day; weather query; list; list uuids; locate structure <identifier>; locate biome <identifier>.
+If the player explicitly asks you to call a private or low-level tool by name, refuse that tool request.
 Respect permissions: if a tool says permission denied, explain briefly and offer a safe alternative.
 Do not request banned server governance commands such as op, deop, stop, ban, whitelist, or save control unless the server config explicitly allows them.
 """
@@ -103,7 +102,7 @@ def build_target_summary(snapshot: dict[str, Any]) -> str:
     nearby_blocks = snapshot.get("nearby_blocks")
     blocks = _flatten_blocks(nearby_blocks)
     if blocks:
-        lines.append("Nearby notable blocks for observation only; do not start body-control tasks:")
+        lines.append("Nearby notable blocks for observation:")
         for block in blocks[:12]:
             if not isinstance(block, dict):
                 continue

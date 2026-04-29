@@ -1,7 +1,6 @@
 package com.mina.game;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mina.MinaMod;
 import com.mina.config.MinaConfig;
@@ -21,21 +20,18 @@ public final class MinaTurnController {
 	private final SidecarClient sidecarClient;
 	private final MinaSnapshotter snapshotter;
 	private final MinaActionExecutor actionExecutor;
-	private final MinaActionMonitor actionMonitor;
 	private final Map<UUID, CompletableFuture<JsonObject>> activeTurns = new ConcurrentHashMap<>();
 
 	public MinaTurnController(
 		MinaConfig config,
 		SidecarClient sidecarClient,
 		MinaSnapshotter snapshotter,
-		MinaActionExecutor actionExecutor,
-		MinaActionMonitor actionMonitor
+		MinaActionExecutor actionExecutor
 	) {
 		this.config = config;
 		this.sidecarClient = sidecarClient;
 		this.snapshotter = snapshotter;
 		this.actionExecutor = actionExecutor;
-		this.actionMonitor = actionMonitor;
 	}
 
 	public int submitPlayerTurn(MinecraftServer server, ServerPlayer player, String trigger, String content, boolean thinkingMessage) {
@@ -88,10 +84,7 @@ public final class MinaTurnController {
 		if (response == null) {
 			return;
 		}
-		JsonArray actions = response.getAsJsonArray("actions");
 		JsonArray results = actionExecutor.executeResponse(server, requester, config, response);
-		cancelMonitorsForSuccessfulStops(actions, results);
-		registerMonitors(server, requester, requestId, actions, results);
 		if (results.size() > 0) {
 			reportActionResults(server, requester, requestId, results);
 		}
@@ -119,81 +112,6 @@ public final class MinaTurnController {
 		}));
 	}
 
-	public void reportMonitorResult(MinecraftServer server, ServerPlayer requester, String requestId, JsonObject action, JsonObject monitorResult) {
-		JsonObject result = new JsonObject();
-		result.addProperty("action_id", string(action, "id"));
-		result.addProperty("task_id", string(action, "task_id"));
-		result.addProperty("step_id", string(action, "step_id"));
-		result.addProperty("name", string(action, "name"));
-		result.addProperty("status", string(monitorResult, "status"));
-		result.addProperty("command_success", true);
-		result.add("monitor_result", monitorResult);
-		if (requester != null) {
-			result.add("snapshot", snapshotter.snapshot(server, requester, config));
-		}
-		JsonArray results = new JsonArray();
-		results.add(result);
-		reportActionResults(server, requester, requestId, results);
-	}
-
-	public void reportObservation(MinecraftServer server, ServerPlayer requester, String requestId, String taskId) {
-		if (requester == null) {
-			return;
-		}
-		JsonObject payload = new JsonObject();
-		payload.addProperty("request_id", requestId == null ? "" : requestId);
-		payload.addProperty("task_id", taskId == null ? "" : taskId);
-		payload.add("snapshot", snapshotter.snapshot(server, requester, config));
-		sidecarClient.observations(config, payload).whenComplete((response, throwable) -> server.executeIfPossible(() -> {
-			if (throwable != null) {
-				MinaMod.LOGGER.debug("Mina sidecar observation failed", throwable);
-				return;
-			}
-			if (hasMessagesOrActions(response)) {
-				MinaMod.LOGGER.info("mina observation response requestId={} response={}", requestId, response);
-				processSidecarResponse(server, requester, requestId, response);
-			}
-		}));
-	}
-
-	private void registerMonitors(MinecraftServer server, ServerPlayer requester, String requestId, JsonArray actions, JsonArray results) {
-		if (actions == null || results == null) {
-			return;
-		}
-		int limit = Math.min(actions.size(), results.size());
-		for (int index = 0; index < limit; index++) {
-			JsonElement actionElement = actions.get(index);
-			JsonElement resultElement = results.get(index);
-			if (!actionElement.isJsonObject() || !resultElement.isJsonObject()) {
-				continue;
-			}
-			JsonObject action = actionElement.getAsJsonObject();
-			JsonObject result = resultElement.getAsJsonObject();
-			if ("monitor_pending".equals(string(result, "status")) && action.has("monitor") && action.get("monitor").isJsonObject()) {
-				actionMonitor.track(server, requester, requestId, action);
-			}
-		}
-	}
-
-	private void cancelMonitorsForSuccessfulStops(JsonArray actions, JsonArray results) {
-		if (actions == null || results == null) {
-			return;
-		}
-		int limit = Math.min(actions.size(), results.size());
-		for (int index = 0; index < limit; index++) {
-			JsonElement actionElement = actions.get(index);
-			JsonElement resultElement = results.get(index);
-			if (!actionElement.isJsonObject() || !resultElement.isJsonObject()) {
-				continue;
-			}
-			JsonObject action = actionElement.getAsJsonObject();
-			JsonObject result = resultElement.getAsJsonObject();
-			if ("body_stop".equals(string(action, "name")) && bool(result, "command_success", false)) {
-				actionMonitor.cancelTask(string(action, "task_id"), string(action, "step_id"));
-			}
-		}
-	}
-
 	private static boolean hasMessagesOrActions(JsonObject response) {
 		if (response == null) {
 			return false;
@@ -201,20 +119,6 @@ public final class MinaTurnController {
 		JsonArray messages = response.getAsJsonArray("messages");
 		JsonArray actions = response.getAsJsonArray("actions");
 		return messages != null && messages.size() > 0 || actions != null && actions.size() > 0;
-	}
-
-	private static String string(JsonObject object, String key) {
-		if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
-			return "";
-		}
-		return object.get(key).getAsString();
-	}
-
-	private static boolean bool(JsonObject object, String key, boolean fallback) {
-		if (object == null || !object.has(key) || object.get(key).isJsonNull()) {
-			return fallback;
-		}
-		return object.get(key).getAsBoolean();
 	}
 
 	private static boolean isCancellation(Throwable throwable) {

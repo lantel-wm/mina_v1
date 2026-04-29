@@ -26,8 +26,6 @@ public final class MinaConfig {
 	public boolean enableCompanion = false;
 	public boolean allowedOperatorsOnlyForActions = true;
 	public List<String> actionAllowlist = new ArrayList<>();
-	public String bodyUsername = "mina";
-	public boolean enableBody = false;
 	public int snapshotIntervalTicks = 200;
 	public int companionCooldownSeconds = 300;
 	public int nearbyEntityRadius = 64;
@@ -78,8 +76,6 @@ public final class MinaConfig {
 		this.enableCompanion = loaded.enableCompanion;
 		this.allowedOperatorsOnlyForActions = loaded.allowedOperatorsOnlyForActions;
 		this.actionAllowlist = loaded.actionAllowlist;
-		this.bodyUsername = loaded.bodyUsername;
-		this.enableBody = loaded.enableBody;
 		this.snapshotIntervalTicks = loaded.snapshotIntervalTicks;
 		this.companionCooldownSeconds = loaded.companionCooldownSeconds;
 		this.nearbyEntityRadius = loaded.nearbyEntityRadius;
@@ -161,9 +157,6 @@ public final class MinaConfig {
 		}
 		if (actionAllowlist == null) {
 			actionAllowlist = new ArrayList<>();
-		}
-		if (bodyUsername == null || bodyUsername.isBlank()) {
-			bodyUsername = "mina";
 		}
 		if (snapshotIntervalTicks < 20) {
 			snapshotIntervalTicks = 20;

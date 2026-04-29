@@ -11,14 +11,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
-import net.minecraft.tags.ItemTags;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.phys.AABB;
-
-import java.util.regex.Pattern;
 
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
@@ -35,18 +30,15 @@ public final class MinaTestCommands {
 	private static final BlockPos TARGET_LOG = new BlockPos(TREE_X, TREE_Y, TREE_Z);
 	private static final BlockPos UPPER_LOG = new BlockPos(TREE_X, TREE_Y + 1, TREE_Z);
 	private static final BlockPos SETUP_MARKER = new BlockPos(0, TREE_Y - 1, 0);
-	private static final Pattern ACTOR_NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
 
 	private final MinaConfig config;
 	private final MinaSnapshotter snapshotter;
 	private final MinaTurnController turnController;
-	private final MinaActionExecutor actionExecutor;
 
-	public MinaTestCommands(MinaConfig config, MinaSnapshotter snapshotter, MinaTurnController turnController, MinaActionExecutor actionExecutor) {
+	public MinaTestCommands(MinaConfig config, MinaSnapshotter snapshotter, MinaTurnController turnController) {
 		this.config = config;
 		this.snapshotter = snapshotter;
 		this.turnController = turnController;
-		this.actionExecutor = actionExecutor;
 	}
 
 	public void register() {
@@ -54,12 +46,10 @@ public final class MinaTestCommands {
 			return;
 		}
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
-				literal("mina-test")
-					.then(literal("setup")
-						.then(literal("chop_tree").executes(context -> setupChopTree(context.getSource())))
-						.then(literal("leaf_crowded_chop_tree").executes(context -> setupLeafCrowdedChopTree(context.getSource())))
-						.then(literal("follow_player").executes(context -> setupFollowPlayer(context.getSource())))
-						.then(literal("blocked_chop_tree").executes(context -> setupBlockedChopTree(context.getSource()))))
+			literal("mina-test")
+				.then(literal("setup")
+					.then(literal("default_world").executes(context -> setupDefaultWorld(context.getSource())))
+					.then(literal("tree_world").executes(context -> setupTreeWorld(context.getSource()))))
 				.then(literal("request")
 					.then(argument("content", StringArgumentType.greedyString())
 						.executes(context -> request(context.getSource(), StringArgumentType.getString(context, "content")))))
@@ -81,21 +71,6 @@ public final class MinaTestCommands {
 					.then(literal("reset")
 						.then(argument("name", StringArgumentType.word())
 							.executes(context -> fixtureReset(context.getSource(), StringArgumentType.getString(context, "name"))))))
-				.then(literal("actor")
-					.then(literal("spawn")
-						.then(argument("name", StringArgumentType.word())
-							.executes(context -> actorSpawn(context.getSource(), StringArgumentType.getString(context, "name")))))
-					.then(literal("leave")
-						.then(argument("name", StringArgumentType.word())
-							.executes(context -> actorLeave(context.getSource(), StringArgumentType.getString(context, "name")))))
-					.then(literal("tp")
-						.then(argument("name", StringArgumentType.word())
-							.then(argument("position", StringArgumentType.greedyString())
-								.executes(context -> actorTeleport(
-									context.getSource(),
-									StringArgumentType.getString(context, "name"),
-									StringArgumentType.getString(context, "position")
-								))))))
 				.then(literal("world")
 					.then(literal("mutate")
 						.then(argument("operation", StringArgumentType.word())
@@ -103,71 +78,38 @@ public final class MinaTestCommands {
 				.then(literal("ready").executes(context -> ready(context.getSource())))
 				.then(literal("deny_actions").executes(context -> denyActions(context.getSource())))
 				.then(literal("allow_actions").executes(context -> allowActions(context.getSource())))
-				.then(literal("leave_body").executes(context -> leaveBody(context.getSource())))
 				.then(literal("move_requester_far").executes(context -> moveRequesterFar(context.getSource())))
 				.then(literal("move_requester_far_again").executes(context -> moveRequesterFarAgain(context.getSource())))
-				.then(literal("move_body_far").executes(context -> moveBodyFar(context.getSource())))
 				.then(literal("remove_target_log").executes(context -> removeTargetLog(context.getSource())))
 				.then(literal("snapshot").executes(context -> snapshot(context.getSource())))
 				.then(literal("assert")
-					.then(literal("chop_tree").executes(context -> assertChopTree(context.getSource())))
-					.then(literal("follow_player").executes(context -> assertFollowPlayer(context.getSource())))
-					.then(literal("body_has_log").executes(context -> assertBodyHasLog(context.getSource())))
-					.then(literal("no_log_drops").executes(context -> assertNoLogDrops(context.getSource())))
 					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource())))
-					.then(literal("upper_log_absent").executes(context -> assertUpperLogAbsent(context.getSource()))))
-				.then(literal("stop").executes(context -> stop(context.getSource())))
+					.then(literal("upper_log_present").executes(context -> assertUpperLogPresent(context.getSource()))))
 		));
 	}
 
-	private int setupChopTree(CommandSourceStack source) {
-		setupWorldAndPlayers(source);
-		source.sendSuccess(() -> Component.literal("Mina test chop_tree setup complete. Poll /mina-test ready before requesting."), false);
+	private int setupDefaultWorld(CommandSourceStack source) {
+		setupWorldAndRequester(source, false);
+		source.sendSuccess(() -> Component.literal("Mina test default_world setup complete. Poll /mina-test ready before requesting."), false);
 		return 1;
 	}
 
-	private int setupLeafCrowdedChopTree(CommandSourceStack source) {
-		setupWorldAndPlayers(source);
-		crowdSnapshotWithLeaves(source.getLevel());
-		source.sendSuccess(() -> Component.literal("Mina test leaf_crowded_chop_tree setup complete. Poll /mina-test ready before requesting."), false);
-		return 1;
-	}
-
-	private int setupFollowPlayer(CommandSourceStack source) {
-		setupWorldAndPlayers(source);
-		source.sendSuccess(() -> Component.literal("Mina test follow_player setup complete. Poll /mina-test ready before requesting."), false);
-		return 1;
-	}
-
-	private int setupBlockedChopTree(CommandSourceStack source) {
-		setupWorldAndPlayers(source);
-		blockTreeApproaches(source.getLevel());
-		source.sendSuccess(() -> Component.literal("Mina test blocked_chop_tree setup complete. Poll /mina-test ready before requesting."), false);
+	private int setupTreeWorld(CommandSourceStack source) {
+		setupWorldAndRequester(source, true);
+		source.sendSuccess(() -> Component.literal("Mina test tree_world setup complete. Poll /mina-test ready before requesting."), false);
 		return 1;
 	}
 
 	private int fixtureReset(CommandSourceStack source, String name) {
 		return switch (name) {
-			case "chop_tree" -> {
-				setupWorldAndPlayers(source);
-				source.sendSuccess(() -> Component.literal("Mina test fixture chop_tree reset complete. Poll /mina-test ready before requesting."), false);
+			case "default_world" -> {
+				setupWorldAndRequester(source, false);
+				source.sendSuccess(() -> Component.literal("Mina test fixture default_world reset complete. Poll /mina-test ready before requesting."), false);
 				yield 1;
 			}
-			case "leaf_crowded_chop_tree" -> {
-				setupWorldAndPlayers(source);
-				crowdSnapshotWithLeaves(source.getLevel());
-				source.sendSuccess(() -> Component.literal("Mina test fixture leaf_crowded_chop_tree reset complete. Poll /mina-test ready before requesting."), false);
-				yield 1;
-			}
-			case "follow_player" -> {
-				setupWorldAndPlayers(source);
-				source.sendSuccess(() -> Component.literal("Mina test fixture follow_player reset complete. Poll /mina-test ready before requesting."), false);
-				yield 1;
-			}
-			case "blocked_chop_tree" -> {
-				setupWorldAndPlayers(source);
-				blockTreeApproaches(source.getLevel());
-				source.sendSuccess(() -> Component.literal("Mina test fixture blocked_chop_tree reset complete. Poll /mina-test ready before requesting."), false);
+			case "tree_world" -> {
+				setupWorldAndRequester(source, true);
+				source.sendSuccess(() -> Component.literal("Mina test fixture tree_world reset complete. Poll /mina-test ready before requesting."), false);
 				yield 1;
 			}
 			default -> {
@@ -177,20 +119,15 @@ public final class MinaTestCommands {
 		};
 	}
 
-	private void setupWorldAndPlayers(CommandSourceStack source) {
+	private void setupWorldAndRequester(CommandSourceStack source, boolean includeTree) {
 		MinecraftServer server = source.getServer();
-		prepareChopTreeWorld(source.getLevel());
+		prepareWorld(source.getLevel(), includeTree);
 		run(server, "difficulty peaceful");
 		run(server, "kill @e[type=minecraft:creeper]");
 		run(server, "kill @e[type=minecraft:item]");
 		run(server, "time set day");
 		run(server, "weather clear");
 		run(server, "puppet " + TEST_PLAYER + " spawn");
-		if (config.enableBody) {
-			run(server, "puppet " + config.bodyUsername + " spawn");
-		} else {
-			run(server, "puppet " + config.bodyUsername + " leave");
-		}
 		config.allow(TEST_PLAYER);
 	}
 
@@ -198,26 +135,16 @@ public final class MinaTestCommands {
 		ServerLevel level = source.getLevel();
 		MinecraftServer server = source.getServer();
 		ServerPlayer requester = server.getPlayerList().getPlayer(TEST_PLAYER);
-		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
 		boolean markerReady = level.getBlockState(SETUP_MARKER).is(Blocks.GRASS_BLOCK);
-		boolean targetReady = level.getBlockState(TARGET_LOG).is(Blocks.SPRUCE_LOG);
-		boolean bodyRequired = config.enableBody;
 		if (requester != null) {
 			run(server, "tp " + TEST_PLAYER + " 0.5 " + TREE_Y + " -2.5 0 0");
 			resetVitals(requester);
 			resetRequesterInventory(requester);
 		}
-		if (body != null) {
-			run(server, "tp " + config.bodyUsername + " 0.5 " + TREE_Y + " -1.5 0 0");
-			resetBodyInventory(body);
-		}
-		if (!markerReady || !targetReady || requester == null || (bodyRequired && body == null)) {
+		if (!markerReady || requester == null) {
 			source.sendFailure(Component.literal(
 				"Mina test not ready: marker=" + markerReady
-					+ ", target_log=" + targetReady
 					+ ", requester_online=" + (requester != null)
-					+ ", body_required=" + bodyRequired
-					+ ", body_online=" + (body != null)
 			));
 			return 0;
 		}
@@ -235,12 +162,6 @@ public final class MinaTestCommands {
 	private int allowActions(CommandSourceStack source) {
 		config.allow(TEST_PLAYER);
 		source.sendSuccess(() -> Component.literal("Mina test actions allowed for " + TEST_PLAYER + "."), false);
-		return 1;
-	}
-
-	private int leaveBody(CommandSourceStack source) {
-		run(source.getServer(), "puppet " + config.bodyUsername + " leave");
-		source.sendSuccess(() -> Component.literal("Mina test body left."), false);
 		return 1;
 	}
 
@@ -271,52 +192,13 @@ public final class MinaTestCommands {
 		return turnController.submitPlayerTurn(source.getServer(), requester, "companion_tick", "", false, requestId);
 	}
 
-	private int actorSpawn(CommandSourceStack source, String name) {
-		if (!validActorName(source, name)) {
-			return 0;
-		}
-		run(source.getServer(), "puppet " + name + " spawn");
-		source.sendSuccess(() -> Component.literal("Mina test actor " + name + " spawned."), false);
-		return 1;
-	}
-
-	private int actorLeave(CommandSourceStack source, String name) {
-		if (!validActorName(source, name)) {
-			return 0;
-		}
-		run(source.getServer(), "puppet " + name + " leave");
-		source.sendSuccess(() -> Component.literal("Mina test actor " + name + " left."), false);
-		return 1;
-	}
-
-	private int actorTeleport(CommandSourceStack source, String name, String position) {
-		if (!validActorName(source, name)) {
-			return 0;
-		}
-		String normalized = normalizedPosition(position);
-		if (normalized.isBlank()) {
-			source.sendFailure(Component.literal("Mina test actor tp requires: x y z [yaw pitch]."));
-			return 0;
-		}
-		run(source.getServer(), "tp " + name + " " + normalized);
-		source.sendSuccess(() -> Component.literal("Mina test actor " + name + " teleported."), false);
-		return 1;
-	}
-
 	private int worldMutate(CommandSourceStack source, String operation) {
 		return switch (operation) {
 			case "remove_target_log" -> removeTargetLog(source);
-			case "block_tree_approaches" -> {
-				blockTreeApproaches(source.getLevel());
-				source.sendSuccess(() -> Component.literal("Mina test world mutate block_tree_approaches complete."), false);
-				yield 1;
-			}
 			case "move_requester_far" -> moveRequesterFar(source);
 			case "move_requester_far_again" -> moveRequesterFarAgain(source);
-			case "move_body_far" -> moveBodyFar(source);
 			case "deny_actions" -> denyActions(source);
 			case "allow_actions" -> allowActions(source);
-			case "leave_body" -> leaveBody(source);
 			case "day" -> {
 				run(source.getServer(), "time set day");
 				source.sendSuccess(() -> Component.literal("Mina test world mutate day complete."), false);
@@ -356,17 +238,6 @@ public final class MinaTestCommands {
 		}
 		run(source.getServer(), "tp " + TEST_PLAYER + " -4.5 " + TREE_Y + " 4.5 0 0");
 		source.sendSuccess(() -> Component.literal("Mina test requester moved far again."), false);
-		return 1;
-	}
-
-	private int moveBodyFar(CommandSourceStack source) {
-		ServerPlayer body = source.getServer().getPlayerList().getPlayer(config.bodyUsername);
-		if (body == null) {
-			source.sendFailure(Component.literal("Mina body is not online."));
-			return 0;
-		}
-		run(source.getServer(), "tp " + config.bodyUsername + " -4.5 " + TREE_Y + " -4.5 0 0");
-		source.sendSuccess(() -> Component.literal("Mina test body moved far."), false);
 		return 1;
 	}
 
@@ -418,12 +289,6 @@ public final class MinaTestCommands {
 		player.getInventory().setItem(selectedSlot, new ItemStack(Items.GUNPOWDER, 1));
 	}
 
-	private void resetBodyInventory(ServerPlayer player) {
-		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
-			player.getInventory().setItem(slot, ItemStack.EMPTY);
-		}
-	}
-
 	private int snapshot(CommandSourceStack source) {
 		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
 		if (requester == null) {
@@ -431,24 +296,6 @@ public final class MinaTestCommands {
 			return 0;
 		}
 		source.sendSuccess(() -> Component.literal(GSON.toJson(snapshotter.createTurnPayload(source.getServer(), requester, config, "test_snapshot", "", "mina-test"))), false);
-		return 1;
-	}
-
-	private int assertChopTree(CommandSourceStack source) {
-		ServerLevel level = source.getLevel();
-		boolean markerReady = level.getBlockState(SETUP_MARKER).is(Blocks.GRASS_BLOCK);
-		if (!markerReady) {
-			source.sendFailure(Component.literal("Mina test chop_tree failed: setup marker is missing."));
-			return 0;
-		}
-		var state = level.getBlockState(TARGET_LOG);
-		boolean broken = !state.is(Blocks.SPRUCE_LOG);
-		if (!broken) {
-			source.sendFailure(Component.literal("Mina test chop_tree failed: target log still exists."));
-			return 0;
-		}
-		String actual = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-		source.sendSuccess(() -> Component.literal("Mina test chop_tree passed: target block is " + actual + "."), false);
 		return 1;
 	}
 
@@ -463,83 +310,14 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
-	private int assertUpperLogAbsent(CommandSourceStack source) {
+	private int assertUpperLogPresent(CommandSourceStack source) {
 		ServerLevel level = source.getLevel();
-		var state = level.getBlockState(UPPER_LOG);
-		boolean absent = !state.is(Blocks.SPRUCE_LOG);
-		if (!absent) {
-			source.sendFailure(Component.literal("Mina test upper_log_absent failed: replacement log still exists."));
+		boolean present = level.getBlockState(UPPER_LOG).is(Blocks.SPRUCE_LOG);
+		if (!present) {
+			source.sendFailure(Component.literal("Mina test upper_log_present failed: upper log was changed."));
 			return 0;
 		}
-		String actual = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-		source.sendSuccess(() -> Component.literal("Mina test upper_log_absent passed: replacement block is " + actual + "."), false);
-		return 1;
-	}
-
-	private int assertBodyHasLog(CommandSourceStack source) {
-		ServerPlayer body = source.getServer().getPlayerList().getPlayer(config.bodyUsername);
-		if (body == null) {
-			source.sendFailure(Component.literal("Mina test body_has_log failed: body is offline."));
-			return 0;
-		}
-		int count = 0;
-		for (int slot = 0; slot < body.getInventory().getContainerSize(); slot++) {
-			ItemStack stack = body.getInventory().getItem(slot);
-			if (stack.is(ItemTags.LOGS)) {
-				count += stack.getCount();
-			}
-		}
-		if (count <= 0) {
-			source.sendFailure(Component.literal("Mina test body_has_log failed: Mina body has no logs."));
-			return 0;
-		}
-		int logCount = count;
-		source.sendSuccess(() -> Component.literal("Mina test body_has_log passed: log count " + logCount + "."), false);
-		return 1;
-	}
-
-	private int assertNoLogDrops(CommandSourceStack source) {
-		ServerLevel level = source.getLevel();
-		AABB box = new AABB(TARGET_LOG).inflate(8.0D, 6.0D, 8.0D);
-		int count = 0;
-		for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, box, entity -> entity.isAlive() && entity.getItem().is(ItemTags.LOGS))) {
-			count += item.getItem().getCount();
-		}
-		if (count > 0) {
-			int dropCount = count;
-			source.sendFailure(Component.literal("Mina test no_log_drops failed: log drops remain " + dropCount + "."));
-			return 0;
-		}
-		source.sendSuccess(() -> Component.literal("Mina test no_log_drops passed: no log drops remain."), false);
-		return 1;
-	}
-
-	private int assertFollowPlayer(CommandSourceStack source) {
-		ServerLevel level = source.getLevel();
-		boolean markerReady = level.getBlockState(SETUP_MARKER).is(Blocks.GRASS_BLOCK);
-		if (!markerReady) {
-			source.sendFailure(Component.literal("Mina test follow_player failed: setup marker is missing."));
-			return 0;
-		}
-		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
-		ServerPlayer body = source.getServer().getPlayerList().getPlayer(config.bodyUsername);
-		if (requester == null || body == null) {
-			source.sendFailure(Component.literal("Mina test follow_player failed: requester/body offline."));
-			return 0;
-		}
-		double distance = Math.sqrt(body.distanceToSqr(requester));
-		if (distance > 4.0D) {
-			source.sendFailure(Component.literal(String.format(java.util.Locale.ROOT, "Mina test follow_player failed: distance %.2f.", distance)));
-			return 0;
-		}
-		source.sendSuccess(() -> Component.literal(String.format(java.util.Locale.ROOT, "Mina test follow_player passed: distance %.2f.", distance)), false);
-		return 1;
-	}
-
-	private int stop(CommandSourceStack source) {
-		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
-		actionExecutor.stopBody(source.getServer(), requester, config);
-		source.sendSuccess(() -> Component.literal("Mina test body stopped."), false);
+		source.sendSuccess(() -> Component.literal("Mina test upper_log_present passed."), false);
 		return 1;
 	}
 
@@ -550,30 +328,7 @@ public final class MinaTestCommands {
 		);
 	}
 
-	private static boolean validActorName(CommandSourceStack source, String name) {
-		if (ACTOR_NAME.matcher(name).matches()) {
-			return true;
-		}
-		source.sendFailure(Component.literal("Invalid Mina test actor name: " + name));
-		return false;
-	}
-
-	private static String normalizedPosition(String position) {
-		String[] parts = position.trim().split("\\s+");
-		if (parts.length != 3 && parts.length != 5) {
-			return "";
-		}
-		for (String part : parts) {
-			try {
-				Double.parseDouble(part);
-			} catch (NumberFormatException exception) {
-				return "";
-			}
-		}
-		return String.join(" ", parts);
-	}
-
-	private static void prepareChopTreeWorld(ServerLevel level) {
+	private static void prepareWorld(ServerLevel level, boolean includeTree) {
 		int minChunk = Math.floorDiv(-FIXTURE_RADIUS, 16);
 		int maxChunk = Math.floorDiv(FIXTURE_RADIUS, 16);
 		for (int chunkX = minChunk; chunkX <= maxChunk; chunkX++) {
@@ -593,6 +348,10 @@ public final class MinaTestCommands {
 				}
 			}
 		}
+		level.setBlock(SETUP_MARKER, Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+		if (!includeTree) {
+			return;
+		}
 		level.setBlock(TARGET_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
 		level.setBlock(UPPER_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
@@ -600,32 +359,5 @@ public final class MinaTestCommands {
 		level.setBlock(new BlockPos(TREE_X - 1, TREE_Y + 2, TREE_Z), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z + 1), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
 		level.setBlock(new BlockPos(TREE_X, TREE_Y + 2, TREE_Z - 1), Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
-	}
-
-	private static void blockTreeApproaches(ServerLevel level) {
-		BlockPos[] logs = {TARGET_LOG, UPPER_LOG};
-		for (BlockPos log : logs) {
-			level.setBlock(log.north(), Blocks.COBBLESTONE.defaultBlockState(), 3);
-			level.setBlock(log.south(), Blocks.COBBLESTONE.defaultBlockState(), 3);
-			level.setBlock(log.east(), Blocks.COBBLESTONE.defaultBlockState(), 3);
-			level.setBlock(log.west(), Blocks.COBBLESTONE.defaultBlockState(), 3);
-		}
-	}
-
-	private static void crowdSnapshotWithLeaves(ServerLevel level) {
-		for (int x = -3; x <= 3; x++) {
-			for (int z = -4; z <= 2; z++) {
-				for (int y : new int[]{TREE_Y - 3, TREE_Y - 2, TREE_Y - 1, TREE_Y + 2, TREE_Y + 3}) {
-					BlockPos pos = new BlockPos(x, y, z);
-					if (pos.equals(TARGET_LOG) || pos.equals(UPPER_LOG)) {
-						continue;
-					}
-					level.setBlock(pos, Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
-				}
-			}
-		}
-		level.setBlock(SETUP_MARKER, Blocks.GRASS_BLOCK.defaultBlockState(), 3);
-		level.setBlock(TARGET_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
-		level.setBlock(UPPER_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
 	}
 }

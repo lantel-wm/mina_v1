@@ -13,7 +13,6 @@ from .logging_config import configure_logging
 from .mcp import McpRegistry
 from .memory import MemoryStore
 from .searxng import SearxngClient
-from .tasks import SkillRuntime
 from .tools import ToolRunner
 
 
@@ -25,8 +24,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     searxng = SearxngClient(resolved.searxng_url)
     mcp = McpRegistry()
     deepseek = DeepSeekClient(resolved)
-    skills = SkillRuntime(memory)
-    tools = ToolRunner(memory, searxng, mcp, skills)
+    tools = ToolRunner(memory, searxng, mcp)
     harness = AgentHarness(resolved, memory, deepseek, tools)
 
     app = FastAPI(title="Mina Agent Service", version="0.1.0")
@@ -63,28 +61,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request_id = str(payload.get("request_id") or "")
         for result in _action_result_items(payload):
             await asyncio.to_thread(memory.record_action_event, request_id, "action_result", result)
-        data: dict[str, Any] = {"messages": [], "actions": [], "debug": {"body_control_disabled": True}}
+        data: dict[str, Any] = {"messages": [], "actions": []}
         data["ok"] = True
         data["received"] = payload.get("request_id") or payload.get("action_id")
         return data
-
-    @app.post("/v1/observations")
-    async def observations(payload: dict[str, Any]) -> dict[str, Any]:
-        data: dict[str, Any] = {"messages": [], "actions": [], "debug": {"body_control_disabled": True}}
-        data["ok"] = True
-        return data
-
-    @app.get("/v1/tasks/{task_id}")
-    def task(task_id: str) -> dict[str, Any]:
-        return {"ok": False, "error": "body control is temporarily disabled", "task": {"task_id": task_id, "status": "disabled"}}
-
-    @app.get("/v1/tasks/{task_id}/events")
-    def task_events(task_id: str) -> dict[str, Any]:
-        return {"ok": True, "events": memory.recent_task_events(task_id, limit=200)}
-
-    @app.get("/v1/tasks")
-    def tasks() -> dict[str, Any]:
-        return {"ok": True, "tasks": [], "body_control_disabled": True}
 
     @app.get("/v1/action-events")
     def action_events(request_id: str | None = None) -> dict[str, Any]:
@@ -103,26 +83,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         model_calls = memory.recent_model_calls(request_id=trace_id, limit=500)
         tool_calls = memory.recent_tool_calls(request_id=trace_id, limit=500)
         action_events = memory.recent_action_events(request_id=trace_id, limit=500)
-        trace_start = _trace_start(model_calls, tool_calls, action_events)
-        task_ids = {
-            str(event.get("task_id") or "")
-            for event in action_events
-            if str(event.get("task_id") or "")
-        }
-        task_events = []
-        for task_id in sorted(task_ids):
-            for event in memory.recent_task_events(task_id, limit=200):
-                if _event_created_at(event) >= trace_start - 5.0:
-                    task_events.append(event)
         return {
             "ok": True,
             "trace_id": trace_id,
             "model_calls": model_calls,
             "tool_calls": tool_calls,
             "action_events": action_events,
-            "task_events": task_events,
-            "tasks": [],
-            "body_control_disabled": True,
         }
 
     return app
@@ -141,21 +107,3 @@ def _action_result_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if single.get("action_id") or single.get("task_id") or single.get("name"):
         return [single]
     return []
-
-
-def _trace_start(*event_groups: list[dict[str, Any]]) -> float:
-    created_at = [
-        value
-        for events in event_groups
-        for event in events
-        for value in [_event_created_at(event)]
-        if value > 0
-    ]
-    return min(created_at) if created_at else 0.0
-
-
-def _event_created_at(event: dict[str, Any]) -> float:
-    try:
-        return float(event.get("created_at") or 0)
-    except (TypeError, ValueError):
-        return 0.0

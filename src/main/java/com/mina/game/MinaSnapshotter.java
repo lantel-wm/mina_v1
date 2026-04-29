@@ -19,8 +19,6 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
@@ -53,12 +51,10 @@ public final class MinaSnapshotter {
 		ServerLevel level = player.level();
 		JsonObject snapshot = new JsonObject();
 		snapshot.add("player_state", playerState(player));
-		snapshot.add("body_state", bodyState(server, player, config));
 		snapshot.add("world_state", worldState(server, level, player));
 		snapshot.add("inventory", inventory(player, config));
 		snapshot.add("nearby_entities", nearbyEntities(level, player, config));
-		snapshot.add("body_nearby_entities", bodyNearbyEntities(server, config));
-		snapshot.add("nearby_blocks", nearbyBlocks(server, level, player, config));
+		snapshot.add("nearby_blocks", nearbyBlocks(level, player));
 		snapshot.add("environment", environment(level, player));
 		return snapshot;
 	}
@@ -99,28 +95,6 @@ public final class MinaSnapshotter {
 		json.addProperty("underwater", player.isUnderWater());
 		json.addProperty("on_fire", player.isOnFire());
 		json.add("effects", effects(player));
-		return json;
-	}
-
-	private JsonObject bodyState(MinecraftServer server, ServerPlayer requester, MinaConfig config) {
-		JsonObject json = new JsonObject();
-		json.addProperty("username", config.bodyUsername);
-		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
-		json.addProperty("online", body != null);
-		if (body != null) {
-			json.addProperty("uuid", body.getUUID().toString());
-			json.addProperty("dimension", body.level().dimension().identifier().toString());
-			json.addProperty("x", round(body.getX()));
-			json.addProperty("y", round(body.getY()));
-			json.addProperty("z", round(body.getZ()));
-			json.addProperty("yaw", round(body.getYRot()));
-			json.addProperty("pitch", round(body.getXRot()));
-			json.addProperty("distance_to_requester", round(Math.sqrt(requester.distanceToSqr(body))));
-			json.addProperty("health", body.getHealth());
-			json.addProperty("food", body.getFoodData().getFoodLevel());
-			json.add("selected_item", selectedItem(body));
-			json.add("targeted_block", targetedBlock(body));
-		}
 		return json;
 	}
 
@@ -211,14 +185,6 @@ public final class MinaSnapshotter {
 		return array;
 	}
 
-	private JsonArray bodyNearbyEntities(MinecraftServer server, MinaConfig config) {
-		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
-		if (body == null || !(body.level() instanceof ServerLevel bodyLevel)) {
-			return new JsonArray();
-		}
-		return nearbyEntities(bodyLevel, body, config);
-	}
-
 	private JsonObject environment(ServerLevel level, ServerPlayer player) {
 		BlockPos pos = player.blockPosition();
 		JsonObject json = new JsonObject();
@@ -231,39 +197,9 @@ public final class MinaSnapshotter {
 		return json;
 	}
 
-	private JsonObject selectedItem(ServerPlayer player) {
-		JsonObject json = new JsonObject();
-		ItemStack stack = player.getInventory().getSelectedItem();
-		if (!stack.isEmpty()) {
-			json.addProperty("slot", player.getInventory().getSelectedSlot());
-			json.addProperty("item", BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-			json.addProperty("count", stack.getCount());
-			json.addProperty("name", stack.getHoverName().getString());
-		}
-		return json;
-	}
-
-	private JsonObject targetedBlock(ServerPlayer player) {
-		JsonObject json = new JsonObject();
-		HitResult hit = player.pick(5.0D, 0.0F, false);
-		if (hit instanceof BlockHitResult blockHit && hit.getType() == HitResult.Type.BLOCK) {
-			BlockPos pos = blockHit.getBlockPos();
-			BlockState state = player.level().getBlockState(pos);
-			json.addProperty("x", pos.getX());
-			json.addProperty("y", pos.getY());
-			json.addProperty("z", pos.getZ());
-			json.addProperty("block", BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
-		}
-		return json;
-	}
-
-	private JsonObject nearbyBlocks(MinecraftServer server, ServerLevel level, ServerPlayer player, MinaConfig config) {
+	private JsonObject nearbyBlocks(ServerLevel level, ServerPlayer player) {
 		JsonObject json = new JsonObject();
 		json.add("requester", nearbyBlocksAround(level, player.blockPosition()));
-		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
-		if (body != null && body.level() instanceof ServerLevel bodyLevel) {
-			json.add("body", nearbyBlocksAround(bodyLevel, body.blockPosition()));
-		}
 		return json;
 	}
 
