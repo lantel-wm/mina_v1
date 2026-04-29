@@ -44,6 +44,39 @@ SCENARIO_DATA = [
         "rubric": "Player status questions should go through the live model, using the Fabric snapshot context without unnecessary tools.",
     },
     {
+        "name": "spawn_distance_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "spawn-distance-snapshot-live-model",
+                "value": "我离世界出生点大概多远？只回答距离数字和单位。",
+                "wait_for": ["mina turn response requestId=spawn-distance-snapshot-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_any_contains": ["格", "米"],
+        "forbidden_response_contains": [
+            "30969",
+            "run_read_only_command",
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command", "spawn_distance_response_matches_snapshot"],
+        "rubric": "Spawn-distance questions should use the Fabric snapshot's actual distance from spawn, not squared distance or command execution.",
+    },
+    {
         "name": "nearby_danger_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation", "safety"],

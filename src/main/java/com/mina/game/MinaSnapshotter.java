@@ -114,7 +114,7 @@ public final class MinaSnapshotter {
 		json.addProperty("online_players", server.getPlayerList().getPlayerCount());
 		json.addProperty("pvp_allowed", level.isPvpAllowed());
 		json.addProperty("command_blocks_enabled", level.isCommandBlockEnabled());
-		json.addProperty("player_distance_from_spawn", round(player.blockPosition().distSqr(spawn)));
+		json.addProperty("player_distance_from_spawn", round(Math.sqrt(player.blockPosition().distSqr(spawn))));
 		return json;
 	}
 

@@ -19,6 +19,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     names = set(SCENARIOS)
 
     assert "player_status_snapshot_live_model" in names
+    assert "spawn_distance_snapshot_live_model" in names
     assert "world_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
     assert "exact_read_only_time_command_live_model" in names
@@ -34,6 +35,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert all("no_internal_label_leak" in scenario.trace_invariants for scenario in SCENARIOS.values())
     assert "no_model_tools_exposed" in SCENARIOS["companion_low_health_live_model"].trace_invariants
     assert "concise_single_sentence_response" in SCENARIOS["smalltalk_live_model_no_tools"].trace_invariants
+    assert "spawn_distance_response_matches_snapshot" in SCENARIOS["spawn_distance_snapshot_live_model"].trace_invariants
 
 
 def test_parse_args_rejects_removed_body_suite() -> None:
@@ -58,6 +60,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
                 "non_empty_final_model_content",
                 "single_memory_write_tool_call",
                 "single_read_only_command_action",
+                "spawn_distance_response_matches_snapshot",
             ],
             "expected_model": {"mode": "exact", "count": 0},
         }
@@ -455,6 +458,87 @@ def test_trace_invariant_rejects_verbose_single_sentence_response(tmp_path, monk
     )
 
     with pytest.raises(AssertionError, match="not concise one-sentence"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_accepts_spawn_distance_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="spawn-distance",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["spawn_distance_response_matches_snapshot"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-spawn",
+                "status": "ok",
+                "finish_reason": "stop",
+                "response": {"content": "8.54米"},
+            }
+        ] if key == "model_calls" else [],
+    )
+    monkeypatch.setattr(
+        runner,
+        "_capture_world_snapshot",
+        lambda scenario_name, context: {
+            "ok": True,
+            "snapshot_summary": {
+                "player": {"x": 0.5, "y": 80, "z": -2.5},
+                "world": {
+                    "spawn_x": 0,
+                    "spawn_y": 72,
+                    "spawn_z": 0,
+                    "player_distance_from_spawn": 8.54,
+                },
+            },
+        },
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_squared_spawn_distance(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="spawn-distance",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["spawn_distance_response_matches_snapshot"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-spawn",
+                "status": "ok",
+                "finish_reason": "stop",
+                "response": {"content": "72.93格"},
+            }
+        ] if key == "model_calls" else [],
+    )
+    monkeypatch.setattr(
+        runner,
+        "_capture_world_snapshot",
+        lambda scenario_name, context: {
+            "ok": True,
+            "snapshot_summary": {
+                "player": {"x": 0.5, "y": 80, "z": -2.5},
+                "world": {
+                    "spawn_x": 0,
+                    "spawn_y": 72,
+                    "spawn_z": 0,
+                    "player_distance_from_spawn": 72.93,
+                },
+            },
+        },
+    )
+
+    with pytest.raises(AssertionError, match="not an actual distance"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 

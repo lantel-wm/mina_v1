@@ -184,6 +184,10 @@ def test_context_summary_includes_world_state_for_observation() -> None:
                 "thundering": False,
                 "dimension": "minecraft:overworld",
                 "seed": 12345,
+                "spawn_x": 96,
+                "spawn_y": 68,
+                "spawn_z": 144,
+                "player_distance_from_spawn": 176.0,
                 "online_players": 1,
             },
         },
@@ -196,6 +200,10 @@ def test_context_summary_includes_world_state_for_observation() -> None:
     assert '"difficulty": "peaceful"' in summary
     assert '"weather": "clear"' in summary
     assert '"seed": 12345' in summary
+    assert '"spawn_x": 96' in summary
+    assert '"spawn_y": 68' in summary
+    assert '"spawn_z": 144' in summary
+    assert '"player_distance_from_spawn": 176.0' in summary
     assert '"online_players": 1' in summary
 
 

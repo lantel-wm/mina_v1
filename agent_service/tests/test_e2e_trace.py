@@ -6,7 +6,16 @@ from mina_agent.e2e.trace import compact_trace_payload, snapshot_summary, trace_
 def test_snapshot_summary_compacts_player_world_and_nearby_blocks_without_body() -> None:
     snapshot = {
         "player_state": {"dimension": "minecraft:overworld", "x": 0.5, "y": 80, "z": -2.5, "health": 20, "food": 20},
-        "world_state": {"day_time": 1000, "difficulty": "peaceful", "raining": False, "thundering": False},
+        "world_state": {
+            "day_time": 1000,
+            "difficulty": "peaceful",
+            "raining": False,
+            "thundering": False,
+            "spawn_x": 0,
+            "spawn_y": 72,
+            "spawn_z": 0,
+            "player_distance_from_spawn": 8.54,
+        },
         "nearby_entities": [{"type": "minecraft:cow"}],
         "nearby_blocks": {"requester": [{"category": "log"}, {"category": "ore"}]},
     }
@@ -15,6 +24,8 @@ def test_snapshot_summary_compacts_player_world_and_nearby_blocks_without_body()
 
     assert summary["player"]["x"] == 0.5
     assert summary["world"]["weather"] == "clear"
+    assert summary["world"]["spawn_y"] == 72
+    assert summary["world"]["player_distance_from_spawn"] == 8.54
     assert summary["nearby"]["logs"] == 1
     assert "body" not in summary
 

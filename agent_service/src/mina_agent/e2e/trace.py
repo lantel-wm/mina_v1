@@ -184,6 +184,10 @@ def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
             "day_time": world.get("day_time"),
             "difficulty": world.get("difficulty"),
             "weather": "thunder" if world.get("thundering") else "rain" if world.get("raining") else "clear",
+            "spawn_x": world.get("spawn_x"),
+            "spawn_y": world.get("spawn_y"),
+            "spawn_z": world.get("spawn_z"),
+            "player_distance_from_spawn": world.get("player_distance_from_spawn"),
         },
         "nearby": {
             "entities": len(entities),

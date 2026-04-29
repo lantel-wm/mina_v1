@@ -4,6 +4,7 @@ import argparse
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 import os
 import queue
 import re
@@ -151,6 +152,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "plain_chat_response",
         "single_memory_write_tool_call",
         "single_read_only_command_action",
+        "spawn_distance_response_matches_snapshot",
     }
     seen: dict[str, str] = {}
     duplicates: list[str] = []
@@ -776,6 +778,40 @@ class E2ERunner:
                 if match:
                     raise AssertionError(
                         f"{scenario.name}: response trace contained non-plain-chat character {match.group(0)!r}"
+                    )
+            elif invariant == "spawn_distance_response_matches_snapshot":
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_content = "\n".join(
+                    _model_content_preview(call).strip()
+                    for call in calls
+                    if call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and _model_content_preview(call).strip()
+                )
+                if not final_content:
+                    raise AssertionError(f"{scenario.name}: no final model content for spawn-distance check")
+                snapshot = self._capture_world_snapshot(scenario.name, "spawn_distance_invariant")
+                summary = snapshot.get("snapshot_summary") if isinstance(snapshot.get("snapshot_summary"), dict) else {}
+                player = summary.get("player") if isinstance(summary.get("player"), dict) else {}
+                world = summary.get("world") if isinstance(summary.get("world"), dict) else {}
+                reported = _float_value(world.get("player_distance_from_spawn"))
+                if reported is None:
+                    raise AssertionError(f"{scenario.name}: snapshot did not include player_distance_from_spawn: {snapshot!r}")
+                expected = _spawn_distance_from_coordinates(player, world)
+                if expected is not None and abs(reported - expected) > max(2.0, expected * 0.15):
+                    raise AssertionError(
+                        f"{scenario.name}: player_distance_from_spawn is not an actual distance "
+                        f"(reported={reported}, coordinate_distance={round(expected, 2)})"
+                    )
+                if not any(token in final_content for token in _distance_number_tokens(reported)):
+                    raise AssertionError(
+                        f"{scenario.name}: final response did not include snapshot spawn distance "
+                        f"{reported}: {final_content!r}"
+                    )
+                squared_tokens = _distance_number_tokens(reported * reported) if reported > 2.0 else []
+                if any(token in final_content for token in squared_tokens):
+                    raise AssertionError(
+                        f"{scenario.name}: final response appears to use squared spawn distance: {final_content!r}"
                     )
 
     def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
@@ -1447,6 +1483,38 @@ def _model_content_preview(call: dict[str, Any]) -> str:
 def _sentence_terminal_count(content: str) -> int:
     count = len(re.findall(r"[。！？!?]+", content))
     return count if count > 0 else (1 if content.strip() else 0)
+
+
+def _spawn_distance_from_coordinates(player: dict[str, Any], world: dict[str, Any]) -> float | None:
+    x = _float_value(player.get("x"))
+    y = _float_value(player.get("y"))
+    z = _float_value(player.get("z"))
+    spawn_x = _float_value(world.get("spawn_x"))
+    spawn_y = _float_value(world.get("spawn_y"))
+    spawn_z = _float_value(world.get("spawn_z"))
+    if None in {x, y, z, spawn_x, spawn_y, spawn_z}:
+        return None
+    return math.sqrt((x - spawn_x) ** 2 + (y - spawn_y) ** 2 + (z - spawn_z) ** 2)
+
+
+def _distance_number_tokens(value: float) -> list[str]:
+    tokens = {
+        _compact_number(value, 2),
+        _compact_number(value, 1),
+        str(int(round(value))),
+    }
+    return sorted((token for token in tokens if token), key=len, reverse=True)
+
+
+def _compact_number(value: float, digits: int) -> str:
+    return f"{value:.{digits}f}".rstrip("0").rstrip(".")
+
+
+def _float_value(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:
