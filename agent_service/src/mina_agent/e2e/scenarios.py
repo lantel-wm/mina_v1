@@ -99,7 +99,7 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "read-only-time-command-live-model",
                 "value": "执行 time query day",
-                "wait_for": ["我会执行这个只读查询"],
+                "wait_for": ["mina send command output content=The time is 0"],
                 "timeout": 60,
             }
         ],
@@ -123,14 +123,14 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "exact-read-only-time-command-prior-live-model",
                 "value": "执行 time query day",
-                "wait_for": ["我会执行这个只读查询"],
+                "wait_for": ["mina send command output content=The time is 0"],
                 "timeout": 60,
             },
             {
                 "kind": "request",
                 "request_id": "exact-read-only-time-command-live-model",
                 "value": "time query day",
-                "wait_for": ["我会执行这个只读查询"],
+                "wait_for": ["mina send command output content=The time is 0"],
                 "timeout": 60,
             }
         ],
@@ -154,7 +154,7 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "weather-query-command-live-model",
                 "value": "请执行 weather query，只用只读命令查询天气。",
-                "wait_for": ["我会执行这个只读查询"],
+                "wait_for": ["mina send command output content=Weather: clear"],
                 "timeout": 60,
             }
         ],
@@ -178,7 +178,7 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "exact-player-list-live-model",
                 "value": "list",
-                "wait_for": ["我会执行这个只读查询"],
+                "wait_for": ["mina send command output content=There are"],
                 "timeout": 60,
             }
         ],
@@ -202,7 +202,7 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "read-only-seed-command-live-model",
                 "value": "请执行 seed，只用只读命令查询当前世界种子。",
-                "wait_for": ["我会执行这个只读查询"],
+                "wait_for": ["mina send command output content=Seed:"],
                 "timeout": 60,
             }
         ],
@@ -226,7 +226,7 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "read-only-result-source-live-model",
                 "value": "执行 time query day",
-                "wait_for": ["我会执行这个只读查询"],
+                "wait_for": ["mina send command output content=The time is 0"],
                 "timeout": 60,
             },
             {

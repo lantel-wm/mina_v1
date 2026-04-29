@@ -142,9 +142,7 @@ public final class MinaActionExecutor {
 		commandLog.get().add(execution);
 		MinaMod.LOGGER.info("mina command output command={} message={}", execution.command(), output);
 		MinaMod.LOGGER.info("mina command callback command={} success={} result={}", execution.command(), true, 1);
-		if (requester != null) {
-			requester.sendSystemMessage(Component.literal("[Mina command] " + output));
-		}
+		commandOutput(requester, output);
 	}
 
 	private void locateStructure(MinecraftServer server, ServerPlayer requester, String structure) {
@@ -223,6 +221,15 @@ public final class MinaActionExecutor {
 		if (player != null && content != null && !content.isBlank()) {
 			for (String chunk : chatChunks(content)) {
 				player.sendSystemMessage(Component.literal("[Mina] " + chunk));
+			}
+		}
+	}
+
+	private static void commandOutput(ServerPlayer player, String content) {
+		if (player != null && content != null && !content.isBlank()) {
+			MinaMod.LOGGER.info("mina send command output content={}", content);
+			for (String chunk : chatChunks(content)) {
+				player.sendSystemMessage(Component.literal("[Mina command] " + chunk));
 			}
 		}
 	}
@@ -370,9 +377,7 @@ public final class MinaActionExecutor {
 		public void sendSystemMessage(Component message) {
 			execution.addOutput(message.getString());
 			MinaMod.LOGGER.info("mina command output command={} message={}", execution.command(), message.getString());
-			if (requester != null) {
-				requester.sendSystemMessage(Component.literal("[Mina command] " + message.getString()));
-			}
+			commandOutput(requester, message.getString());
 		}
 
 		@Override
