@@ -143,6 +143,7 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
                 "name": "run_read_only_command",
                 "description": (
                     "Run a tightly constrained read-only Minecraft command and show its output to the requester. "
+                    "Use this when the player message is exactly or mainly an allowed command form, even if the same value appears in context. "
                     "Allowed forms: seed; time query daytime|gametime|day; weather query; list [uuids]; "
                     "locate structure <identifier>; locate biome <identifier>."
                 ),
@@ -465,28 +466,6 @@ def normalize_read_only_command(command: str) -> str | None:
     return None
 
 
-def extract_requested_read_only_command(content: str) -> str | None:
-    exact = normalize_read_only_command(content)
-    if exact:
-        return exact
-
-    normalized = " ".join(str(content or "").lower().replace("/", " / ").split())
-    if not normalized:
-        return None
-    execution_markers = ("执行", "运行", "调用", "用命令", "run ", "execute ", "call ")
-    if not any(marker in normalized for marker in execution_markers):
-        return None
-
-    for pattern in _READ_ONLY_COMMAND_PATTERNS:
-        match = pattern.search(normalized)
-        if not match:
-            continue
-        command = normalize_read_only_command(match.group("command"))
-        if command:
-            return command
-    return None
-
-
 def _is_read_only_command_parts(parts: list[str]) -> bool:
     if not parts:
         return False
@@ -504,12 +483,3 @@ def _is_read_only_command_parts(parts: list[str]) -> bool:
         and parts[1] in {"structure", "biome"}
         and bool(READ_ONLY_LOCATE_TARGET.fullmatch(parts[2]))
     )
-
-
-_READ_ONLY_COMMAND_PATTERNS = (
-    re.compile(r"(?P<command>seed)\b"),
-    re.compile(r"(?P<command>time\s+query\s+(?:daytime|gametime|day))\b"),
-    re.compile(r"(?P<command>weather\s+query)\b"),
-    re.compile(r"(?P<command>list(?:\s+uuids)?)\b"),
-    re.compile(r"(?P<command>locate\s+(?:structure|biome)\s+[a-z0-9_:.\-/#]+)\b"),
-)

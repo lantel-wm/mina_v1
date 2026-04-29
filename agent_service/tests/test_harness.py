@@ -212,7 +212,7 @@ def test_read_only_command_is_scheduled_after_model_tool_call(tmp_path) -> None:
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
-def test_explicit_read_only_command_repairs_model_answer_without_tool(tmp_path) -> None:
+def test_read_only_command_model_miss_is_not_repaired_by_local_route(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
@@ -220,52 +220,24 @@ def test_explicit_read_only_command_repairs_model_answer_without_tool(tmp_path) 
                 finish_reason="stop",
                 usage={},
                 raw={},
-            ),
-            DeepSeekResponse(
-                message={
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "call-time",
-                            "type": "function",
-                            "function": {
-                                "name": "run_read_only_command",
-                                "arguments": json.dumps({"command": "time query day"}),
-                            },
-                        }
-                    ],
-                },
-                finish_reason="tool_calls",
-                usage={},
-                raw={},
-            ),
+            )
         ]
     )
     harness, memory, _model, _search = _harness(tmp_path, model)
 
     response = harness.run_turn(_turn("执行 time query day", "req-time-repair"))
 
-    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
-    assert response["actions"][0]["args"] == {"command": "time query day"}
-    assert len(model.calls) == 2
-    repair_context = "\n".join(message["content"] for message in model.calls[1]["messages"])
-    assert "Call run_read_only_command with exactly this command" in repair_context
-    calls = memory.recent_tool_calls("req-time-repair")
-    assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+    assert response["messages"][0]["content"] == "当前是第 0 天。"
+    assert response.get("actions", []) == []
+    assert len(model.calls) == 1
+    assert memory.recent_tool_calls("req-time-repair") == []
 
 
-def test_explicit_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:
+def test_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
                 message={"role": "assistant", "content": "当前是第 0 天。"},
-                finish_reason="stop",
-                usage={},
-                raw={},
-            ),
-            DeepSeekResponse(
-                message={"role": "assistant", "content": "The time is 0"},
                 finish_reason="stop",
                 usage={},
                 raw={},
@@ -277,10 +249,10 @@ def test_explicit_read_only_command_never_runs_without_model_tool_call(tmp_path)
 
     response = harness.run_turn(_turn("执行 time query day", "req-time-no-tool"))
 
-    assert response["messages"][0]["content"] == "我没有通过工具执行这个只读命令，请再试一次或换个说法。"
+    assert response["messages"][0]["content"] == "当前是第 0 天。"
     assert response.get("actions", []) == []
-    assert response["debug"]["read_only_command_tool_missing"] is True
-    assert len(model.calls) == 2
+    assert "read_only_command_tool_missing" not in response["debug"]
+    assert len(model.calls) == 1
     assert memory.recent_tool_calls("req-time-no-tool") == []
 
 
@@ -513,7 +485,7 @@ def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]
 
 
-def test_memory_write_request_blocks_unrequested_command_tool_before_repair(tmp_path) -> None:
+def test_memory_write_request_does_not_block_model_tool_with_local_classifier(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
@@ -535,45 +507,17 @@ def test_memory_write_request_blocks_unrequested_command_tool_before_repair(tmp_
                 usage={},
                 raw={},
             ),
-            DeepSeekResponse(
-                message={
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "call-memory-write",
-                            "type": "function",
-                            "function": {
-                                "name": "memory_write",
-                                "arguments": json.dumps(
-                                    {"event_type": "player_fact", "content": "我的基地在樱花林旁边", "importance": 3}
-                                ),
-                            },
-                        }
-                    ],
-                },
-                finish_reason="tool_calls",
-                usage={},
-                raw={},
-            ),
-            DeepSeekResponse(
-                message={"role": "assistant", "content": "我记住了。"},
-                finish_reason="stop",
-                usage={},
-                raw={},
-            ),
         ]
     )
     harness, memory, _model, _search = _harness(tmp_path, model)
 
     response = harness.run_turn(_turn("请记住：我的基地在樱花林旁边", "req-memory-command-block"))
 
-    assert response["messages"][0]["content"] == "我记住了。"
-    assert response.get("actions", []) == []
-    assert len(model.calls) == 3
-    repair_context = "\n".join(message["content"] for message in model.calls[1]["messages"])
-    assert "explicit memory-save request" in repair_context
-    assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-command-block")] == ["memory_write"]
+    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["actions"][0]["name"] == "run_read_only_command"
+    assert response["actions"][0]["args"] == {"command": "locate biome minecraft:cherry_grove"}
+    assert len(model.calls) == 1
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-command-block")] == ["run_read_only_command"]
 
 
 def test_memory_recall_is_not_repaired_by_local_intent_classifier(tmp_path) -> None:

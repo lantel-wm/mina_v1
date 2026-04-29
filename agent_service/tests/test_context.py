@@ -12,7 +12,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Treat memory as historical context" in SYSTEM_PROMPT
     assert "answer only the relevant remembered fact" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
-    assert "call run_read_only_command even if the current snapshot or recent results" in SYSTEM_PROMPT
+    assert "Do not answer command requests from snapshot or recent results" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "MCP" not in SYSTEM_PROMPT
@@ -88,6 +88,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "玩家基地在樱花林旁边" in context
     assert "Recent verified Minecraft command/action results" in context
     assert "Seed: [98765]" in context
+    assert "Tool selection reminder" in context
     assert "body_state" not in context
     assert len(context) < 6000
 
@@ -141,7 +142,7 @@ def test_context_summary_includes_world_state_for_observation() -> None:
     assert '"online_players": 1' in summary
 
 
-def test_build_messages_marks_explicit_command_execution_requests(tmp_path) -> None:
+def test_build_messages_does_not_add_explicit_command_keyword_hint(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.record_action_event(
         "old-command",
@@ -165,11 +166,11 @@ def test_build_messages_marks_explicit_command_execution_requests(tmp_path) -> N
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "explicit Minecraft command execution request" in content
-    assert "Do not answer it from the current snapshot" in content
+    assert "Current user message is an explicit Minecraft command execution request" not in content
+    assert "Do not answer it from the current snapshot" not in content
 
 
-def test_build_messages_marks_exact_read_only_command_forms(tmp_path) -> None:
+def test_build_messages_does_not_add_exact_command_keyword_hint(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     turn = {
         "request_id": "req-exact-command",
@@ -182,8 +183,8 @@ def test_build_messages_marks_exact_read_only_command_forms(tmp_path) -> None:
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "explicit Minecraft command execution request" in content
-    assert "Either call run_read_only_command" in content
+    assert "Current user message is an explicit Minecraft command execution request" not in content
+    assert "Either call run_read_only_command" not in content
 
 
 def test_build_messages_does_not_mark_plain_observation_as_command_execution(tmp_path) -> None:
@@ -279,7 +280,7 @@ def test_build_messages_does_not_mark_command_result_followup_as_execution(tmp_p
     assert "explicit Minecraft command execution request" not in content
 
 
-def test_build_messages_marks_explicit_memory_write_requests(tmp_path) -> None:
+def test_build_messages_does_not_add_memory_write_keyword_hint(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     turn = {
         "request_id": "req-1",
@@ -292,9 +293,8 @@ def test_build_messages_marks_explicit_memory_write_requests(tmp_path) -> None:
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "explicitly asks you to save stable memory" in content
-    assert "Call memory_write before claiming" in content
-    assert "Do not call run_read_only_command" in content
+    assert "Current user message explicitly asks you to save stable memory" not in content
+    assert "Call memory_write before claiming" not in content
 
 
 def test_build_messages_does_not_mark_memory_recall_as_write_request(tmp_path) -> None:

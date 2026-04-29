@@ -5,14 +5,13 @@ import logging
 from typing import Any
 
 from .config import Settings
-from .context import build_messages, is_explicit_memory_write_request
+from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .policy import ResponsePolicyRuntime, is_tool_error, normalize_health_unit_claims
 from .schemas import TurnResponse
 from .tools import (
     ToolRunner,
-    extract_requested_read_only_command,
     tool_specs,
 )
 from .turn_runtime import TurnRuntimeState
@@ -44,8 +43,6 @@ class AgentHarness:
         if message:
             self.memory.add_conversation(request_id, player_id, "user", message)
 
-        requested_read_only_command = extract_requested_read_only_command(message)
-        requested_memory_write = is_explicit_memory_write_request(message)
         if not self.deepseek.configured():
             fallback = "Mina sidecar is running, but MINA_API_KEY is not configured."
             self._debug("turn fallback request_id=%s reason=missing_api_key", request_id)
@@ -101,39 +98,6 @@ class AgentHarness:
                     state.usage,
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
-                    if requested_memory_write and not policy.memory_write_seen and subturn < self.settings.max_tool_turns:
-                        state.messages.append({"role": "system", "content": _memory_write_repair_message()})
-                        self._debug("turn repair request_id=%s reason=missing_memory_write_tool", request_id)
-                        continue
-                    if requested_read_only_command and not state.actions:
-                        if subturn < self.settings.max_tool_turns:
-                            state.messages.append(
-                                {
-                                    "role": "system",
-                                    "content": _read_only_command_repair_message(requested_read_only_command),
-                                }
-                            )
-                            self._debug(
-                                "turn repair request_id=%s reason=missing_read_only_command_tool command=%s",
-                                request_id,
-                                requested_read_only_command,
-                            )
-                            continue
-                        content = "我没有通过工具执行这个只读命令，请再试一次或换个说法。"
-                        self.memory.add_conversation(request_id, player_id, "assistant", content)
-                        self._debug(
-                            "turn stopped_missing_read_only_tool request_id=%s command=%s",
-                            request_id,
-                            requested_read_only_command,
-                        )
-                        return TurnResponse(
-                            messages=[{"target": "requester", "content": content}],
-                            debug={
-                                "usage": state.usage,
-                                "tool_subturns": subturn,
-                                "read_only_command_tool_missing": True,
-                            },
-                        ).to_dict()
                     review = policy.review_final_content(
                         str(assistant_message.get("content") or ""),
                         can_repair=subturn < self.settings.max_tool_turns,
@@ -202,27 +166,6 @@ class AgentHarness:
                         name,
                         _log_preview(json.dumps(args, ensure_ascii=False), 1200),
                     )
-                    if requested_memory_write and name == "run_read_only_command" and not policy.memory_write_seen:
-                        result_content = json.dumps(
-                            {
-                                "ok": False,
-                                "error": (
-                                    "This turn is an explicit memory-save request. Do not run Minecraft commands "
-                                    "to verify or enrich it unless the player explicitly asked for verification. "
-                                    "Call memory_write with the player's stable fact, or explain why it should not be saved."
-                                ),
-                            },
-                            ensure_ascii=False,
-                        )
-                        state.invalid_tool_results += 1
-                        self._debug(
-                            "tool blocked request_id=%s subturn=%s name=%s reason=memory_write_contract",
-                            request_id,
-                            subturn,
-                            name,
-                        )
-                        state.append_tool_observation(call.get("id"), result_content)
-                        continue
                     result = self.tools.run(name, args, turn)
                     result_actions = state.collect_result_actions(result)
                     if result_actions:
@@ -407,22 +350,6 @@ def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
         "tool_call_count": len(tool_calls),
         "tool_names": tool_names,
     }
-
-
-def _read_only_command_repair_message(command: str) -> str:
-    return (
-        "The current user message explicitly asks Mina to execute this allowlisted read-only Minecraft command now: "
-        f"{command}. Do not answer from snapshot context, recent messages, or prior command results. "
-        "Call run_read_only_command with exactly this command."
-    )
-
-
-def _memory_write_repair_message() -> str:
-    return (
-        "The player explicitly asked Mina to remember stable information for future turns, "
-        "but no memory_write tool has succeeded in this turn. Call memory_write now with the player's fact. "
-        "Do not call run_read_only_command, web_search, or mcp_call just to verify or enrich it unless the player explicitly asked for verification."
-    )
 
 
 def _action_ack(tool_name: str) -> str:

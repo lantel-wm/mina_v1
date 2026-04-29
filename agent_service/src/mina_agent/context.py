@@ -6,7 +6,6 @@ from typing import Any
 
 from .memory import MemoryStore
 from .policy import UNSAFE_WRITE_REFUSAL
-from .tools import normalize_read_only_command
 
 
 SYSTEM_PROMPT = """Identity:
@@ -22,7 +21,7 @@ Chat style:
 - Minecraft snapshot health and max_health are health points, not UI hearts: 20 health points = 10 hearts, and 4 health points = 2 hearts. If you mention hearts, convert from health points correctly; otherwise say health points.
 
 Decision order:
-1. If the player explicitly asks to execute, run, call, or query an allowed read-only Minecraft command, call run_read_only_command even if the current snapshot or recent results seem to contain similar information.
+1. If the player asks to run an allowed read-only command or gives an exact allowed command form, call run_read_only_command. Do not answer command requests from snapshot or recent results.
 2. Questions about the player's base, home, saved places, named projects, preferences, plans, promises, or earlier statements are memory questions. Answer from loaded agent memory or memory_search; do not mix in the player's current location unless explicitly asked.
 3. For local player/world observations, answer directly from Current Minecraft context. This includes coordinates, health, food, dimension, time, weather, difficulty, nearby blocks, and nearby entities. Do not call tools just to restate these snapshot values.
 4. For greetings, casual chat, or "what can you do" capability questions, answer generally. Do not volunteer exact current coordinates, seed, inventory, time, weather, nearby entities, or stored personal facts unless the player asks for those details.
@@ -36,7 +35,7 @@ Tool policy:
 - Use only tools listed for this turn.
 - When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
 - If you do not know a required argument, ask a short clarifying question instead of calling the tool.
-- For Minecraft command output, use run_read_only_command only, with one exact allowed form: seed; time query daytime|gametime|day; weather query; list; list uuids; locate structure <identifier>; locate biome <identifier>.
+- For Minecraft command output, use run_read_only_command only, with the exact allowed forms listed in the tool selection reminder.
 - Never invent or call movement, mining, attack, item-use, placement, private executor, write-command, or unlisted tools.
 - If a tool says permission denied or unavailable, explain briefly and offer a safe alternative.
 
@@ -52,6 +51,12 @@ Answer authority:
 - When answering from web_search results, preserve exact source values such as markers, version numbers, coordinates, URLs, and item names. Do not replace an exact value with a generic label.
 """
 
+COMMAND_POLICY_REMINDER = (
+    "Tool selection reminder: exact command messages such as weather query, time query day, seed, list, list uuids, "
+    "locate structure <identifier>, or locate biome <identifier> must call run_read_only_command. "
+    "Do not answer those exact command messages from Current Minecraft context."
+)
+
 
 def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: bool = False) -> list[dict[str, Any]]:
     player = turn.get("player") or {}
@@ -66,15 +71,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
     turn_policy = _turn_policy_section(turn, user_content, mcp_available=mcp_available)
     if turn_policy:
         messages.append({"role": "system", "content": turn_policy})
-    command_execution_hint = _command_execution_request_hint(user_content)
-    if command_execution_hint:
-        messages.append({"role": "system", "content": command_execution_hint})
     write_refusal_hint = _write_command_refusal_hint(user_content)
     if write_refusal_hint:
         messages.append({"role": "system", "content": write_refusal_hint})
-    memory_write_hint = _memory_write_request_hint(user_content)
-    if memory_write_hint:
-        messages.append({"role": "system", "content": memory_write_hint})
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
     target_summary = build_target_summary(snapshot)
     if target_summary:
@@ -97,6 +96,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
                 "content": "Recent verified Minecraft command/action results:\n" + action_result_context,
             }
         )
+    messages.append({"role": "system", "content": COMMAND_POLICY_REMINDER})
     if not user_content:
         user_content = _companion_tick_prompt(turn)
     messages.append({"role": "user", "content": user_content})
@@ -229,41 +229,6 @@ def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _command_execution_request_hint(user_content: str) -> str:
-    normalized = " ".join(user_content.lower().replace("/", " / ").split())
-    if not normalized:
-        return ""
-    exact_command = normalize_read_only_command(user_content)
-    execution_markers = ("执行", "运行", "调用", "用命令", "run ", "execute ", "call ")
-    command_markers = (
-        " seed",
-        " time query",
-        " weather query",
-        " list",
-        " locate ",
-        " setblock",
-        " fill",
-        " tp",
-        " teleport",
-        " gamemode",
-        " give",
-        " summon",
-        " kill",
-        " /",
-    )
-    padded = " " + normalized + " "
-    if not exact_command and not any(marker in normalized for marker in execution_markers):
-        return ""
-    if not exact_command and not any(marker in padded for marker in command_markers):
-        return ""
-    return (
-        "Current user message is an explicit Minecraft command execution request. "
-        "Do not answer it from the current snapshot, recent conversation, or prior action results. "
-        "Either call run_read_only_command with the exact allowlisted command requested, "
-        "or refuse if the requested command is not read-only and allowlisted."
-    )
-
-
 def _write_command_refusal_hint(user_content: str) -> str:
     normalized = " ".join(str(user_content or "").lower().replace("/", " / ").split())
     if not normalized:
@@ -307,38 +272,6 @@ def _write_command_refusal_hint(user_content: str) -> str:
         "syntax, command whitelist, or workaround. For Chinese, reply exactly: "
         f"{UNSAFE_WRITE_REFUSAL}"
     )
-
-
-def _memory_write_request_hint(user_content: str) -> str:
-    if not is_explicit_memory_write_request(user_content):
-        return ""
-    return (
-        "Current user message explicitly asks you to save stable memory for future Mina turns. "
-        "Call memory_write before claiming the information was remembered or saved. "
-        "Do not call run_read_only_command, web_search, or mcp_call just to verify or enrich the saved fact unless the player explicitly asks you to verify it first. "
-        "If the information should not be saved, answer without saying it was remembered."
-    )
-
-
-def is_explicit_memory_write_request(user_content: str) -> bool:
-    normalized = " ".join(user_content.lower().split())
-    if not normalized:
-        return False
-    write_markers = (
-        "请记住",
-        "帮我记住",
-        "记住：",
-        "记住:",
-        "记下",
-        "保存一下",
-        "remember that",
-        "remember:",
-        "save this",
-    )
-    recall_markers = ("记得", "还记得", "remember where", "do you remember", "recall")
-    if any(marker in normalized for marker in recall_markers):
-        return False
-    return any(marker in normalized for marker in write_markers)
 
 
 def _json_object(value: Any) -> dict[str, Any]:
