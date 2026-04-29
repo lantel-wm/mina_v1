@@ -985,6 +985,42 @@ SCENARIO_DATA = [
         "rubric": "Explicit world-seed command requests should be selected by the live model and constrained to the exact read-only seed command.",
     },
     {
+        "name": "read_only_locate_biome_command_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "command"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "read-only-locate-biome-command-live-model",
+                "value": "请执行 locate biome minecraft:plains，只用只读命令查询最近的平原生物群系。",
+                "wait_for": ["mina command callback command=locate biome minecraft:plains success=true"],
+                "timeout": 90,
+            }
+        ],
+        "expected_tools": [
+            {
+                "name": "run_read_only_command",
+                "status": "ok",
+                "args_contains": "locate biome minecraft:plains",
+            },
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {
+                "name": "run_read_only_command",
+                "event_type": "action_result",
+                "payload_contains": "locate biome minecraft:plains",
+            },
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_write"},
+        ],
+        "expected_model": {"mode": "exact", "count": 1},
+        "trace_invariants": ["no_action_monitor_timeout"],
+        "rubric": "Explicit locate biome requests should be selected by the live model and executed only through the allowlisted Fabric read-only command path.",
+    },
+    {
         "name": "read_only_command_result_recall_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command", "memory"],
