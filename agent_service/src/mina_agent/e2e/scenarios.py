@@ -423,7 +423,7 @@ SCENARIO_DATA = [
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "exact", "count": 1},
         "expected_response_contains": ["15"],
-        "expected_response_any_contains": ["true", "能", "可以", "是"],
+        "expected_response_any_contains": ["true", "能", "可以", "是", "可见"],
         "forbidden_response_contains": [
             "Current Minecraft context",
             "Minecraft context",
@@ -678,6 +678,42 @@ SCENARIO_DATA = [
         ],
         "trace_invariants": ["no_model_requested_read_only_command"],
         "rubric": "Nearby hostile direction questions should answer the derived relative_direction from snapshot coordinates without command execution.",
+    },
+    {
+        "name": "nearby_log_block_snapshot_live_model",
+        "fixture": "tree_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "nearby-log-block-snapshot-live-model",
+                "value": "我附近有什么原木？只回答 minecraft:spruce_log southeast。",
+                "wait_for": ["mina send message target=requester content=minecraft:spruce_log southeast"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["content=minecraft:spruce_log southeast"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "run_read_only_command",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "world_asserts": ["target_log_present", "upper_log_present"],
+        "rubric": "Nearby log/block questions should answer block ID and relative direction from nearby block observation without command execution or world mutation.",
     },
     {
         "name": "world_status_snapshot_live_model",

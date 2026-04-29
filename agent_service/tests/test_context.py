@@ -77,6 +77,11 @@ def test_system_prompt_is_built_from_named_base_sections() -> None:
 
 def test_target_summary_is_observation_only(tmp_path) -> None:
     snapshot = {
+        "player_state": {
+            "x": 0.5,
+            "y": 80.0,
+            "z": -2.5,
+        },
         "nearby_blocks": {
             "requester": [
                 {
@@ -98,7 +103,7 @@ def test_target_summary_is_observation_only(tmp_path) -> None:
 
     assert "Nearby notable blocks for observation" in summary
     assert "minecraft:spruce_log" in summary
-    assert "direction=" in summary
+    assert "direction=southeast" in summary
     assert "body-control" not in summary
 
 
@@ -399,6 +404,59 @@ def test_context_summary_includes_nearby_passive_mobs() -> None:
         }
     ]
     assert payload["nearby_items"][0]["item"] == "minecraft:oak_log"
+
+
+def test_context_summary_includes_nearby_log_targets() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "x": 0.5,
+                "y": 80.0,
+                "z": -2.5,
+            },
+            "nearby_blocks": {
+                "requester": [
+                    {
+                        "block": "minecraft:spruce_log",
+                        "category": "log",
+                        "x": 2,
+                        "y": 80,
+                        "z": 0,
+                        "center_x": 2.5,
+                        "center_y": 80.5,
+                        "center_z": 0.5,
+                        "distance": 3.61,
+                        "approach_x": 2.5,
+                        "approach_y": 80,
+                        "approach_z": -0.5,
+                    }
+                ]
+            },
+        },
+    }
+
+    payload = json.loads(build_context_summary(turn))
+
+    assert payload["candidate_logs"] == [
+        {
+            "block": "minecraft:spruce_log",
+            "category": "log",
+            "x": 2,
+            "y": 80,
+            "z": 0,
+            "distance": 3.61,
+            "approach_available": True,
+            "relative_direction": "southeast",
+            "relative_x": 2,
+            "relative_z": 3,
+            "relative_y": 0.5,
+            "relative_vertical": "same_level",
+        }
+    ]
 
 
 def test_context_summary_includes_active_effects() -> None:
