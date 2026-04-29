@@ -111,6 +111,41 @@ SCENARIO_DATA = [
         "rubric": "Selected-item questions should answer from Fabric inventory snapshot without command execution or unrelated player status.",
     },
     {
+        "name": "survival_stats_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "survival-stats-snapshot-live-model",
+                "value": "我的饱食度、护甲值、经验等级分别是多少？只回答 20 0 0。",
+                "wait_for": ["mina turn response requestId=survival-stats-snapshot-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["20 0 0"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "minecraft:",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Survival HUD stat questions should answer food/armor/experience from Fabric player_state without command execution or unrelated player status.",
+    },
+    {
         "name": "block_below_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],

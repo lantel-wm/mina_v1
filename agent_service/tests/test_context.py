@@ -29,6 +29,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "game mode" in SYSTEM_PROMPT
     assert "world difficulty" in SYSTEM_PROMPT
     assert "world spawn" in SYSTEM_PROMPT
+    assert "health/food/armor/XP" in SYSTEM_PROMPT
     assert "light/sky" in SYSTEM_PROMPT
     assert "held item" in SYSTEM_PROMPT
     assert "dimension" in SYSTEM_PROMPT
@@ -114,7 +115,17 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
         "player": {"uuid": "player-1", "name": "Tester"},
         "permissions": {"can_use_actions": True},
         "snapshot": {
-            "player_state": {"x": 0.5, "y": 80, "z": -2.5, "health": 20, "food": 20, "game_mode": "survival"},
+            "player_state": {
+                "x": 0.5,
+                "y": 80,
+                "z": -2.5,
+                "health": 20,
+                "food": 20,
+                "armor": 0,
+                "experience_level": 0,
+                "total_experience": 0,
+                "game_mode": "survival",
+            },
             "world_state": {"day_time": 1000, "day_count": 0, "raining": False, "thundering": False},
             "nearby_entities": [{"type": "minecraft:cow", "category": "passive", "distance": 4}],
             "nearby_blocks": {"requester": [{"block": "minecraft:spruce_log", "category": "log", "x": 2, "y": 80, "z": 0}]},
@@ -127,6 +138,9 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "candidate_logs" in context
     assert "nearby_hostiles" in context
     assert '"world_state"' in context
+    assert '"armor": 0' in context
+    assert '"experience_level": 0' in context
+    assert '"total_experience": 0' in context
     assert '"game_mode": "survival"' in context
     assert '"weather": "clear"' in context
     assert "Remembered facts" in context
@@ -142,6 +156,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Natural-language weather/time/status questions" in context
     assert "memory_write args: no current Minecraft username" in context
     assert "body_state" not in context
+    assert "null" not in context
     assert len(context) < 6500
 
 
@@ -162,6 +177,31 @@ def test_context_summary_labels_health_points_and_hearts() -> None:
     assert '"max_health_points": 20' in summary
     assert '"health_hearts": 2' in summary
     assert '"max_health_hearts": 10' in summary
+
+
+def test_context_summary_includes_survival_hud_stats() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "food": 19,
+                "armor": 7,
+                "experience_level": 3,
+                "total_experience": 42,
+            },
+            "nearby_entities": [],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"food": 19' in summary
+    assert '"armor": 7' in summary
+    assert '"experience_level": 3' in summary
+    assert '"total_experience": 42' in summary
 
 
 def test_context_summary_includes_player_identity_for_command_turns() -> None:

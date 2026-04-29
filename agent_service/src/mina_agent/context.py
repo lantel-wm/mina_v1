@@ -29,7 +29,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, world spawn, health, light/sky, block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, world spawn, health/food/armor/XP, light/sky, block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -366,6 +366,9 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "health_hearts": _half_health(player_state.get("health")),
             "max_health_hearts": _half_health(player_state.get("max_health")),
             "food": player_state.get("food"),
+            "armor": player_state.get("armor"),
+            "experience_level": player_state.get("experience_level"),
+            "total_experience": player_state.get("total_experience"),
             "game_mode": player_state.get("game_mode"),
             "dimension": player_state.get("dimension"),
             "x": player_state.get("x"),
@@ -399,7 +402,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     compact_environment = _compact_environment(environment)
     if compact_environment:
         payload["environment"] = compact_environment
-    return json.dumps(payload, ensure_ascii=False)
+    return json.dumps(_drop_none(payload), ensure_ascii=False)
 
 
 def _companion_tick_prompt(turn: dict[str, Any]) -> str:
@@ -448,6 +451,18 @@ def _format_number(value: float) -> str:
     if value.is_integer():
         return str(int(value))
     return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _drop_none(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _drop_none(nested)
+            for key, nested in value.items()
+            if nested is not None
+        }
+    if isinstance(value, list):
+        return [_drop_none(item) for item in value]
+    return value
 
 
 def _distance_display(value: Any) -> str | None:
