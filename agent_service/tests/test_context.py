@@ -36,6 +36,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "active effects/status effects" in SYSTEM_PROMPT
     assert "light/sky" in SYSTEM_PROMPT
     assert "hazards (fire/lava/water/ground)" in SYSTEM_PROMPT
+    assert "nearby dropped items" in SYSTEM_PROMPT
     assert "held item" in SYSTEM_PROMPT
     assert "dimension" in SYSTEM_PROMPT
     assert "block at/below feet" in SYSTEM_PROMPT
@@ -153,6 +154,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
 
     assert "candidate_logs" in context
     assert "nearby_hostiles" in context
+    assert "nearby_items" in context
     assert "inventory_items" in context
     assert '"world_state"' in context
     assert '"armor": 0' in context
@@ -291,6 +293,45 @@ def test_context_summary_includes_nearby_hostile_relative_direction() -> None:
     assert '"relative_x": 1' in summary
     assert '"relative_z": 0' in summary
     assert '"relative_vertical": "same_level"' in summary
+
+
+def test_context_summary_includes_nearby_item_drops() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "x": 0.5,
+                "y": 80.0,
+                "z": -2.5,
+            },
+            "nearby_entities": [
+                {
+                    "type": "minecraft:item",
+                    "name": "Oak Log",
+                    "category": "misc",
+                    "distance": 3.0,
+                    "x": 3.5,
+                    "y": 80.0,
+                    "z": -2.5,
+                    "item": "minecraft:oak_log",
+                    "count": 2,
+                    "item_category": "log",
+                }
+            ],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"nearby_items"' in summary
+    assert '"type": "minecraft:item"' in summary
+    assert '"item": "minecraft:oak_log"' in summary
+    assert '"count": 2' in summary
+    assert '"item_category": "log"' in summary
+    assert '"relative_direction": "east"' in summary
 
 
 def test_context_summary_includes_active_effects() -> None:

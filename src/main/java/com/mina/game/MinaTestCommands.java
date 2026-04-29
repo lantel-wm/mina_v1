@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -216,6 +217,7 @@ public final class MinaTestCommands {
 			case "poisoned" -> poisoned(source);
 			case "on_fire" -> onFire(source);
 			case "nearby_hostile" -> nearbyHostile(source);
+			case "nearby_item_drop" -> nearbyItemDrop(source);
 			case "inventory_sample" -> inventorySample(source);
 			default -> {
 				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
@@ -305,6 +307,16 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
+	private int nearbyItemDrop(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		ItemEntity item = new ItemEntity(level, 3.5D, TREE_Y, -2.5D, new ItemStack(Items.OAK_LOG, 2));
+		item.setPickUpDelay(32767);
+		item.setNoGravity(true);
+		level.addFreshEntity(item);
+		source.sendSuccess(() -> Component.literal("Mina test world mutate nearby_item_drop complete."), false);
+		return 1;
+	}
+
 	private int inventorySample(CommandSourceStack source) {
 		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
 		if (requester == null) {
@@ -330,6 +342,7 @@ public final class MinaTestCommands {
 
 	private void resetRequesterInventory(ServerPlayer player) {
 		int selectedSlot = player.getInventory().getSelectedSlot();
+		player.getInventory().clearContent();
 		player.getInventory().setItem(selectedSlot, new ItemStack(Items.GUNPOWDER, 1));
 	}
 
