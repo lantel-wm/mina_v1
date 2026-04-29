@@ -75,7 +75,7 @@ COMMAND_POLICY_REMINDER = (
     "Tool selection reminder: exact/explicit command strings require run_read_only_command every time. "
     "If the final user message itself is an allowed command text, the next assistant step must be the tool, "
     "not text. Do not answer exact command text with recent output. Exact command strings are commands, not observations. "
-    "Must call the tool for: time query day; weather query; list; list uuids; seed; locate structure <id>; locate biome <id>. "
+    "Must call the tool for: time query daytime|gametime|day; weather query; list; list uuids; seed; locate structure <id>; locate biome <id>. "
     "For command requests, never answer from snapshot or recent results. Natural-language weather/time/status questions "
     "are observations; answer from Observed Minecraft state without tools. The exact commands `list` and `list uuids` must call "
     "run_read_only_command and must not be answered from online_players."
@@ -85,7 +85,8 @@ MEMORY_WRITE_POLICY_REMINDER = (
     "Memory save reminder: for an explicit remember/save request about a new stable fact, use a tool call only "
     "in the tool subturn. Do not include assistant-visible prose before that tool call, and do not mention tool "
     "names or internal policy. Stored player-scoped content and labels must omit the current Minecraft username "
-    "unless the username itself is the fact. Do not search first unless loaded remembered facts conflict."
+    "unless the username itself is the fact. Preserve exact player wording for stable place names, directions, "
+    "labels, and quoted values instead of paraphrasing them. Do not search first unless loaded remembered facts conflict."
 )
 
 
@@ -155,6 +156,13 @@ def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_availab
             "- Treat that username as referring to the requester unless the player explicitly says the name itself is the fact.\n"
             "- For player-scoped memory_write, convert '<username> 的 ...' to '你的 ...' and omit the username from content and label."
         )
+    if _has_only_answer_constraint(user_content):
+        sections.append(
+            "Strict output constraint for this turn:\n"
+            "- The player asked to only answer specific words or fields.\n"
+            "- Output only those requested words/fields, in the requested order, with no labels, restated questions, prefix, suffix, punctuation, or explanation.\n"
+            "- Preserve literal requested values exactly instead of paraphrasing them."
+        )
     if str(turn.get("trigger") or "") == "companion_tick":
         sections.append(
             "Companion tick policy:\n"
@@ -198,6 +206,24 @@ def _mentions_player_name(user_content: str, player_name: str) -> bool:
 def _mentions_mcp(user_content: str) -> bool:
     normalized = str(user_content or "").lower()
     return "mcp" in normalized or "模型上下文协议" in normalized
+
+
+def _has_only_answer_constraint(user_content: str) -> bool:
+    normalized = str(user_content or "").lower()
+    return any(
+        marker in normalized
+        for marker in (
+            "只回答",
+            "只回复",
+            "仅回答",
+            "仅回复",
+            "只输出",
+            "only answer",
+            "answer only",
+            "respond only",
+            "output only",
+        )
+    )
 
 
 def _command_policy_reminder(user_content: str) -> str:
@@ -464,16 +490,18 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "effects": _compact_effects(player_state.get("effects")),
             "game_mode": player_state.get("game_mode"),
             "dimension": player_state.get("dimension"),
-            "on_ground": player_state.get("on_ground"),
-            "in_lava": player_state.get("in_lava"),
-            "underwater": player_state.get("underwater"),
-            "on_fire": player_state.get("on_fire"),
             "x": player_state.get("x"),
             "y": player_state.get("y"),
             "z": player_state.get("z"),
             "yaw": player_state.get("yaw"),
             "pitch": player_state.get("pitch"),
             "facing_direction": _facing_direction(player_state.get("yaw")),
+        },
+        "hazards": {
+            "on_fire": player_state.get("on_fire"),
+            "in_lava": player_state.get("in_lava"),
+            "underwater": player_state.get("underwater"),
+            "on_ground": player_state.get("on_ground"),
         },
         "world_state": {
             "day_time": world_state.get("day_time"),

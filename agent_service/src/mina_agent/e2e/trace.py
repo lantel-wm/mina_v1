@@ -179,6 +179,10 @@ def snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
             "z": player.get("z"),
             "health": player.get("health"),
             "food": player.get("food"),
+            "on_fire": player.get("on_fire"),
+            "in_lava": player.get("in_lava"),
+            "underwater": player.get("underwater"),
+            "on_ground": player.get("on_ground"),
         },
         "world": {
             "day_time": world.get("day_time"),

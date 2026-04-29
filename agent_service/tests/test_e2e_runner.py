@@ -40,6 +40,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "world_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
     assert "exact_read_only_time_command_live_model" in names
+    assert "exact_gametime_command_live_model" in names
     assert "weather_query_command_live_model" in names
     assert "exact_player_list_live_model" in names
     assert "exact_player_list_uuids_live_model" in names

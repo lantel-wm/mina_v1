@@ -110,6 +110,8 @@ def test_mcp_tool_spec_is_exposed_only_when_enabled() -> None:
 def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:
     assert is_read_only_command("seed")
     assert is_read_only_command("/time query day")
+    assert is_read_only_command("time query daytime")
+    assert is_read_only_command("time query gametime")
     assert is_read_only_command("weather query")
     assert is_read_only_command("list uuids")
     assert is_read_only_command("locate structure minecraft:village_plains")
@@ -118,8 +120,10 @@ def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:
     assert not is_read_only_command("setblock 0 80 0 minecraft:air")
     assert not is_read_only_command("execute as @a run seed")
     assert not is_read_only_command("time set day")
+    assert not is_read_only_command("time query midnight")
     assert not is_read_only_command("locate structure minecraft:village; stop")
     assert normalize_read_only_command("/TIME   QUERY   DAY") == "time query day"
+    assert normalize_read_only_command("/TIME   QUERY   GAMETIME") == "time query gametime"
 
 
 def test_run_read_only_command_schedules_fabric_action(tmp_path) -> None:

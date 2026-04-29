@@ -218,6 +218,44 @@ def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:
     assert "The exact commands `list` and `list uuids` must call run_read_only_command" in context
 
 
+def test_command_policy_reminder_is_dynamic_for_exact_gametime_command(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-gametime",
+        "trigger": "command",
+        "message": "time query gametime",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Tool selection reminder" in context
+    assert "time query daytime|gametime|day" in context
+    assert "final user message itself is an allowed command text" in context
+
+
+def test_only_answer_constraint_is_dynamic(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-only",
+        "trigger": "command",
+        "message": "这个服务器允许 PVP 吗？命令方块启用了吗？只回答 true true。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "world_state": {
+                "pvp_allowed": True,
+                "command_blocks_enabled": True,
+            }
+        },
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Strict output constraint for this turn" in context
+    assert "with no labels, restated questions, prefix, suffix, punctuation, or explanation" in context
+
+
 def test_command_policy_reminder_is_dynamic_for_exact_list_uuids_command(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     turn = {
@@ -644,6 +682,7 @@ def test_context_summary_includes_hazard_state() -> None:
     assert '"in_lava": true' in summary
     assert '"underwater": true' in summary
     assert '"on_fire": true' in summary
+    assert '"hazards": {"on_fire": true, "in_lava": true, "underwater": true, "on_ground": false}' in summary
 
 
 def test_context_summary_includes_player_identity_for_command_turns() -> None:

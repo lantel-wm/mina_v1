@@ -913,6 +913,34 @@ SCENARIO_DATA = [
         "rubric": "Exact allowlisted read-only command forms should go through the live model tool loop even when the same command has a recent prior result.",
     },
     {
+        "name": "exact_gametime_command_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "command"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "exact-gametime-command-live-model",
+                "value": "time query gametime",
+                "wait_for": ["mina command callback command=time query gametime success=true"],
+                "timeout": 60,
+            }
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "time query gametime"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "time query gametime"},
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_write"},
+        ],
+        "expected_model": {"mode": "exact", "count": 1},
+        "trace_invariants": ["no_action_monitor_timeout"],
+        "rubric": "Exact time query gametime should be selected by the live model and executed through the allowlisted Fabric read-only command path.",
+    },
+    {
         "name": "weather_query_command_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],
@@ -1282,7 +1310,7 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "world-memory-write-live-model",
                 "value": "请记住：这个世界的集合点在南边海滩",
-                "wait_for": ["南边海滩"],
+                "wait_for": ["记住", "记下", "已记"],
                 "timeout": 60,
             },
             {
