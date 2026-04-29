@@ -6,6 +6,7 @@ from typing import Any
 
 from .memory import MemoryStore
 from .policy import UNSAFE_WRITE_REFUSAL
+from .tools import normalize_read_only_command
 
 
 SYSTEM_PROMPT = """Identity:
@@ -89,6 +90,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
     snapshot_observation_hint = _snapshot_observation_request_hint(user_content, turn)
     if snapshot_observation_hint:
         messages.append({"role": "system", "content": snapshot_observation_hint})
+    smalltalk_hint = _smalltalk_capability_request_hint(user_content)
+    if smalltalk_hint:
+        messages.append({"role": "system", "content": smalltalk_hint})
     memory_recall_hint = _memory_recall_request_hint(user_content)
     if memory_recall_hint:
         messages.append({"role": "system", "content": memory_recall_hint})
@@ -235,6 +239,7 @@ def _command_execution_request_hint(user_content: str) -> str:
     normalized = " ".join(user_content.lower().replace("/", " / ").split())
     if not normalized:
         return ""
+    exact_command = normalize_read_only_command(user_content)
     execution_markers = ("执行", "运行", "调用", "用命令", "run ", "execute ", "call ")
     command_markers = (
         " seed",
@@ -253,9 +258,9 @@ def _command_execution_request_hint(user_content: str) -> str:
         " /",
     )
     padded = " " + normalized + " "
-    if not any(marker in normalized for marker in execution_markers):
+    if not exact_command and not any(marker in normalized for marker in execution_markers):
         return ""
-    if not any(marker in padded for marker in command_markers):
+    if not exact_command and not any(marker in padded for marker in command_markers):
         return ""
     return (
         "Current user message is an explicit Minecraft command execution request. "
@@ -371,6 +376,36 @@ def _snapshot_observation_request_hint(user_content: str, turn: dict[str, Any]) 
         "Answer directly from Current Minecraft context. Do not call run_read_only_command for time, weather, "
         "coordinates, health, food, nearby entities, nearby blocks, or safety questions unless the player explicitly "
         "asked to execute a command."
+    )
+
+
+def _smalltalk_capability_request_hint(user_content: str) -> str:
+    normalized = " ".join(str(user_content or "").lower().split())
+    if not normalized:
+        return ""
+    cjk_markers = (
+        "你好",
+        "嗨",
+        "你能做什么",
+        "能帮我做什么",
+        "你可以做什么",
+        "介绍一下",
+    )
+    english_markers = (
+        "hello",
+        "hi",
+        "what can you do",
+        "what do you do",
+        "introduce yourself",
+    )
+    cjk_match = any(marker in normalized for marker in cjk_markers)
+    english_match = any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_markers)
+    if not cjk_match and not english_match:
+        return ""
+    return (
+        "Current user message is a greeting or capability question. Answer generally about Mina's capabilities only. "
+        "Do not mention stored memories, base/home locations, player preferences, current coordinates, biome, time, "
+        "weather, inventory, nearby entities, or command/search result details unless the player explicitly asks."
     )
 
 

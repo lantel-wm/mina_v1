@@ -325,29 +325,50 @@ def test_snapshot_status_guard_does_not_block_locate_requests(tmp_path) -> None:
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-locate-structure")] == ["run_read_only_command"]
 
 
-def test_literal_read_only_command_bypasses_model(tmp_path) -> None:
-    model = FakeDeepSeek()
+def test_exact_read_only_command_is_scheduled_after_model_tool_call(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-time",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "time query day"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            )
+        ]
+    )
     harness, memory, _model, _search = _harness(tmp_path, model)
 
-    response = harness.run_turn(_turn("/TIME   QUERY   DAY", "req-literal-time"))
+    response = harness.run_turn(_turn("/TIME   QUERY   DAY", "req-exact-time"))
 
     assert response["messages"][0]["content"] == "我会执行这个只读查询。"
     assert response["actions"][0]["name"] == "run_read_only_command"
     assert response["actions"][0]["args"] == {"command": "time query day"}
-    assert response["debug"]["literal_read_only_command"] is True
-    assert len(model.calls) == 0
-    calls = memory.recent_tool_calls("req-literal-time")
+    assert len(model.calls) == 1
+    calls = memory.recent_tool_calls("req-exact-time")
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
-def test_literal_read_only_command_works_without_api_key(tmp_path) -> None:
+def test_exact_read_only_command_requires_configured_model(tmp_path) -> None:
     model = FakeDeepSeek(configured=False)
     harness, _memory, _model, _search = _harness(tmp_path, model)
 
-    response = harness.run_turn(_turn("seed", "req-literal-seed-no-key"))
+    response = harness.run_turn(_turn("seed", "req-exact-seed-no-key"))
 
-    assert response["actions"][0]["args"] == {"command": "seed"}
-    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert "MINA_API_KEY is not configured" in response["messages"][0]["content"]
+    assert response.get("actions", []) == []
     assert len(model.calls) == 0
 
 

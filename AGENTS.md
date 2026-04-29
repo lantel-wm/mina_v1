@@ -44,6 +44,7 @@ Mina uses a sidecar architecture.
 - There is no separate controllable Mina character in the runtime. Movement, mining, attacking, item use, and world mutation tools are not model-facing and should not be reintroduced.
 - Model-facing tools are limited to `web_search`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.
 - Do not add hardcoded player-intent routes or local keyword classifiers for observation, search, memory, or commands. Memory is an agent service, not a player-facing command router: stable agent memory is budget-loaded into prompt context, and `memory_search` is an optional model-facing retrieval tool for older or specific stored context.
+- Exact allowlisted command forms such as `time query day`, `weather query`, and `list` still go through the live model tool loop when `MINA_API_KEY` is configured; deterministic parsing is only for safety validation and repair prompts, not for direct player-facing routing.
 - If `MINA_API_KEY` is not configured, the sidecar returns a configuration error instead of attempting local chat, memory, search, command, or observation fallbacks.
 - `/v1/action-results` remains for Fabric command callbacks. `/v1/observations` and `/v1/tasks` are not part of the runtime API.
 

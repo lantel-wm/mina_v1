@@ -14,7 +14,6 @@ from .schemas import TurnResponse
 from .tools import (
     ToolRunner,
     extract_requested_read_only_command,
-    normalize_read_only_command,
     tool_specs,
 )
 from .turn_runtime import TurnRuntimeState
@@ -45,38 +44,6 @@ class AgentHarness:
         message = str(turn.get("message") or "")
         if message:
             self.memory.add_conversation(request_id, player_id, "user", message)
-
-        literal_command = normalize_read_only_command(message)
-        if literal_command:
-            result = self.tools.run("run_read_only_command", {"command": literal_command}, turn)
-            result_actions = _result_actions(result)
-            status = "ok" if result_actions or not is_tool_error(result.content) else "error"
-            self.memory.record_tool_call(
-                request_id,
-                "run_read_only_command",
-                {"command": literal_command},
-                {"content": result.content, "actions": result_actions},
-                status,
-            )
-            if result_actions:
-                content = _action_ack("run_read_only_command")
-                self.memory.add_conversation(request_id, player_id, "assistant", content)
-                self._debug(
-                    "turn literal_read_only_command request_id=%s command=%s actions=%s",
-                    request_id,
-                    literal_command,
-                    len(result_actions),
-                )
-                return TurnResponse(
-                    messages=[{"target": "requester", "content": content}],
-                    actions=result_actions,
-                    debug={"literal_read_only_command": True},
-                ).to_dict()
-            self._debug("turn literal_read_only_command rejected request_id=%s command=%s", request_id, literal_command)
-            return TurnResponse(
-                messages=[{"target": "requester", "content": "这个命令不在 Mina 的只读命令白名单内。"}],
-                debug={"literal_read_only_command": True, "literal_read_only_error": True},
-            ).to_dict()
 
         requested_read_only_command = extract_requested_read_only_command(message)
         requested_memory_write = is_explicit_memory_write_request(message)

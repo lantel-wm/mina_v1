@@ -466,6 +466,10 @@ def normalize_read_only_command(command: str) -> str | None:
 
 
 def extract_requested_read_only_command(content: str) -> str | None:
+    exact = normalize_read_only_command(content)
+    if exact:
+        return exact
+
     normalized = " ".join(str(content or "").lower().replace("/", " / ").split())
     if not normalized:
         return None

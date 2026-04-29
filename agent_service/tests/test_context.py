@@ -168,6 +168,23 @@ def test_build_messages_marks_explicit_command_execution_requests(tmp_path) -> N
     assert "Do not answer it from the current snapshot" in content
 
 
+def test_build_messages_marks_exact_read_only_command_forms(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-exact-command",
+        "trigger": "command",
+        "message": "/TIME   QUERY   DAY",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"world_state": {"day_time": 1200}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "explicit Minecraft command execution request" in content
+    assert "Either call run_read_only_command" in content
+
+
 def test_build_messages_does_not_mark_plain_observation_as_command_execution(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     turn = {
@@ -202,6 +219,25 @@ def test_build_messages_ordinary_turn_omits_conditional_mcp_and_companion_policy
     assert "MCP policy for this turn" not in system_content
     assert "mcp_call" not in system_content
     assert "Companion tick policy" not in system_content
+
+
+def test_build_messages_marks_smalltalk_capability_requests(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("player", "player-1", "base_location", "玩家基地在樱花林旁边", importance=4)
+    turn = {
+        "request_id": "req-smalltalk",
+        "trigger": "command",
+        "message": "你好 Mina，用一句话说说你现在能帮我做什么。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"world_state": {"day_time": 1200, "raining": False}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "greeting or capability question" in content
+    assert "Do not mention stored memories" in content
+    assert "玩家基地在樱花林旁边" in content
 
 
 def test_build_messages_adds_mcp_policy_only_when_requested(tmp_path) -> None:

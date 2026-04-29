@@ -116,7 +116,9 @@ def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:
     assert normalize_read_only_command("/TIME   QUERY   DAY") == "time query day"
 
 
-def test_extract_requested_read_only_command_requires_execution_intent() -> None:
+def test_extract_requested_read_only_command_accepts_exact_or_explicit_commands() -> None:
+    assert extract_requested_read_only_command("time query day") == "time query day"
+    assert extract_requested_read_only_command("/TIME   QUERY   DAY") == "time query day"
     assert extract_requested_read_only_command("执行 time query day") == "time query day"
     assert extract_requested_read_only_command("请执行 seed，只用只读命令查询当前世界种子。") == "seed"
     assert extract_requested_read_only_command("run locate biome minecraft:plains") == "locate biome minecraft:plains"

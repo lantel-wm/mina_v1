@@ -114,13 +114,13 @@ SCENARIO_DATA = [
         "rubric": "Natural-language read-only command requests should be selected by the live model and executed through the Fabric read-only action.",
     },
     {
-        "name": "literal_read_only_command_local_route",
+        "name": "exact_read_only_time_command_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],
         "steps": [
             {
                 "kind": "request",
-                "request_id": "literal-read-only-command-local-route",
+                "request_id": "exact-read-only-time-command-live-model",
                 "value": "time query day",
                 "wait_for": ["我会执行这个只读查询"],
                 "timeout": 60,
@@ -133,18 +133,18 @@ SCENARIO_DATA = [
             {"name": "run_read_only_command"},
             {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "The time is 0"},
         ],
-        "expected_model": {"mode": "exact", "count": 0},
+        "expected_model": {"mode": "at_least", "min_count": 1},
         "trace_invariants": ["no_action_monitor_timeout"],
-        "rubric": "Exact allowlisted read-only command forms should bypass the live model while still going through Fabric's read-only action policy.",
+        "rubric": "Exact allowlisted read-only command forms should still go through the live model tool loop, with Fabric enforcing read-only action policy.",
     },
     {
-        "name": "literal_weather_query_local_route",
+        "name": "exact_weather_query_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],
         "steps": [
             {
                 "kind": "request",
-                "request_id": "literal-weather-query-local-route",
+                "request_id": "exact-weather-query-live-model",
                 "value": "weather query",
                 "wait_for": ["我会执行这个只读查询"],
                 "timeout": 60,
@@ -157,18 +157,18 @@ SCENARIO_DATA = [
             {"name": "run_read_only_command"},
             {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "Weather: clear"},
         ],
-        "expected_model": {"mode": "exact", "count": 0},
+        "expected_model": {"mode": "at_least", "min_count": 1},
         "trace_invariants": ["no_action_monitor_timeout"],
-        "rubric": "Exact weather query commands should bypass the live model and return Fabric's deterministic weather observation.",
+        "rubric": "Exact weather query commands should go through the live model and return Fabric's deterministic weather observation.",
     },
     {
-        "name": "literal_player_list_local_route",
+        "name": "exact_player_list_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],
         "steps": [
             {
                 "kind": "request",
-                "request_id": "literal-player-list-local-route",
+                "request_id": "exact-player-list-live-model",
                 "value": "list",
                 "wait_for": ["我会执行这个只读查询"],
                 "timeout": 60,
@@ -181,9 +181,9 @@ SCENARIO_DATA = [
             {"name": "run_read_only_command"},
             {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "mina_tester"},
         ],
-        "expected_model": {"mode": "exact", "count": 0},
+        "expected_model": {"mode": "at_least", "min_count": 1},
         "trace_invariants": ["no_action_monitor_timeout"],
-        "rubric": "Exact player-list commands should bypass the live model while proving Fabric command output is captured.",
+        "rubric": "Exact player-list commands should go through the live model while proving Fabric command output is captured.",
     },
     {
         "name": "read_only_seed_command_live_model",
