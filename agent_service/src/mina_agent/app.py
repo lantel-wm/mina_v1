@@ -13,6 +13,7 @@ from .logging_config import configure_logging
 from .mcp import McpRegistry
 from .memory import MemoryStore
 from .searxng import SearxngClient
+from .session_queue import SessionTurnQueue
 from .tools import ToolRunner
 
 
@@ -26,6 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deepseek = DeepSeekClient(resolved)
     tools = ToolRunner(memory, searxng, mcp)
     harness = AgentHarness(resolved, memory, deepseek, tools)
+    turn_queue = SessionTurnQueue()
 
     app = FastAPI(title="Mina Agent Service", version="0.1.0")
 
@@ -47,11 +49,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "log_path": str(resolved.log_path),
             "searxng": searxng.health(),
             "mcp": mcp.health(),
+            "session_queue": turn_queue.health(),
         }
 
     @app.post("/v1/turn")
     async def turn(payload: dict[str, Any]) -> dict[str, Any]:
-        data = await asyncio.to_thread(harness.run_turn, payload)
+        data = await turn_queue.run_turn(payload, harness.run_turn)
         request_id = str(payload.get("request_id") or "")
         await record_scheduled_actions(request_id, data)
         return data

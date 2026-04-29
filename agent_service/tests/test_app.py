@@ -85,6 +85,16 @@ def test_removed_body_endpoints_are_not_registered(tmp_path) -> None:
     assert "/v1/tasks/{task_id}" not in paths
 
 
+def test_healthz_exposes_session_queue_state(tmp_path) -> None:
+    app = app_module.create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+    healthz = _route(app, "/healthz")
+
+    response = healthz()
+
+    assert response["session_queue"]["session_count"] == 0
+    assert response["session_queue"]["sessions"] == {}
+
+
 def _app_with_read_only_model(tmp_path, monkeypatch, command: str = "time query day"):  # noqa: ANN001, ANN202
     fake = _FakeDeepSeek(
         [
