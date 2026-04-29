@@ -1,5 +1,7 @@
 package com.mina.game;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mina.MinaMod;
 import com.mina.config.MinaConfig;
@@ -133,6 +135,8 @@ public final class MinaActionMonitor {
 				if (state.isAir() || (!expected.isBlank() && !expected.equals(actual))) {
 					success = result("success", "target block is absent");
 					success.addProperty("actual_block", actual);
+				} else if (booleanValue(monitor, "allow_same_column", false)) {
+					success = relatedBlockAbsent(level, pos, expected, monitor);
 				}
 			}
 		} else if ("body_targeted_block".equals(type)) {
@@ -195,6 +199,46 @@ public final class MinaActionMonitor {
 		json.addProperty("status", status);
 		json.addProperty("reason", reason);
 		return json;
+	}
+
+	private static JsonObject relatedBlockAbsent(ServerLevel level, BlockPos targetPos, String expectedBlock, JsonObject monitor) {
+		if (!monitor.has("related_targets") || !monitor.get("related_targets").isJsonArray()) {
+			return null;
+		}
+		JsonArray relatedTargets = monitor.getAsJsonArray("related_targets");
+		for (JsonElement element : relatedTargets) {
+			if (!element.isJsonObject()) {
+				continue;
+			}
+			JsonObject related = element.getAsJsonObject();
+			BlockPos relatedPos = new BlockPos(
+				intValue(related, "x", targetPos.getX()),
+				intValue(related, "y", targetPos.getY()),
+				intValue(related, "z", targetPos.getZ())
+			);
+			if (relatedPos.equals(targetPos) || relatedPos.getX() != targetPos.getX() || relatedPos.getZ() != targetPos.getZ()) {
+				continue;
+			}
+			String relatedExpected = string(related, "block");
+			if (relatedExpected.isBlank()) {
+				relatedExpected = expectedBlock;
+			}
+			if (relatedExpected.isBlank()) {
+				continue;
+			}
+			BlockState state = level.getBlockState(relatedPos);
+			String actual = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+			if (state.isAir() || !relatedExpected.equals(actual)) {
+				JsonObject progress = result("progress", "related block is absent");
+				progress.addProperty("actual_x", relatedPos.getX());
+				progress.addProperty("actual_y", relatedPos.getY());
+				progress.addProperty("actual_z", relatedPos.getZ());
+				progress.addProperty("actual_block", actual);
+				progress.addProperty("expected_block", relatedExpected);
+				return progress;
+			}
+		}
+		return null;
 	}
 
 	private static String string(JsonObject object, String key) {

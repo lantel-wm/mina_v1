@@ -131,6 +131,7 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         assert "no_body_look_monitor_timeout" in SCENARIOS[scenario_name].trace_invariants
     leaf_crowded = SCENARIOS["body_leaf_crowded_chop_tree_router"]
     assert leaf_crowded.fixture == "leaf_crowded_chop_tree"
+    assert "no_action_monitor_timeout" in leaf_crowded.trace_invariants
     assert any(expected.name == "start_body_task" and expected.status == "ok" for expected in leaf_crowded.expected_tools)
     collect_wood = SCENARIOS["body_collect_wood_chop_router"]
     assert any(step.value == "帮我收集点木材" for step in collect_wood.steps)

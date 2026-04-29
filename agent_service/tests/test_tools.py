@@ -387,6 +387,8 @@ def test_chop_tree_retargets_same_column_log_from_look_monitor(tmp_path) -> None
     assert attack["name"] == "body_attack"
     assert attack["step_id"] == "attack:0"
     assert attack["monitor"]["y"] == 81
+    assert attack["monitor"]["allow_same_column"] is True
+    assert {"x": 2, "y": 80, "z": 0, "block": "minecraft:spruce_log"} in attack["monitor"]["related_targets"]
 
     lower_log = dict(turn["snapshot"]["nearby_blocks"]["requester"][0])
     continued = runner.skills.handle_action_results(
@@ -411,6 +413,101 @@ def test_chop_tree_retargets_same_column_log_from_look_monitor(tmp_path) -> None
     lower_look = continued.actions[1]
     assert lower_look["name"] == "body_look_at_position"
     assert lower_look["monitor"]["y"] == 80
+
+
+def test_chop_tree_attack_progress_retries_current_target_without_timeout_recovery(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+
+    started = runner.run("start_body_task", {"task_type": "chop_tree", "target_hint": "nearest"}, turn)
+    move = started.actions[0]
+    moved = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": move["id"],
+                    "task_id": move["task_id"],
+                    "step_id": move["step_id"],
+                    "name": move["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "body reached target"},
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    look = moved.actions[0]
+    retargeted = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": look["id"],
+                    "task_id": look["task_id"],
+                    "step_id": look["step_id"],
+                    "name": look["name"],
+                    "status": "monitor_pending",
+                    "command_success": True,
+                    "monitor_result": {
+                        "status": "retarget",
+                        "reason": "body targeted related block",
+                        "actual_x": 2,
+                        "actual_y": 81,
+                        "actual_z": 0,
+                        "actual_block": "minecraft:spruce_log",
+                    },
+                    "snapshot": turn["snapshot"],
+                }
+            ]
+        }
+    )
+    attack = retargeted.actions[0]
+    upper_log = {
+        "block": "minecraft:spruce_log",
+        "category": "log",
+        "x": 2,
+        "y": 81,
+        "z": 0,
+        "center_x": 2.5,
+        "center_y": 81.5,
+        "center_z": 0.5,
+        "distance": 3.2,
+    }
+
+    progressed = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": attack["id"],
+                    "task_id": attack["task_id"],
+                    "step_id": attack["step_id"],
+                    "name": attack["name"],
+                    "status": "progress",
+                    "command_success": True,
+                    "monitor_result": {
+                        "status": "progress",
+                        "reason": "related block is absent",
+                        "actual_x": 2,
+                        "actual_y": 80,
+                        "actual_z": 0,
+                        "actual_block": "minecraft:air",
+                        "expected_block": "minecraft:spruce_log",
+                    },
+                    "snapshot": {"body_state": {"online": True}, "nearby_blocks": {"body": [upper_log]}},
+                }
+            ]
+        }
+    )
+
+    assert len(progressed.actions) >= 2
+    assert progressed.actions[0]["name"] == "body_attack"
+    assert progressed.actions[0]["args"]["mode"] == "release"
+    retry_look = progressed.actions[1]
+    assert retry_look["name"] == "body_look_at_position"
+    assert retry_look["monitor"]["y"] == 81
+    status = runner.run("task_status", {"task_id": attack["task_id"]}, turn)
+    assert '"attempts": 0' in status.content
+    assert '"last_error": null' in status.content
 
 
 def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) -> None:

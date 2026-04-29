@@ -269,6 +269,21 @@ class SkillRuntime:
                 return self._advance(task, task.get("latest_snapshot") or {})
             recovered = self._recover_or_fail(task, monitor.get("reason") or "retarget missing block coordinates")
             return recovered
+        if monitor_status == "progress" and task.get("type") == "chop_tree" and step_id.startswith("attack"):
+            snapshot = task.get("latest_snapshot") or {}
+            current_target = self._current_or_replacement_target(task, snapshot, task.get("target") or {})
+            if isinstance(current_target, TurnResponse):
+                return _prepend_action(current_target, _attack_release_action(task, step_id))
+            task["target"] = current_target
+            task["stage"] = "look"
+            task["last_error"] = None
+            self.memory.record_task_event(
+                task["task_id"],
+                "attack_progress",
+                {"target": current_target, "monitor": monitor},
+            )
+            advanced = self._advance(task, snapshot)
+            return _prepend_action(advanced, _attack_release_action(task, step_id))
         if task.get("type") == "follow_player":
             return self._handle_follow_result(task, result, status, monitor_status)
         if monitor_status != "success" and status not in {"completed", "success"}:
@@ -456,6 +471,8 @@ class SkillRuntime:
                     "y": int(target["y"]),
                     "z": int(target["z"]),
                     "block": str(target.get("block") or ""),
+                    "allow_same_column": True,
+                    "related_targets": _same_column_related_targets(snapshot, target),
                     "deadline_ticks": 240,
                 },
                 expected_effect={
@@ -720,6 +737,27 @@ def _choose_same_column_log_target(snapshot: dict[str, Any], previous: dict[str,
     replacement["approach_y"] = previous["approach_y"]
     replacement["approach_z"] = previous["approach_z"]
     return replacement
+
+
+def _same_column_related_targets(snapshot: dict[str, Any], target: dict[str, Any]) -> list[dict[str, Any]]:
+    if not all(key in target for key in ("x", "y", "z")):
+        return []
+    target_x = int(target["x"])
+    target_y = int(target["y"])
+    target_z = int(target["z"])
+    related: list[dict[str, Any]] = []
+    seen: set[tuple[int, int, int]] = set()
+    for block in _log_candidates(snapshot):
+        x = int(block["x"])
+        y = int(block["y"])
+        z = int(block["z"])
+        key = (x, y, z)
+        if key in seen or x != target_x or z != target_z or y == target_y:
+            continue
+        seen.add(key)
+        related.append({"x": x, "y": y, "z": z, "block": str(block.get("block") or target.get("block") or "")})
+    related.sort(key=lambda block: int(block["y"]))
+    return related
 
 
 def _retarget_from_monitor(previous: dict[str, Any], monitor: dict[str, Any]) -> dict[str, Any] | None:
