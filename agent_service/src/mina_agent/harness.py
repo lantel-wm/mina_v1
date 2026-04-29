@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from .config import Settings
 from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
+from .policy import ResponsePolicyRuntime, is_tool_error
 from .schemas import TurnResponse
 from .tools import (
     ToolRunner,
     tool_specs,
 )
+from .turn_runtime import TurnRuntimeState
 
 LOGGER = logging.getLogger("mina_agent.harness")
 
@@ -48,24 +49,19 @@ class AgentHarness:
             self.memory.add_conversation(request_id, player_id, "assistant", fallback)
             return TurnResponse(messages=[{"target": "requester", "content": fallback}]).to_dict()
 
-        messages = build_messages(turn, self.memory)
-        actions: list[dict[str, Any]] = []
-        usage: dict[str, Any] = {}
-        invalid_tool_results = 0
-        unsafe_response_repairs = 0
-        memory_claim_repairs = 0
-        memory_write_seen = False
+        state = TurnRuntimeState(request_id=request_id, player_id=player_id, messages=build_messages(turn, self.memory))
+        policy = ResponsePolicyRuntime()
         try:
             for subturn in range(1, self.settings.max_tool_turns + 1):
-                self._debug("model call request_id=%s subturn=%s messages=%s", request_id, subturn, len(messages))
+                self._debug("model call request_id=%s subturn=%s messages=%s", request_id, subturn, len(state.messages))
                 specs = tool_specs()
                 try:
-                    response = self.deepseek.chat(messages, tools=specs)
+                    response = self.deepseek.chat(state.messages, tools=specs)
                     self.memory.record_model_call(
                         request_id=request_id,
                         subturn=subturn,
                         model=self.settings.model,
-                        messages_count=len(messages),
+                        messages_count=len(state.messages),
                         tools=_tool_spec_names(specs),
                         status="ok",
                         finish_reason=response.finish_reason,
@@ -77,15 +73,15 @@ class AgentHarness:
                         request_id=request_id,
                         subturn=subturn,
                         model=self.settings.model,
-                        messages_count=len(messages),
+                        messages_count=len(state.messages),
                         tools=_tool_spec_names(specs),
                         status="error",
                         error=f"HTTP {exc.status}: {_log_preview(exc.message, 1200)}",
                     )
                     raise
-                usage = response.usage
+                state.usage = response.usage
                 assistant_message = response.message
-                messages.append(assistant_message)
+                state.append_model_message(assistant_message)
                 tool_calls = assistant_message.get("tool_calls") or []
                 self._debug(
                     "model response request_id=%s subturn=%s finish_reason=%s tool_calls=%s content=%s usage=%s",
@@ -94,66 +90,41 @@ class AgentHarness:
                     response.finish_reason,
                     len(tool_calls),
                     _log_preview(str(assistant_message.get("content") or ""), 500),
-                    usage,
+                    state.usage,
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
-                    content = _minecraft_chat_text(str(assistant_message.get("content") or ""))
-                    if content and _contains_write_command_advice(content):
-                        unsafe_response_repairs += 1
-                        if unsafe_response_repairs <= 1 and subturn < self.settings.max_tool_turns:
-                            messages.append(
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "The previous assistant draft contained an executable write-capable Minecraft "
-                                        "command or workaround. Rewrite the refusal without any slash command, command "
-                                        "recipe, coordinates, or suggestion that the player run it themselves. Keep it "
-                                        "brief and offer only safe read-only alternatives."
-                                    ),
-                                }
-                            )
-                            self._debug("turn repair request_id=%s reason=unsafe_write_command_advice", request_id)
-                            continue
-                        content = "抱歉，我不能执行或提供写入世界的命令。我可以帮你查询只读信息，或说明当前方块和世界状态。"
-                    if content and not memory_write_seen and _claims_memory_saved(content):
-                        memory_claim_repairs += 1
-                        if memory_claim_repairs <= 1 and subturn < self.settings.max_tool_turns:
-                            messages.append(
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        "The previous assistant draft claimed that information was remembered or saved, "
-                                        "but no memory_write tool succeeded in this turn. If the information is stable "
-                                        "and useful for future Mina turns, call memory_write now; otherwise rewrite "
-                                        "without claiming it was saved."
-                                    ),
-                                }
-                            )
-                            self._debug("turn repair request_id=%s reason=memory_claim_without_write", request_id)
-                            continue
+                    review = policy.review_final_content(
+                        str(assistant_message.get("content") or ""),
+                        can_repair=subturn < self.settings.max_tool_turns,
+                    )
+                    if review.needs_repair:
+                        state.messages.append({"role": "system", "content": review.repair_message})
+                        self._debug("turn repair request_id=%s reason=%s", request_id, review.repair_reason)
+                        continue
+                    content = review.content
                     if content:
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
-                        self._debug("turn final request_id=%s messages=1 actions=%s", request_id, len(actions))
+                        self._debug("turn final request_id=%s messages=1 actions=%s", request_id, len(state.actions))
                         return TurnResponse(
                             messages=[{"target": "requester", "content": content}],
-                            actions=actions,
-                            debug={"usage": usage, "tool_subturns": subturn},
+                            actions=state.actions,
+                            debug={"usage": state.usage, "tool_subturns": subturn},
                         ).to_dict()
-                    if actions:
+                    if state.actions:
                         content = "我开始执行。"
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
-                        self._debug("turn final request_id=%s messages=1 actions=%s content=execution_ack", request_id, len(actions))
+                        self._debug("turn final request_id=%s messages=1 actions=%s content=execution_ack", request_id, len(state.actions))
                         return TurnResponse(
                             messages=[{"target": "requester", "content": content}],
-                            actions=actions,
-                            debug={"usage": usage, "tool_subturns": subturn},
+                            actions=state.actions,
+                            debug={"usage": state.usage, "tool_subturns": subturn},
                         ).to_dict()
                     content = "我没有生成可执行回应，请换个说法或补充目标。"
                     self.memory.add_conversation(request_id, player_id, "assistant", content)
                     self._debug("turn final request_id=%s messages=1 actions=0 content=empty_model_fallback", request_id)
                     return TurnResponse(
                         messages=[{"target": "requester", "content": content}],
-                        debug={"usage": usage, "tool_subturns": subturn, "empty_model_fallback": True},
+                        debug={"usage": state.usage, "tool_subturns": subturn, "empty_model_fallback": True},
                     ).to_dict()
 
                 for call in tool_calls:
@@ -169,19 +140,14 @@ class AgentHarness:
                         _log_preview(json.dumps(args, ensure_ascii=False), 1200),
                     )
                     result = self.tools.run(name, args, turn)
-                    result_actions = []
-                    if result.action:
-                        result_actions.append(result.action)
-                    result_actions.extend(result.actions)
+                    result_actions = state.collect_result_actions(result)
                     if result_actions:
-                        actions.extend(result_actions)
-                        invalid_tool_results = 0
-                    elif _is_tool_error(result.content):
-                        invalid_tool_results += 1
+                        state.invalid_tool_results = 0
+                    elif is_tool_error(result.content):
+                        state.invalid_tool_results += 1
                     else:
-                        invalid_tool_results = 0
-                        if name == "memory_write":
-                            memory_write_seen = True
+                        state.invalid_tool_results = 0
+                        policy.note_successful_tool_result(name, result.content)
                     self._debug(
                         "tool result request_id=%s subturn=%s name=%s action=%s content_length=%s content_preview=%s",
                         request_id,
@@ -196,7 +162,7 @@ class AgentHarness:
                         name,
                         args,
                         {"content": result.content, "actions": result_actions},
-                        "ok" if result_actions or not _is_tool_error(result.content) else "error",
+                        "ok" if result_actions or not is_tool_error(result.content) else "error",
                     )
                     if result_actions:
                         response_messages = _tool_payload_messages(result.content)
@@ -211,37 +177,31 @@ class AgentHarness:
                             request_id,
                             subturn,
                             name,
-                            len(actions),
+                            len(state.actions),
                         )
                         return TurnResponse(
                             messages=response_messages,
-                            actions=actions,
-                            debug={"usage": usage, "tool_subturns": subturn, "action_barrier": True},
+                            actions=state.actions,
+                            debug={"usage": state.usage, "tool_subturns": subturn, "action_barrier": True},
                         ).to_dict()
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": call.get("id"),
-                            "content": result.content,
-                        }
-                    )
-                    if invalid_tool_results >= 3:
+                    state.append_tool_observation(call.get("id"), result.content)
+                    if state.invalid_tool_results >= 3:
                         content = "我还没有完成这步操作，因为连续几次工具调用缺少必要目标参数。我会先停下，避免误操作。"
-                        if actions:
+                        if state.actions:
                             content = "我只请求了前面的准备动作；后续操作连续缺少必要目标参数，所以先停下，避免误操作。"
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
-                        self._debug("turn stopped_invalid_tools request_id=%s actions=%s", request_id, len(actions))
-                        return TurnResponse(messages=[{"target": "requester", "content": content}], actions=actions).to_dict()
+                        self._debug("turn stopped_invalid_tools request_id=%s actions=%s", request_id, len(state.actions))
+                        return TurnResponse(messages=[{"target": "requester", "content": content}], actions=state.actions).to_dict()
         except DeepSeekError as exc:
             content = _deepseek_error_message(exc)
             self._debug("turn deepseek_error request_id=%s status=%s message=%s", request_id, exc.status, _log_preview(exc.message, 1200))
-            return TurnResponse(messages=[{"target": "requester", "content": content}], actions=actions).to_dict()
+            return TurnResponse(messages=[{"target": "requester", "content": content}], actions=state.actions).to_dict()
 
         content = "工具调用轮次达到上限，我先停下，避免误操作。"
-        if actions:
+        if state.actions:
             content = "我已经请求执行前面的动作，但后续工具调用轮次达到上限，先停在这里。"
-        self._debug("turn max_tool_turns request_id=%s actions=%s", request_id, len(actions))
-        return TurnResponse(messages=[{"target": "requester", "content": content}], actions=actions, debug={"usage": usage}).to_dict()
+        self._debug("turn max_tool_turns request_id=%s actions=%s", request_id, len(state.actions))
+        return TurnResponse(messages=[{"target": "requester", "content": content}], actions=state.actions, debug={"usage": state.usage}).to_dict()
 
     def _debug(self, message: str, *args: Any) -> None:
         if self.settings.debug_tool_calls:
@@ -264,61 +224,6 @@ def _log_preview(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "...[log preview only; full tool content preserved]"
-
-
-def _minecraft_chat_text(content: str) -> str:
-    text = content.strip()
-    if not text:
-        return ""
-    text = re.sub(r"\*\*([^*\n]+)\*\*", r"\1", text)
-    text = re.sub(r"__([^_\n]+)__", r"\1", text)
-    text = text.replace("`", "")
-    text = _EMOJI_RE.sub("", text)
-    text = re.sub(r"(?m)^\s*[-*•]\s+", "", text)
-    text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-_EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
-_WRITE_COMMAND_ADVICE_RE = re.compile(
-    r"(?im)(^|[\s:：])/"
-    r"(setblock|fill|fillbiome|tp|teleport|gamemode|give|clear|summon|kill|execute|gamerule|op|deop|ban|stop)\b"
-)
-
-
-def _contains_write_command_advice(content: str) -> bool:
-    return bool(_WRITE_COMMAND_ADVICE_RE.search(content))
-
-
-def _claims_memory_saved(content: str) -> bool:
-    normalized = content.lower()
-    return any(
-        token in normalized
-        for token in (
-            "记住了",
-            "已记住",
-            "已经记住",
-            "我会记住",
-            "记下了",
-            "已记下",
-            "保存好了",
-            "我保存了",
-            "i'll remember",
-            "i will remember",
-            "i've saved",
-            "i saved",
-            "saved this",
-        )
-    )
-
-
-def _is_tool_error(content: str) -> bool:
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(payload, dict) and payload.get("ok") is False
 
 
 def _json_object(content: str) -> dict[str, Any]:
