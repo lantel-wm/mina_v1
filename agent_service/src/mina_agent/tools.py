@@ -84,8 +84,8 @@ WEB_SEARCH_TOTAL_CONTENT_LIMIT = 8000
 WEB_SEARCH_TITLE_LIMIT = 220
 
 
-def tool_specs() -> list[dict[str, Any]]:
-    return [
+def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
+    specs = [
         {
             "type": "function",
             "function": {
@@ -150,26 +150,30 @@ def tool_specs() -> list[dict[str, Any]]:
                 "parameters": _schema({"command": {"type": "string"}}, ["command"]),
             },
         },
-        {
-            "type": "function",
-            "function": {
-                "name": "mcp_call",
-                "description": (
-                    "Call a configured non-Minecraft-write MCP server through Mina's sidecar MCP registry. "
-                    "Use tool='tools/list' for discovery, tool='resources/read' with arguments.uri for resources, "
-                    "or a concrete tool name for tools/call."
-                ),
-                "parameters": _schema(
-                    {
-                        "server": {"type": "string"},
-                        "tool": {"type": "string"},
-                        "arguments": {"type": "object"},
-                    },
-                    ["server", "tool", "arguments"],
-                ),
-            },
-        },
     ]
+    if include_mcp:
+        specs.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp_call",
+                    "description": (
+                        "Call a configured non-Minecraft-write MCP server through Mina's sidecar MCP registry. "
+                        "Use tool='tools/list' for discovery, tool='resources/read' with arguments.uri for resources, "
+                        "or a concrete tool name for tools/call."
+                    ),
+                    "parameters": _schema(
+                        {
+                            "server": {"type": "string"},
+                            "tool": {"type": "string"},
+                            "arguments": {"type": "object"},
+                        },
+                        ["server", "tool", "arguments"],
+                    ),
+                },
+            }
+        )
+    return specs
 
 
 class ToolRunner:

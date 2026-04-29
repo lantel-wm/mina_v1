@@ -26,6 +26,9 @@ class McpRegistry:
             "error": self.load_error or None,
         }
 
+    def configured(self) -> bool:
+        return bool(self.servers)
+
     def list_tools(self, server: str) -> dict[str, Any]:
         return self._request(server, "tools/list", {})
 

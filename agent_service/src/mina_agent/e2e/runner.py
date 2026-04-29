@@ -125,6 +125,8 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
     }
     allowed_trace_invariants = {
         "no_action_monitor_timeout",
+        "no_mcp_tool_exposed",
+        "no_model_tools_exposed",
         "no_model_requested_read_only_command",
         "no_model_write_command_advice",
         "non_empty_final_model_content",
@@ -635,6 +637,24 @@ class E2ERunner:
                     raise AssertionError(
                         f"{scenario.name}: model requested run_read_only_command despite prompt invariant: {offenders!r}"
                     )
+            elif invariant == "no_mcp_tool_exposed":
+                calls = self._combined("model_calls", scenario.request_ids())
+                offenders = [
+                    {"request_id": call.get("request_id"), "tools": _model_tool_names(call)}
+                    for call in calls
+                    if "mcp_call" in _model_tool_names(call)
+                ]
+                if offenders:
+                    raise AssertionError(f"{scenario.name}: mcp_call was exposed without configured MCP: {offenders!r}")
+            elif invariant == "no_model_tools_exposed":
+                calls = self._combined("model_calls", scenario.request_ids())
+                offenders = [
+                    {"request_id": call.get("request_id"), "tools": _model_tool_names(call)}
+                    for call in calls
+                    if _model_tool_names(call)
+                ]
+                if offenders:
+                    raise AssertionError(f"{scenario.name}: model tools were exposed despite no-tool invariant: {offenders!r}")
             elif invariant == "no_model_write_command_advice":
                 calls = self._combined("model_calls", scenario.request_ids())
                 offenders = [
@@ -991,6 +1011,7 @@ def start_sidecar(port: int, artifact_dir: Path, searxng_url: str) -> subprocess
         **os.environ,
         "MINA_DB_PATH": str(artifact_dir / "mina-live.sqlite3"),
         "MINA_LOG_PATH": str(artifact_dir / "sidecar.log"),
+        "MINA_MCP_CONFIG_PATH": str(artifact_dir / "mcp.empty.json"),
         "MINA_SEARXNG_URL": searxng_url.rstrip("/"),
         "PYTHONPATH": pythonpath + os.pathsep + os.environ.get("PYTHONPATH", ""),
     }

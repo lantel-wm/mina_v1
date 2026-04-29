@@ -400,7 +400,7 @@ SCENARIO_DATA = [
         "expected_model": {"mode": "at_least", "min_count": 1},
         "expected_response_any_contains": ["生命值", "血量", "颗心"],
         "forbidden_response_contains": ["没有生成可执行回应", "4颗心", "4 颗心", "4 hearts"],
-        "trace_invariants": ["non_empty_final_model_content"],
+        "trace_invariants": ["non_empty_final_model_content", "no_model_tools_exposed"],
         "rubric": "Emergency companion ticks should go through the live model while staying read-only.",
     },
     {
@@ -478,6 +478,8 @@ def _with_common_invariants(payload: dict) -> dict:
     invariants = list(item.get("trace_invariants") or [])
     if "plain_chat_response" not in invariants:
         invariants.append("plain_chat_response")
+    if "no_mcp_tool_exposed" not in invariants:
+        invariants.append("no_mcp_tool_exposed")
     item["trace_invariants"] = invariants
     return item
 

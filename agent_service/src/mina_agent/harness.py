@@ -87,12 +87,17 @@ class AgentHarness:
             self.memory.add_conversation(request_id, player_id, "assistant", fallback)
             return TurnResponse(messages=[{"target": "requester", "content": fallback}]).to_dict()
 
-        state = TurnRuntimeState(request_id=request_id, player_id=player_id, messages=build_messages(turn, self.memory))
+        mcp_available = self.tools.mcp.configured()
+        state = TurnRuntimeState(
+            request_id=request_id,
+            player_id=player_id,
+            messages=build_messages(turn, self.memory, mcp_available=mcp_available),
+        )
         policy = ResponsePolicyRuntime()
         try:
             for subturn in range(1, self.settings.max_tool_turns + 1):
                 self._debug("model call request_id=%s subturn=%s messages=%s", request_id, subturn, len(state.messages))
-                specs = tool_specs()
+                specs = _tool_specs_for_turn(turn, mcp_available=mcp_available)
                 try:
                     response = self.deepseek.chat(state.messages, tools=specs)
                     self.memory.record_model_call(
@@ -451,6 +456,12 @@ def _tool_spec_names(specs: list[dict[str, Any]]) -> list[str]:
             if name:
                 names.append(name)
     return names
+
+
+def _tool_specs_for_turn(turn: dict[str, Any], *, mcp_available: bool) -> list[dict[str, Any]]:
+    if str(turn.get("trigger") or "") == "companion_tick":
+        return []
+    return tool_specs(include_mcp=mcp_available)
 
 
 def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:

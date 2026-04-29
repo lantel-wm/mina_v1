@@ -49,7 +49,7 @@ Answer authority:
 """
 
 
-def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, Any]]:
+def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: bool = False) -> list[dict[str, Any]]:
     player = turn.get("player") or {}
     player_id = str(player.get("uuid") or "unknown")
     snapshot = turn.get("snapshot") or {}
@@ -59,7 +59,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     recent_action_results = memory.recent_action_results_for_player(player_id, limit=4)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    turn_policy = _turn_policy_section(turn, user_content)
+    turn_policy = _turn_policy_section(turn, user_content, mcp_available=mcp_available)
     if turn_policy:
         messages.append({"role": "system", "content": turn_policy})
     if agent_memory:
@@ -105,7 +105,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     return messages
 
 
-def _turn_policy_section(turn: dict[str, Any], user_content: str) -> str:
+def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_available: bool = False) -> str:
     sections: list[str] = []
     if str(turn.get("trigger") or "") == "companion_tick":
         sections.append(
@@ -115,12 +115,19 @@ def _turn_policy_section(turn: dict[str, Any], user_content: str) -> str:
             "- Speak only for timely, useful alerts. Return an empty string when nothing is worth interrupting the player."
         )
     if _mentions_mcp(user_content):
-        sections.append(
-            "MCP policy for this turn:\n"
-            "- The player mentioned MCP, so you may discuss MCP or use mcp_call if the requested configured server/tool is relevant.\n"
-            "- Do not use MCP to perform Minecraft write operations or bypass Mina's command policy.\n"
-            "- If the requested MCP server/tool is not configured or unavailable, say so briefly."
-        )
+        if mcp_available:
+            sections.append(
+                "MCP policy for this turn:\n"
+                "- MCP servers are configured, so you may discuss MCP or use mcp_call if the requested configured server/tool is relevant.\n"
+                "- Do not use MCP to perform Minecraft write operations or bypass Mina's command policy.\n"
+                "- If the requested MCP server/tool is unavailable, say so briefly."
+            )
+        else:
+            sections.append(
+                "MCP policy for this turn:\n"
+                "- No MCP servers are configured for this Mina instance.\n"
+                "- Answer briefly that MCP is unavailable here; do not invent configured MCP servers or tools."
+            )
     return "\n\n".join(sections)
 
 

@@ -90,9 +90,15 @@ def _payload(content: str) -> dict:
 def test_model_facing_tool_specs_are_text_query_and_read_only_only() -> None:
     names = [spec["function"]["name"] for spec in tool_specs()]
 
-    assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command", "mcp_call"]
+    assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command"]
     assert all("body" not in name for name in names)
     assert "run_safe_command" not in names
+
+
+def test_mcp_tool_spec_is_exposed_only_when_enabled() -> None:
+    names = [spec["function"]["name"] for spec in tool_specs(include_mcp=True)]
+
+    assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command", "mcp_call"]
 
 
 def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:

@@ -75,6 +75,12 @@ def _turn(message: str, request_id: str = "req-1", snapshot: dict | None = None)
     }
 
 
+def _companion_turn(request_id: str = "req-companion", snapshot: dict | None = None) -> dict:
+    turn = _turn("", request_id, snapshot)
+    turn["trigger"] = "companion_tick"
+    return turn
+
+
 def _snapshot() -> dict:
     return {
         "player_state": {
@@ -118,6 +124,33 @@ def test_player_status_is_answered_by_model_from_snapshot_context(tmp_path) -> N
     assert len(model.calls) == 1
     assert any("Current Minecraft context summary" in message["content"] for message in model.calls[0]["messages"])
     assert memory.recent_tool_calls("req-status") == []
+
+
+def test_unconfigured_mcp_tool_is_not_exposed_to_model(tmp_path) -> None:
+    harness, _memory, model, _search = _harness(tmp_path)
+
+    harness.run_turn(_turn("你好 Mina", "req-no-mcp"))
+
+    names = [spec["function"]["name"] for spec in model.calls[0]["tools"]]
+    assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command"]
+
+
+def test_companion_tick_exposes_no_tools_to_model(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "附近有敌对生物，注意安全。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, model, _search = _harness(tmp_path, model)
+
+    harness.run_turn(_companion_turn("req-companion-tools"))
+
+    assert model.calls[0]["tools"] == []
 
 
 def test_nearby_danger_is_answered_by_model_from_snapshot_context(tmp_path) -> None:

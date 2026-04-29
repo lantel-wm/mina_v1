@@ -218,6 +218,13 @@ def test_build_messages_adds_mcp_policy_only_when_requested(tmp_path) -> None:
     system_content = "\n".join(message["content"] for message in messages if message["role"] == "system")
 
     assert "MCP policy for this turn" in system_content
+    assert "No MCP servers are configured" in system_content
+    assert "mcp_call" not in system_content
+
+    messages = build_messages(turn, memory, mcp_available=True)
+    system_content = "\n".join(message["content"] for message in messages if message["role"] == "system")
+
+    assert "MCP servers are configured" in system_content
     assert "mcp_call" in system_content
 
 
