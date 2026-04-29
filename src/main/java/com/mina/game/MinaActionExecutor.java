@@ -5,7 +5,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mina.MinaMod;
 import com.mina.config.MinaConfig;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandResultCallback;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
@@ -22,7 +21,6 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 public final class MinaActionExecutor {
-	private static final Pattern BODY_NAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
 	private static final Pattern SELECTOR = Pattern.compile("[A-Za-z0-9_:@\\[\\]=,.!\\-]+");
 	private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9_:.\\-/#]+");
 	private static final double BODY_EYE_HEIGHT = 1.62D;
@@ -40,18 +38,11 @@ public final class MinaActionExecutor {
 	}
 
 	public void stopBody(MinecraftServer server, ServerPlayer requester, MinaConfig config) {
-		if (!isBodyAvailable(config)) {
-			message(requester, "Mina body is unavailable because PuppetPlayers is not installed or body use is disabled.");
-			return;
-		}
-		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run minecraft:interrupt_move_to");
-		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run minecraft:attack release");
-		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run minecraft:use release");
-		runCommand(server, requester, "puppet " + config.bodyUsername + " actions chain stop");
+		message(requester, "Mina body control is temporarily disabled.");
 	}
 
 	public boolean isBodyAvailable(MinaConfig config) {
-		return config.enableBody && FabricLoader.getInstance().isModLoaded("puppet-players") && BODY_NAME.matcher(config.bodyUsername).matches();
+		return false;
 	}
 
 	private void sendMessages(MinecraftServer server, ServerPlayer requester, JsonArray messages) {
@@ -133,6 +124,9 @@ public final class MinaActionExecutor {
 	}
 
 	private void executeAction(MinecraftServer server, ServerPlayer requester, MinaConfig config, String name, JsonObject args) {
+		if (name.startsWith("body_")) {
+			throw new IllegalArgumentException("Mina body control is temporarily disabled.");
+		}
 		switch (name) {
 			case "send_player_message" -> message(requester, string(args, "content", ""));
 			case "send_global_message" -> broadcast(server, string(args, "content", ""));

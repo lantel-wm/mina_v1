@@ -28,7 +28,7 @@ def test_context_includes_relevant_player_memory(tmp_path) -> None:
     )
     context = "\n".join(str(message.get("content") or "") for message in messages)
 
-    assert "Relevant memory and skill reflections" in context
+    assert "Relevant memory" in context
     assert "main base is near spawn" in context
     assert "secret desert base" not in context
 
@@ -55,7 +55,7 @@ def test_context_omits_recent_memory_content_for_recall_requests(tmp_path) -> No
     assert "Emerald-2718" not in context
 
 
-def test_context_includes_skill_reflection_for_chinese_body_intent(tmp_path) -> None:
+def test_context_omits_skill_reflection_for_paused_body_intent(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_skill_reflection("chop_tree", "When chopping, move to the approach point before attacking.", {"task_id": "task-1"})
 
@@ -71,11 +71,12 @@ def test_context_includes_skill_reflection_for_chinese_body_intent(tmp_path) -> 
     )
     context = "\n".join(str(message.get("content") or "") for message in messages)
 
-    assert "skill_reflection/chop_tree" in context
-    assert "move to the approach point" in context
+    assert "skill_reflection/chop_tree" not in context
+    assert "move to the approach point" not in context
+    assert "body control is paused" in context or "Puppet/body control is temporarily disabled" in context
 
 
-def test_target_summary_keeps_model_on_high_level_body_tasks(tmp_path) -> None:
+def test_target_summary_is_observation_only_while_body_control_is_paused(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
 
     messages = build_messages(
@@ -116,14 +117,15 @@ def test_target_summary_keeps_model_on_high_level_body_tasks(tmp_path) -> None:
     )
     context = "\n".join(str(message.get("content") or "") for message in messages)
 
-    assert "Use start_body_task" in context
+    assert "Nearby notable blocks for observation only" in context
     assert "approach_available=True" in context
+    assert "Use start_body_task" not in context
     assert "move_to_position" not in context
     assert "look_at_position" not in context
     assert "inventory" not in context
 
 
-def test_context_includes_body_identity_item_and_raycast(tmp_path) -> None:
+def test_context_omits_body_identity_item_and_raycast_while_body_control_is_paused(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
 
     messages = build_messages(
@@ -151,7 +153,7 @@ def test_context_includes_body_identity_item_and_raycast(tmp_path) -> None:
     )
     context = "\n".join(str(message.get("content") or "") for message in messages)
 
-    assert '"username": "mina"' in context
-    assert "minecraft:stone_axe" in context
-    assert '"targeted_block"' in context
-    assert "minecraft:spruce_log" in context
+    assert '"username": "mina"' not in context
+    assert "minecraft:stone_axe" not in context
+    assert '"targeted_block"' not in context
+    assert "minecraft:spruce_log" not in context

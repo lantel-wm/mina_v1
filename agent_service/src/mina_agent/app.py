@@ -63,26 +63,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request_id = str(payload.get("request_id") or "")
         for result in _action_result_items(payload):
             await asyncio.to_thread(memory.record_action_event, request_id, "action_result", result)
-        response = await asyncio.to_thread(skills.handle_action_results, payload)
-        data = response.to_dict()
-        await record_scheduled_actions(request_id, data)
+        data: dict[str, Any] = {"messages": [], "actions": [], "debug": {"body_control_disabled": True}}
         data["ok"] = True
         data["received"] = payload.get("request_id") or payload.get("action_id")
         return data
 
     @app.post("/v1/observations")
     async def observations(payload: dict[str, Any]) -> dict[str, Any]:
-        response = await asyncio.to_thread(skills.handle_observation, payload)
-        data = response.to_dict()
-        request_id = str(payload.get("request_id") or "")
-        await record_scheduled_actions(request_id, data)
+        data: dict[str, Any] = {"messages": [], "actions": [], "debug": {"body_control_disabled": True}}
         data["ok"] = True
         return data
 
     @app.get("/v1/tasks/{task_id}")
     def task(task_id: str) -> dict[str, Any]:
-        status = skills.task_status(task_id)
-        return {"ok": status.get("ok", True) is not False, "task": status}
+        return {"ok": False, "error": "body control is temporarily disabled", "task": {"task_id": task_id, "status": "disabled"}}
 
     @app.get("/v1/tasks/{task_id}/events")
     def task_events(task_id: str) -> dict[str, Any]:
@@ -90,7 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/tasks")
     def tasks() -> dict[str, Any]:
-        return {"ok": True, "tasks": skills.list_tasks()}
+        return {"ok": True, "tasks": [], "body_control_disabled": True}
 
     @app.get("/v1/action-events")
     def action_events(request_id: str | None = None) -> dict[str, Any]:
@@ -127,7 +121,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "tool_calls": tool_calls,
             "action_events": action_events,
             "task_events": task_events,
-            "tasks": skills.list_tasks(),
+            "tasks": [],
+            "body_control_disabled": True,
         }
 
     return app

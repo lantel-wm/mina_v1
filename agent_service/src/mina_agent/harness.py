@@ -7,7 +7,6 @@ import time
 from typing import Any
 
 from .body_agent import (
-    BodySubagent,
     is_body_chop_tree_request,
     is_body_follow_request,
     is_body_instructional_request,
@@ -18,10 +17,22 @@ from .config import Settings
 from .context import build_messages, is_memory_recall_request
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
-from .schemas import TurnResponse
-from .tools import MINECRAFT_WRITE_COMMANDS, ToolRunner, is_read_only_command, tool_specs
+from .schemas import ToolResult, TurnResponse
+from .tools import (
+    BODY_CONTROL_DISABLED_ERROR,
+    BODY_CONTROL_TOOLS,
+    FABRIC_ACTION_TOOLS,
+    MINECRAFT_WRITE_COMMANDS,
+    ToolRunner,
+    is_read_only_command,
+    tool_specs,
+)
 
 LOGGER = logging.getLogger("mina_agent.harness")
+
+BODY_CONTROL_DISABLED_MESSAGE = (
+    "假人控制功能暂时停用。我现在先专注于文字交流、联网知识、只读命令执行，以及玩家和世界状态读取。"
+)
 
 MINECRAFT_KNOWLEDGE_MARKERS = (
     "minecraft",
@@ -50,7 +61,6 @@ class AgentHarness:
         self.memory = memory
         self.deepseek = deepseek
         self.tools = tools
-        self.body_subagent = BodySubagent(tools)
         self._last_companion_message: dict[str, float] = {}
 
     def run_turn(self, turn: dict[str, Any]) -> dict[str, Any]:
@@ -76,7 +86,7 @@ class AgentHarness:
         if message:
             self.memory.add_conversation(request_id, player_id, "user", message)
 
-        local_observation = _local_observation_response(turn, has_active_body_task=self._has_active_body_task(turn))
+        local_observation = _local_observation_response(turn)
         if local_observation is not None:
             for message_item in local_observation.messages:
                 content = str(message_item.get("content") or "").strip()
@@ -85,24 +95,14 @@ class AgentHarness:
             self._debug("turn local_observation request_id=%s intent=%s", request_id, local_observation.debug.get("intent"))
             return local_observation.to_dict()
 
-        body_response = self.body_subagent.handle(turn)
-        if body_response is not None:
-            result_actions = []
-            if body_response.tool_result.action:
-                result_actions.append(body_response.tool_result.action)
-            result_actions.extend(body_response.tool_result.actions)
-            self._record_tool_call(turn, body_response.tool_name, body_response.args, body_response.tool_result, result_actions)
-            for message_item in body_response.response.messages:
+        disabled_body_response = _disabled_body_control_response(turn)
+        if disabled_body_response is not None:
+            for message_item in disabled_body_response.messages:
                 content = str(message_item.get("content") or "").strip()
                 if content:
                     self.memory.add_conversation(request_id, player_id, "assistant", content)
-            self._debug(
-                "turn body_subagent request_id=%s intent=%s actions=%s",
-                request_id,
-                body_response.response.debug.get("intent"),
-                len(body_response.response.actions),
-            )
-            return body_response.response.to_dict()
+            self._debug("turn disabled_body_control request_id=%s", request_id)
+            return disabled_body_response.to_dict()
 
         local_read_only = self._local_read_only_response(turn)
         if local_read_only is not None:
@@ -145,7 +145,6 @@ class AgentHarness:
             self.memory.add_conversation(request_id, player_id, "assistant", fallback)
             return TurnResponse(messages=[{"target": "requester", "content": fallback}]).to_dict()
 
-        turn = self._with_current_task(turn)
         messages = build_messages(turn, self.memory)
         actions: list[dict[str, Any]] = []
         usage: dict[str, Any] = {}
@@ -246,6 +245,16 @@ class AgentHarness:
                         name,
                         _log_preview(json.dumps(args, ensure_ascii=False), 1200),
                     )
+                    if name in BODY_CONTROL_TOOLS or name in FABRIC_ACTION_TOOLS:
+                        content = BODY_CONTROL_DISABLED_MESSAGE
+                        result = ToolResult(content=json.dumps({"ok": False, "error": BODY_CONTROL_DISABLED_ERROR}, ensure_ascii=False))
+                        self._record_tool_call(turn, name, args, result, [])
+                        self.memory.add_conversation(request_id, player_id, "assistant", content)
+                        self._debug("turn rejected_body_tool request_id=%s subturn=%s name=%s", request_id, subturn, name)
+                        return TurnResponse(
+                            messages=[{"target": "requester", "content": content}],
+                            debug={"usage": usage, "tool_subturns": subturn, "body_control_disabled": True},
+                        ).to_dict()
                     result = self.tools.run(name, args, turn)
                     result_actions = []
                     if result.action:
@@ -406,41 +415,9 @@ class AgentHarness:
         if not normalized:
             return None
 
-        if is_body_task_status_request(normalized):
-            args: dict[str, Any] = {}
-            result = self.tools.run("task_status", args, turn)
-            self._record_tool_call(turn, "task_status", args, result, [])
-            status = _json_object(result.content)
-            if status.get("ok") is False:
-                return TurnResponse(messages=[{"target": "requester", "content": "当前没有正在执行的身体任务。"}])
-            return TurnResponse(
-                messages=[
-                    {
-                        "target": "requester",
-                        "content": f"当前任务：{status.get('type')}，状态：{status.get('status')}，阶段：{status.get('stage')}。",
-                    }
-                ],
-                debug={"offline_fallback": True, "task_status": status},
-            )
-
-        if _offline_stop_intent(normalized) and not is_body_instructional_request(normalized):
-            return self._offline_tool_response("stop_body_task", {}, turn, "我已经停止当前身体任务。")
-
-        if _offline_follow_intent(normalized):
-            return self._offline_tool_response(
-                "start_body_task",
-                {"task_type": "follow_player", "target_hint": message},
-                turn,
-                "我开始跟随你，会根据距离变化继续调整。",
-            )
-
-        if _offline_chop_tree_intent(normalized):
-            return self._offline_tool_response(
-                "start_body_task",
-                {"task_type": "chop_tree", "target_hint": message},
-                turn,
-                "我开始砍树，会根据实际执行结果继续调整。",
-            )
+        disabled_body = _disabled_body_control_response(turn)
+        if disabled_body is not None:
+            return disabled_body
 
         if _offline_memory_search_intent(normalized):
             args = {"query": _offline_memory_query(message), "limit": 5}
@@ -579,26 +556,6 @@ class AgentHarness:
         self._debug("companion message player=%s content=%s", player.get("name") or player_id, content)
         return TurnResponse(messages=[{"target": "requester", "content": content}])
 
-    def _with_current_task(self, turn: dict[str, Any]) -> dict[str, Any]:
-        try:
-            status = self.tools.skills.task_status(None, turn)
-        except Exception:  # noqa: BLE001 - context enrichment should never break a turn.
-            return turn
-        if status.get("ok") is False:
-            return turn
-        enriched = dict(turn)
-        snapshot = dict(enriched.get("snapshot") or {})
-        snapshot["active_task"] = status
-        enriched["snapshot"] = snapshot
-        return enriched
-
-    def _has_active_body_task(self, turn: dict[str, Any]) -> bool:
-        try:
-            status = self.tools.skills.task_status(None, turn)
-        except Exception:  # noqa: BLE001 - observation routing should never break a turn.
-            return False
-        return status.get("ok") is not False and status.get("status") == "active"
-
     def _debug(self, message: str, *args: Any) -> None:
         if self.settings.debug_tool_calls:
             LOGGER.info(message, *args)
@@ -701,14 +658,33 @@ def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
 def _action_ack(tool_name: str) -> str:
     if tool_name == "run_read_only_command":
         return "我会执行这个只读查询。"
-    if tool_name == "start_body_task":
-        return "我开始执行，会根据真实游戏反馈继续调整。"
-    if tool_name == "stop_body_task":
-        return "我已经停止当前身体任务。"
     return "我开始执行。"
 
 
-def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: bool = False) -> TurnResponse | None:
+def _disabled_body_control_response(turn: dict[str, Any]) -> TurnResponse | None:
+    if turn.get("trigger") != "command":
+        return None
+    message = str(turn.get("message") or "").strip().lower()
+    if not message or is_body_instructional_request(message):
+        return None
+    if (
+        _body_observation_intent(message)
+        or is_body_task_status_request(message)
+        or is_body_stop_request(message)
+        or _offline_stop_intent(message)
+        or _offline_follow_intent(message)
+        or _offline_chop_tree_intent(message)
+        or is_body_follow_request(message)
+        or is_body_chop_tree_request(message)
+    ):
+        return TurnResponse(
+            messages=[{"target": "requester", "content": BODY_CONTROL_DISABLED_MESSAGE}],
+            debug={"body_control_disabled": True},
+        )
+    return None
+
+
+def _local_observation_response(turn: dict[str, Any]) -> TurnResponse | None:
     if turn.get("trigger") != "command":
         return None
     message = str(turn.get("message") or "").strip()
@@ -719,8 +695,6 @@ def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: b
         return None
     snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
     task_status_request = is_body_task_status_request(normalized)
-    if task_status_request and (has_active_body_task or not _ambiguous_player_status_intent(normalized)):
-        return None
     if _player_inventory_observation_intent(normalized):
         return TurnResponse(
             messages=[{"target": "requester", "content": _player_inventory_observation_message(snapshot)}],
@@ -743,7 +717,7 @@ def _local_observation_response(turn: dict[str, Any], *, has_active_body_task: b
         )
     if _body_observation_intent(normalized):
         return TurnResponse(
-            messages=[{"target": "requester", "content": _body_observation_message(snapshot)}],
+            messages=[{"target": "requester", "content": BODY_CONTROL_DISABLED_MESSAGE}],
             debug={"local_observation": True, "intent": "body_observation"},
         )
     if _player_observation_intent(normalized) or (task_status_request and _ambiguous_player_status_intent(normalized)):
@@ -922,7 +896,7 @@ def _danger_observation_intent(message: str) -> bool:
 
 
 def _body_observation_intent(message: str) -> bool:
-    has_body_subject = any(token in message for token in ("mina", "身体", "假人", "body", "你"))
+    has_body_subject = any(token in message for token in ("mina", "身体", "假人", "body"))
     has_observation = any(
         token in message
         for token in (

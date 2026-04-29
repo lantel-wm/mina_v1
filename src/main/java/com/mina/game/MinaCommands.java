@@ -85,12 +85,8 @@ public final class MinaCommands {
 
 	private int stop(CommandSourceStack source) {
 		ServerPlayer requester = source.getPlayer();
-		if (!config.canUseActions(source.getServer(), requester)) {
-			source.sendFailure(Component.literal("You are not allowed to control Mina actions."));
-			return 0;
-		}
 		actionExecutor.stopBody(source.getServer(), requester, config);
-		source.sendSuccess(() -> Component.literal("Stopped Mina body actions."), false);
+		source.sendSuccess(() -> Component.literal("Mina body control is temporarily disabled."), false);
 		return 1;
 	}
 

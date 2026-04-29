@@ -145,26 +145,24 @@ def _high_unreachable_log() -> dict:
     }
 
 
-def test_model_tool_specs_do_not_expose_low_level_body_tools() -> None:
+def test_model_tool_specs_expose_only_chat_knowledge_state_and_read_only_command_tools() -> None:
     names = {spec["function"]["name"] for spec in tool_specs()}
 
-    assert "start_body_task" in names
+    assert names == {"web_search", "memory_search", "memory_write", "run_read_only_command", "mcp_call"}
     assert "run_read_only_command" in names
+    assert "start_body_task" not in names
+    assert "stop_body_task" not in names
+    assert "task_status" not in names
     assert "body_chain" not in names
     assert "run_safe_command" not in names
 
 
-def test_stop_and_status_task_id_is_optional_for_model() -> None:
+def test_body_task_tools_are_not_model_visible() -> None:
     specs = {spec["function"]["name"]: spec["function"]["parameters"] for spec in tool_specs()}
 
-    assert specs["stop_body_task"]["required"] == []
-    assert specs["task_status"]["required"] == []
-
-
-def test_start_body_task_target_hint_is_optional_for_model() -> None:
-    specs = {spec["function"]["name"]: spec["function"]["parameters"] for spec in tool_specs()}
-
-    assert specs["start_body_task"]["required"] == ["task_type"]
+    assert "start_body_task" not in specs
+    assert "stop_body_task" not in specs
+    assert "task_status" not in specs
 
 
 def test_start_body_task_requires_permission(tmp_path) -> None:

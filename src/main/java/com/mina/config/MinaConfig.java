@@ -27,7 +27,7 @@ public final class MinaConfig {
 	public boolean allowedOperatorsOnlyForActions = true;
 	public List<String> actionAllowlist = new ArrayList<>();
 	public String bodyUsername = "mina";
-	public boolean enableBody = true;
+	public boolean enableBody = false;
 	public int snapshotIntervalTicks = 200;
 	public int companionCooldownSeconds = 300;
 	public int nearbyEntityRadius = 64;

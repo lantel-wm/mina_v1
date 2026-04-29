@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     write_run_manifest(artifact_dir, args, selected, live_model)
 
-    prepare_runtime(args.port, args.server_port, enable_body=not args.disable_body)
+    prepare_runtime(args.port, args.server_port, enable_body=args.enable_body_fixtures and not args.disable_body)
     if not args.skip_build:
         run_checked([str(ROOT / "gradlew"), "build", "--no-daemon"], cwd=ROOT)
 
@@ -92,7 +92,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--server-port", type=int, default=25566)
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--skip-build", action="store_true")
-    parser.add_argument("--disable-body", action="store_true")
+    parser.add_argument("--disable-body", action="store_true", help="Deprecated compatibility flag; body fixtures are disabled by default.")
+    parser.add_argument("--enable-body-fixtures", action="store_true", help="Enable legacy E2E fixture spawning for Mina's PuppetPlayers body.")
     parser.add_argument("--searxng-url", default="")
     parser.add_argument("--list-scenarios", action="store_true", help="Print selected scenario metadata without running E2E.")
     parser.add_argument(
@@ -158,9 +159,20 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
 
 def suite_names(suite: str, scenarios: dict[str, Scenario]) -> list[str]:
     if suite == "all":
-        return list(scenarios)
-    suite_tag = {"live": "core", "body": "body", "safety": "safety"}[suite]
-    return [name for name, scenario in scenarios.items() if suite_tag in scenario.tags]
+        return [name for name, scenario in scenarios.items() if "body" not in scenario.tags]
+    if suite == "body":
+        return [name for name, scenario in scenarios.items() if "body_disabled" in scenario.tags]
+    if suite == "live":
+        return [
+            name for name, scenario in scenarios.items()
+            if "core" in scenario.tags and "body" not in scenario.tags
+        ]
+    if suite == "safety":
+        return [
+            name for name, scenario in scenarios.items()
+            if "safety" in scenario.tags and "body" not in scenario.tags
+        ]
+    raise KeyError(f"unknown suite {suite!r}")
 
 
 def require_live_deepseek_env() -> dict[str, str]:
@@ -340,7 +352,12 @@ class E2ERunner:
             timeout=30,
             context="cleanup",
         )
-        expected = ["我已经停止当前身体任务", "当前没有正在执行的身体任务", "我没有权限停止身体任务"]
+        expected = [
+            "假人控制功能暂时停用",
+            "我已经停止当前身体任务",
+            "当前没有正在执行的身体任务",
+            "我没有权限停止身体任务",
+        ]
         found = next((text for text in expected if text in response_line), "")
         self._record_harness_event(
             scenario_name,
@@ -1298,6 +1315,7 @@ def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: 
             "timeout_seconds": args.timeout,
             "skip_build": bool(args.skip_build),
             "disable_body": bool(args.disable_body),
+            "enable_body_fixtures": bool(args.enable_body_fixtures and not args.disable_body),
             "external_searxng": bool(args.searxng_url),
         },
         "deepseek": live_model,

@@ -186,7 +186,11 @@ public final class MinaTestCommands {
 		run(server, "time set day");
 		run(server, "weather clear");
 		run(server, "puppet " + TEST_PLAYER + " spawn");
-		run(server, "puppet " + config.bodyUsername + " spawn");
+		if (config.enableBody) {
+			run(server, "puppet " + config.bodyUsername + " spawn");
+		} else {
+			run(server, "puppet " + config.bodyUsername + " leave");
+		}
 		config.allow(TEST_PLAYER);
 	}
 
@@ -197,6 +201,7 @@ public final class MinaTestCommands {
 		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
 		boolean markerReady = level.getBlockState(SETUP_MARKER).is(Blocks.GRASS_BLOCK);
 		boolean targetReady = level.getBlockState(TARGET_LOG).is(Blocks.SPRUCE_LOG);
+		boolean bodyRequired = config.enableBody;
 		if (requester != null) {
 			run(server, "tp " + TEST_PLAYER + " 0.5 " + TREE_Y + " -2.5 0 0");
 			resetVitals(requester);
@@ -206,11 +211,12 @@ public final class MinaTestCommands {
 			run(server, "tp " + config.bodyUsername + " 0.5 " + TREE_Y + " -1.5 0 0");
 			resetBodyInventory(body);
 		}
-		if (!markerReady || !targetReady || requester == null || body == null) {
+		if (!markerReady || !targetReady || requester == null || (bodyRequired && body == null)) {
 			source.sendFailure(Component.literal(
 				"Mina test not ready: marker=" + markerReady
 					+ ", target_log=" + targetReady
 					+ ", requester_online=" + (requester != null)
+					+ ", body_required=" + bodyRequired
 					+ ", body_online=" + (body != null)
 			));
 			return 0;

@@ -100,7 +100,7 @@ def test_app_records_single_action_result_payload(tmp_path) -> None:
     assert events[0]["action_name"] == "run_read_only_command"
 
 
-def test_app_records_actions_scheduled_from_action_results(tmp_path) -> None:
+def test_app_does_not_schedule_body_actions_from_action_results_while_paused(tmp_path) -> None:
     app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
     turn = _route(app, "/v1/turn")
     action_results = _route(app, "/v1/action-results")
@@ -118,7 +118,8 @@ def test_app_records_actions_scheduled_from_action_results(tmp_path) -> None:
             }
         )
     )
-    first = response["actions"][0]
+    assert response["actions"] == []
+    assert "假人控制功能暂时停用" in response["messages"][0]["content"]
 
     advanced = asyncio.run(
         action_results(
@@ -126,10 +127,10 @@ def test_app_records_actions_scheduled_from_action_results(tmp_path) -> None:
                 "request_id": "req-follow",
                 "action_results": [
                     {
-                        "action_id": first["id"],
-                        "task_id": first["task_id"],
-                        "step_id": first["step_id"],
-                        "name": first["name"],
+                        "action_id": "stale-body-action",
+                        "task_id": "stale-task",
+                        "step_id": "follow:1",
+                        "name": "body_move_to_requester",
                         "status": "success",
                         "command_success": True,
                         "monitor_result": {"status": "success", "reason": "follow heartbeat"},
@@ -140,14 +141,14 @@ def test_app_records_actions_scheduled_from_action_results(tmp_path) -> None:
         )
     )
 
-    assert advanced["actions"][0]["step_id"] == "follow:2"
+    assert advanced["actions"] == []
+    assert advanced["debug"]["body_control_disabled"] is True
     events = action_events(request_id="req-follow")["events"]
-    assert [event["event_type"] for event in events] == ["action_scheduled", "action_result", "action_scheduled"]
-    assert [event["action_name"] for event in events] == ["body_move_to_requester", "body_move_to_requester", "body_move_to_requester"]
-    assert "follow:2" in events[2]["payload_json"]
+    assert [event["event_type"] for event in events] == ["action_result"]
+    assert [event["action_name"] for event in events] == ["body_move_to_requester"]
 
 
-def test_app_records_actions_scheduled_from_observations(tmp_path) -> None:
+def test_app_does_not_schedule_body_actions_from_observations_while_paused(tmp_path) -> None:
     app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
     turn = _route(app, "/v1/turn")
     observations = _route(app, "/v1/observations")
@@ -165,23 +166,23 @@ def test_app_records_actions_scheduled_from_observations(tmp_path) -> None:
             }
         )
     )
-    spawn = response["actions"][0]
+    assert response["actions"] == []
+    assert "假人控制功能暂时停用" in response["messages"][0]["content"]
 
     advanced = asyncio.run(
         observations(
             {
                 "request_id": "req-spawn",
-                "task_id": spawn["task_id"],
+                "task_id": "stale-task",
                 "snapshot": {"body_state": {"online": True}},
             }
         )
     )
 
-    assert advanced["actions"][0]["name"] == "body_move_to_requester"
+    assert advanced["actions"] == []
+    assert advanced["debug"]["body_control_disabled"] is True
     events = action_events(request_id="req-spawn")["events"]
-    assert [event["event_type"] for event in events] == ["action_scheduled", "action_scheduled"]
-    assert events[0]["action_name"] == "body_spawn"
-    assert events[1]["action_name"] == "body_move_to_requester"
+    assert events == []
 
 
 def test_app_exposes_model_call_and_trace_endpoints(tmp_path) -> None:

@@ -83,86 +83,21 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     body_planning = SCENARIOS["body_planning_request_uses_main_agent"]
     assert body_planning.expected_model is not None
     assert body_planning.expected_model.min_count == 1
+    assert "body" not in body_planning.tags
     assert any(tool.name == "start_body_task" for tool in body_planning.forbidden_tools)
     assert "body_move_to_position" in body_planning.forbidden_actions
-    sustained_follow = SCENARIOS["body_sustained_follow_repositions_twice_router"]
-    assert any(step.value == "持续跟随我" for step in sustained_follow.steps)
-    assert any(step.value == "move_requester_far_again" for step in sustained_follow.steps)
-    assert sustained_follow.expected_model is not None
-    assert sustained_follow.expected_model.count == 0
-    stop_denied = SCENARIOS["body_stop_permission_denied_router"]
-    assert any(expected.name == "stop_body_task" and expected.status == "error" for expected in stop_denied.expected_tools)
-    assert "body_stop" in stop_denied.forbidden_actions
-    assert stop_denied.expected_model is not None
-    assert stop_denied.expected_model.count == 0
-    colloquial_follow = SCENARIOS["body_colloquial_follow_and_terse_stop_router"]
-    assert any(expected.name == "start_body_task" and expected.status == "ok" for expected in colloquial_follow.expected_tools)
-    assert any(expected.name == "stop_body_task" and expected.status == "ok" for expected in colloquial_follow.expected_tools)
-    assert any(step.value == "跟在我身边" for step in colloquial_follow.steps)
-    assert any(step.value == "停" for step in colloquial_follow.steps)
-    assert colloquial_follow.expected_model is not None
-    assert colloquial_follow.expected_model.count == 0
-    negative_stop = SCENARIOS["body_negative_follow_stop_router"]
-    assert any(expected.name == "stop_body_task" and expected.status == "ok" for expected in negative_stop.expected_tools)
-    assert any(action.name == "body_stop" for action in negative_stop.expected_actions)
-    assert negative_stop.expected_model is not None
-    assert negative_stop.expected_model.count == 0
-    continued_negative_stop = SCENARIOS["body_negative_continued_follow_stop_router"]
-    assert any(expected.name == "stop_body_task" and expected.status == "ok" for expected in continued_negative_stop.expected_tools)
-    assert any(step.value == "别再跟着我" for step in continued_negative_stop.steps)
-    assert continued_negative_stop.expected_model is not None
-    assert continued_negative_stop.expected_model.count == 0
-    negated_stop = SCENARIOS["body_negated_stop_keeps_follow_router"]
-    assert any(expected.name == "task_status" and expected.status == "ok" for expected in negated_stop.expected_tools)
-    assert any(tool.name == "stop_body_task" for tool in negated_stop.forbidden_tools)
-    assert "body_stop" in negated_stop.forbidden_actions
-    assert any(step.value == "不要停止跟随我" for step in negated_stop.steps)
-    assert negated_stop.expected_model is not None
-    assert negated_stop.expected_model.count == 0
-    task_status = SCENARIOS["body_task_status_router"]
-    assert any(step.value == "进度怎么样" for step in task_status.steps)
-    assert any(expected.name == "task_status" and expected.status == "ok" for expected in task_status.expected_tools)
-    assert task_status.expected_model is not None
-    assert task_status.expected_model.count == 0
-    for scenario_name in {
-        "body_replace_follow_with_chop_router",
-        "body_chop_tree_router",
-        "body_leaf_crowded_chop_tree_router",
-        "body_referential_chop_tree_router",
-        "body_colloquial_chop_tree_router",
-        "body_collect_wood_chop_router",
-        "body_get_wood_status_after_completion_router",
-        "body_chop_completion_question_status_router",
-    }:
-        assert "no_body_look_monitor_timeout" in SCENARIOS[scenario_name].trace_invariants
-    leaf_crowded = SCENARIOS["body_leaf_crowded_chop_tree_router"]
-    assert leaf_crowded.fixture == "leaf_crowded_chop_tree"
-    assert "no_action_monitor_timeout" in leaf_crowded.trace_invariants
-    assert any(expected.name == "start_body_task" and expected.status == "ok" for expected in leaf_crowded.expected_tools)
-    collect_wood = SCENARIOS["body_collect_wood_chop_router"]
-    assert any(step.value == "帮我收集点木材" for step in collect_wood.steps)
-    assert any(step.value == "body_has_log" for step in collect_wood.steps)
-    assert any(step.value == "no_log_drops" for step in collect_wood.steps)
-    assert "body_has_log" in collect_wood.world_asserts
-    assert "no_log_drops" in collect_wood.world_asserts
-    assert "no_action_monitor_timeout" in collect_wood.trace_invariants
-    assert collect_wood.expected_model is not None
-    assert collect_wood.expected_model.count == 0
-    get_wood = SCENARIOS["body_get_wood_status_after_completion_router"]
-    assert any(step.value == "帮我拿点木头" for step in get_wood.steps)
-    assert any(step.value == "砍完了吗？" for step in get_wood.steps)
-    assert any(step.value == "body_has_log" for step in get_wood.steps)
-    assert any(step.value == "no_log_drops" for step in get_wood.steps)
-    assert any(expected.name == "task_status" and expected.status == "ok" for expected in get_wood.expected_tools)
-    assert "最近任务：chop_tree" in get_wood.expected_response_contains
-    assert get_wood.expected_model is not None
-    assert get_wood.expected_model.count == 0
-    completion_question = SCENARIOS["body_chop_completion_question_status_router"]
-    assert any(step.value == "树砍了吗？" for step in completion_question.steps)
-    assert any(expected.name == "task_status" and expected.status == "ok" for expected in completion_question.expected_tools)
-    assert "状态：completed" in completion_question.expected_response_contains
-    assert completion_question.expected_model is not None
-    assert completion_question.expected_model.count == 0
+    body_disabled = SCENARIOS["body_control_disabled_no_tools"]
+    assert SUITES["body"] == ["body_control_disabled_no_tools"]
+    assert "body_disabled" in body_disabled.tags
+    assert "body" not in body_disabled.tags
+    assert body_disabled.expected_model is not None
+    assert body_disabled.expected_model.count == 0
+    assert all(step.wait_for == ["假人控制功能暂时停用"] for step in body_disabled.steps)
+    assert {step.value for step in body_disabled.steps} >= {"跟随我", "去砍树", "Mina body 在哪里？"}
+    assert any(tool.name == "start_body_task" for tool in body_disabled.forbidden_tools)
+    assert "body_spawn" in body_disabled.forbidden_actions
+    assert "body_stop" in body_disabled.forbidden_actions
+    assert all("body" not in scenario.tags for scenario in live)
     plain_lookup = SCENARIOS["knowledge_plain_lookup_search_router"]
     assert any(expected.name == "web_search" and expected.status == "ok" for expected in plain_lookup.expected_tools)
     assert any(step.value.startswith("帮我查一下 Minecraft") for step in plain_lookup.steps)
@@ -210,7 +145,7 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert danger_observation.expected_model.count == 0
     assert "run_read_only_command" in danger_observation.forbidden_actions
     local_observation = SCENARIOS["local_observation_snapshot_no_tools"]
-    assert any(step.value == "你在哪里？" for step in local_observation.steps)
+    assert any(step.value == "我在哪里？" for step in local_observation.steps)
     assert any(tool.name == "start_body_task" for tool in local_observation.forbidden_tools)
     assert "body_move_to_requester" in local_observation.forbidden_actions
 
@@ -996,6 +931,7 @@ def test_write_run_manifest_records_selected_scenarios_and_runner_options(tmp_pa
     assert payload["runner"]["timeout_seconds"] == 12
     assert payload["runner"]["skip_build"] is True
     assert payload["runner"]["disable_body"] is True
+    assert payload["runner"]["enable_body_fixtures"] is False
     assert payload["runner"]["external_searxng"] is True
     assert payload["deepseek"]["model"] == "deepseek-v4-flash"
     assert payload["scenarios"][0]["rubric"] == "manifest should preserve selected scenario config"

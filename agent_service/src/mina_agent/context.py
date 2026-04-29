@@ -9,18 +9,15 @@ from .memory import MemoryStore
 SYSTEM_PROMPT = """You are Mina, an in-game Minecraft companion agent.
 You speak naturally and concisely in the player's language.
 Minecraft chat is plain text: do not use Markdown formatting, code fences, emoji, decorative bullets, or long lists. Default to one or two short sentences unless the player explicitly asks for detail.
-You can use tools to search the web, remember important player context, run constrained read-only Minecraft commands, inspect task status, and start or stop high-level body tasks.
+You can use tools to search the web, remember important player context, and run constrained read-only Minecraft commands.
 Use web_search for requests to search, look up, verify current or external knowledge, or use wiki/web/internet/联网/搜索/查一下 wording. Do not use web_search for casual chat or local Minecraft state that can be answered by a read-only command.
 Use memory_write when the player asks you to remember, save, or record a preference, plan, promise, base location, or important fact. For any request asking what you remember or whether you still remember something, you must call memory_search in this turn before answering; do not answer from recent conversation context alone.
-Explicit body-control commands are normally routed to a dedicated body subagent before this prompt. If one still reaches you, keep control high-level and avoid step-by-step body micromanagement.
-The body is only for execution, not companionship. Companionship happens through messages.
-Do not start a body task for observation or conversation questions such as "你在哪里", "Mina在哪", "你在做什么", "状态怎么样", "where are you", or "what are you doing". Answer from the current context, or call task_status only for explicit task progress questions.
+Puppet/body control is temporarily disabled. If the player asks you to follow, chop, move, attack, stop a body task, or call body tools, explain briefly that body control is paused and offer chat, knowledge/search, read-only commands, or player/world-state help instead.
+You do not have a controllable Minecraft body right now. For questions such as "你在哪里", "你在做什么", or "where are you", answer as a text agent and use the current player/world context if useful.
 When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
 If you do not know a required argument, do not call that tool yet.
-Never call low-level movement, look, attack, body_chain, or write-capable server command tools. For body execution, call start_body_task with a supported high-level task_type: chop_tree or follow_player. Do not offer unsupported block placement, building, or arbitrary block-breaking body tasks. For Minecraft command output, use run_read_only_command only, with one exact allowed form: seed; time query daytime|gametime|day; weather query; list; list uuids; locate structure <identifier>; locate biome <identifier>.
-If the player explicitly asks you to call a private or low-level tool by name, refuse that tool request. Do not start a substitute high-level body task in the same turn; ask the player for a supported high-level goal instead.
-Never claim a Minecraft action succeeded until task_status or the system context says the task is completed.
-If a body task was started, say Mina has started trying the task and will continue based on real observations.
+Never call low-level movement, look, attack, body_chain, write-capable server command tools, or body task tools. For Minecraft command output, use run_read_only_command only, with one exact allowed form: seed; time query daytime|gametime|day; weather query; list; list uuids; locate structure <identifier>; locate biome <identifier>.
+If the player explicitly asks you to call a private, low-level, or body-control tool by name, refuse that tool request.
 Respect permissions: if a tool says permission denied, explain briefly and offer a safe alternative.
 Do not request banned server governance commands such as op, deop, stop, ban, whitelist, or save control unless the server config explicitly allows them.
 """
@@ -84,10 +81,7 @@ def is_memory_recall_request(message: str) -> bool:
 
 def build_relevant_memory_summary(turn: dict[str, Any], memory: MemoryStore, player_id: str) -> str:
     message = str(turn.get("message") or "").strip()
-    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
-    active_task = snapshot.get("active_task") if isinstance(snapshot.get("active_task"), dict) else {}
-    skill_names = {skill for skill in (_intent_skill(message), str(active_task.get("type") or "")) if skill}
-    query = " ".join(part for part in [message, *sorted(skill_names)] if part).strip()
+    query = message
     lines: list[str] = []
     seen: set[tuple[str, str, str]] = set()
     if query:
@@ -99,27 +93,17 @@ def build_relevant_memory_summary(turn: dict[str, Any], memory: MemoryStore, pla
             if content and key not in seen:
                 seen.add(key)
                 lines.append(f"- {kind}/{label}: {content}")
-    for skill_name in sorted(skill_names):
-        for reflection in memory.recent_skill_reflections(skill_name, limit=3):
-            content = _compact_memory_content(reflection.get("reflection"))
-            key = ("skill_reflection", skill_name, content)
-            if content and key not in seen:
-                seen.add(key)
-                lines.append(f"- skill_reflection/{skill_name}: {content}")
     if not lines:
         return ""
-    return "Relevant memory and skill reflections:\n" + "\n".join(lines[:8])
+    return "Relevant memory:\n" + "\n".join(lines[:8])
 
 
 def build_target_summary(snapshot: dict[str, Any]) -> str:
     lines: list[str] = []
-    body_state = snapshot.get("body_state")
-    if isinstance(body_state, dict):
-        lines.append("Mina body state: " + json.dumps(_compact_body_state(body_state), ensure_ascii=False))
     nearby_blocks = snapshot.get("nearby_blocks")
     blocks = _flatten_blocks(nearby_blocks)
     if blocks:
-        lines.append("Nearby body-task targets. Use start_body_task; the sidecar skill runtime owns movement, look, and attack details:")
+        lines.append("Nearby notable blocks for observation only; do not start body-control tasks:")
         for block in blocks[:12]:
             if not isinstance(block, dict):
                 continue
@@ -135,7 +119,6 @@ def build_target_summary(snapshot: dict[str, Any]) -> str:
 def build_context_summary(turn: dict[str, Any]) -> str:
     snapshot = turn.get("snapshot") or {}
     player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
-    body_state = snapshot.get("body_state") if isinstance(snapshot.get("body_state"), dict) else {}
     permissions = turn.get("permissions") or {}
     nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
     nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
@@ -153,10 +136,8 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "y": player_state.get("y"),
             "z": player_state.get("z"),
         },
-        "body_state": _compact_body_state(body_state),
         "candidate_logs": [_compact_block_target(block) for block in logs],
         "nearby_hostiles": hostile,
-        "active_task": snapshot.get("active_task"),
     }
     return json.dumps(payload, ensure_ascii=False)
 
@@ -172,25 +153,6 @@ def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _compact_body_state(body_state: dict[str, Any]) -> dict[str, Any]:
-    keys = (
-        "online",
-        "username",
-        "name",
-        "x",
-        "y",
-        "z",
-        "yaw",
-        "pitch",
-        "distance_to_requester",
-        "selected_item",
-        "targeted_block",
-        "target_block",
-        "active_task",
-    )
-    return {key: body_state.get(key) for key in keys if key in body_state}
-
-
 def _compact_block_target(block: dict[str, Any]) -> dict[str, Any]:
     return {
         "block": block.get("block"),
@@ -201,15 +163,6 @@ def _compact_block_target(block: dict[str, Any]) -> dict[str, Any]:
         "distance": block.get("distance"),
         "approach_available": all(key in block for key in ("approach_x", "approach_y", "approach_z")),
     }
-
-
-def _intent_skill(message: str) -> str:
-    normalized = message.lower()
-    if any(token in normalized for token in ("砍树", "砍木头", "伐木", "chop tree", "cut tree", "chop wood")):
-        return "chop_tree"
-    if any(token in normalized for token in ("跟随", "跟着", "follow")):
-        return "follow_player"
-    return ""
 
 
 def _compact_memory_content(value: Any, limit: int = 260) -> str:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from mina_agent.config import Settings
 from mina_agent.body_agent import is_body_chop_tree_request
 from mina_agent.body_agent import is_body_task_status_request
@@ -12,6 +14,8 @@ from mina_agent.harness import _parse_args
 from mina_agent.memory import MemoryStore
 from mina_agent.searxng import SearxngClient
 from mina_agent.tools import ToolRunner
+
+body_control_paused = pytest.mark.skip(reason="Puppet/body control is temporarily disabled in the default agent runtime.")
 
 
 def test_parse_args_accepts_deepseek_json_string() -> None:
@@ -558,8 +562,8 @@ def test_harness_answers_bare_status_from_snapshot_when_no_body_task(tmp_path) -
     assert memory.recent_tool_calls(request_id="req-bare-status-player-observation", limit=10) == []
 
 
-def test_harness_answers_body_position_from_snapshot_without_model_or_tools(tmp_path) -> None:
-    for index, message in enumerate(("Mina 的身体在哪？", "你在哪里？")):
+def test_harness_reports_body_position_queries_as_disabled_without_model_or_tools(tmp_path) -> None:
+    for index, message in enumerate(("Mina 的身体在哪？", "假人在哪？")):
         memory = MemoryStore(tmp_path / f"mina-body-observation-{index}.sqlite3")
         tools = ToolRunner(memory, FakeSearch())
         deepseek = FailIfCalledDeepSeek()
@@ -587,9 +591,7 @@ def test_harness_answers_body_position_from_snapshot_without_model_or_tools(tmp_
         )
 
         content = response["messages"][0]["content"]
-        assert "Mina body 当前在线" in content
-        assert "坐标 (3.5, 80, -1.5)" in content
-        assert "距离你 4.25 格" in content
+        assert "假人控制功能暂时停用" in content
         assert response["debug"]["intent"] == "body_observation"
         assert deepseek.calls == 0
         assert memory.recent_tool_calls(request_id=f"req-body-observation-{index}", limit=10) == []
@@ -786,7 +788,7 @@ def test_harness_does_not_treat_generic_command_safety_as_nearby_danger(tmp_path
     assert deepseek.calls == 1
 
 
-def test_harness_answers_body_held_item_from_snapshot_without_model_or_tools(tmp_path) -> None:
+def test_harness_reports_body_held_item_queries_as_disabled_without_model_or_tools(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
     deepseek = FailIfCalledDeepSeek()
@@ -813,11 +815,61 @@ def test_harness_answers_body_held_item_from_snapshot_without_model_or_tools(tmp
     )
 
     content = response["messages"][0]["content"]
-    assert "Mina body 当前在线" in content
-    assert "手持 Spruce Log x6" in content
+    assert "假人控制功能暂时停用" in content
     assert response["debug"]["intent"] == "body_observation"
     assert deepseek.calls == 0
     assert memory.recent_tool_calls(request_id="req-body-held-item-observation", limit=10) == []
+
+
+def test_harness_reports_body_control_disabled_without_model_or_actions(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    for index, message in enumerate(("跟随我", "帮我砍树", "停止跟随", "Mina 的身体在哪？")):
+        response = harness.run_turn(
+            {
+                "request_id": f"req-body-disabled-{index}",
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": True},
+                "snapshot": {"body_state": {"online": True}},
+            }
+        )
+
+        assert "假人控制功能暂时停用" in response["messages"][0]["content"]
+        assert response["actions"] == []
+        assert response["debug"].get("body_control_disabled") is True or response["debug"].get("intent") == "body_observation"
+
+    assert deepseek.calls == 0
+
+
+def test_harness_rejects_model_body_tool_call_without_action(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, FakeSearch())
+    deepseek = ActionDispatchDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-model-body-disabled",
+            "trigger": "command",
+            "message": "model dispatch test",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {"body_state": {"online": True}},
+        }
+    )
+
+    assert deepseek.calls == 1
+    assert "假人控制功能暂时停用" in response["messages"][0]["content"]
+    assert response["actions"] == []
+    assert response["debug"]["body_control_disabled"] is True
+    calls = memory.recent_tool_calls(request_id="req-model-body-disabled", limit=10)
+    assert [call["tool_name"] for call in calls] == ["start_body_task"]
+    assert calls[0]["status"] == "error"
 
 
 def test_harness_sanitizes_model_markdown_for_minecraft_chat(tmp_path) -> None:
@@ -1238,6 +1290,7 @@ def test_harness_records_model_call_journal(tmp_path) -> None:
     assert "web_search" in calls[0]["response_json"]
 
 
+@body_control_paused
 def test_harness_dispatches_fabric_action_before_next_model_subturn(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1261,6 +1314,7 @@ def test_harness_dispatches_fabric_action_before_next_model_subturn(tmp_path) ->
     assert response["debug"]["action_barrier"] is True
 
 
+@body_control_paused
 def test_harness_action_barrier_ignores_later_action_tool_calls(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1332,6 +1386,7 @@ def test_harness_returns_visible_fallback_for_empty_model_response(tmp_path) -> 
     assert "补充目标" in recent[-1]["content"]
 
 
+@body_control_paused
 def test_harness_injects_current_task_into_context(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1362,6 +1417,7 @@ def test_harness_injects_current_task_into_context(tmp_path) -> None:
     assert response["messages"][0]["content"] == "当前任务是跟随玩家。"
 
 
+@body_control_paused
 def test_harness_records_model_status_tool_result_as_ok(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1396,6 +1452,7 @@ def test_harness_records_model_status_tool_result_as_ok(tmp_path) -> None:
     assert calls[0]["status"] == "ok"
 
 
+@body_control_paused
 def test_harness_body_subagent_handles_configured_follow_without_model_call(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1421,6 +1478,7 @@ def test_harness_body_subagent_handles_configured_follow_without_model_call(tmp_
     assert [call["tool_name"] for call in calls] == ["start_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_handles_colloquial_follow_and_terse_stop_without_model_call(tmp_path) -> None:
     for index, message in enumerate(
         (
@@ -1461,6 +1519,7 @@ def test_harness_body_subagent_handles_colloquial_follow_and_terse_stop_without_
         assert [call["tool_name"] for call in stop_calls] == ["stop_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_treats_negative_follow_as_stop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1483,6 +1542,7 @@ def test_harness_body_subagent_treats_negative_follow_as_stop(tmp_path) -> None:
     assert [call["tool_name"] for call in calls] == ["stop_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_treats_continued_negative_follow_as_stop(tmp_path) -> None:
     for index, message in enumerate(("别再跟着我", "先别继续跟我了", "don't keep following me")):
         memory = MemoryStore(tmp_path / f"mina-negative-follow-{index}.sqlite3")
@@ -1506,6 +1566,7 @@ def test_harness_body_subagent_treats_continued_negative_follow_as_stop(tmp_path
         assert [call["tool_name"] for call in calls] == ["stop_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_does_not_stop_on_negated_stop_request(tmp_path) -> None:
     for index, message in enumerate(("不要停止跟随我", "别停，继续跟着我", "don't stop following me")):
         memory = MemoryStore(tmp_path / f"mina-negated-stop-{index}.sqlite3")
@@ -1529,6 +1590,7 @@ def test_harness_body_subagent_does_not_stop_on_negated_stop_request(tmp_path) -
         assert [call["tool_name"] for call in calls] == ["task_status"]
 
 
+@body_control_paused
 def test_harness_body_subagent_handles_natural_task_status_without_model_call(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1552,6 +1614,7 @@ def test_harness_body_subagent_handles_natural_task_status_without_model_call(tm
     assert deepseek.calls == 0
 
 
+@body_control_paused
 def test_harness_body_subagent_handles_short_stop_without_model_call(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1574,6 +1637,7 @@ def test_harness_body_subagent_handles_short_stop_without_model_call(tmp_path) -
     assert [call["tool_name"] for call in calls] == ["stop_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_handles_referential_chop_without_model_call(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1618,6 +1682,7 @@ def test_harness_body_subagent_handles_referential_chop_without_model_call(tmp_p
     assert [call["tool_name"] for call in calls] == ["start_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_handles_colloquial_chop_without_model_call(tmp_path) -> None:
     for index, message in enumerate(
         (
@@ -1678,6 +1743,7 @@ def test_harness_body_subagent_handles_colloquial_chop_without_model_call(tmp_pa
         assert [call["tool_name"] for call in calls] == ["start_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_treats_negative_colloquial_chop_as_stop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -1720,6 +1786,7 @@ def test_harness_body_subagent_treats_negative_colloquial_chop_as_stop(tmp_path)
     assert [call["tool_name"] for call in calls] == ["stop_body_task"]
 
 
+@body_control_paused
 def test_harness_body_subagent_treats_continued_negative_chop_as_stop(tmp_path) -> None:
     for index, message in enumerate(("不要继续砍树了", "先别再挖木头", "不用拿木材了", "don't keep chopping wood")):
         memory = MemoryStore(tmp_path / f"mina-negative-chop-{index}.sqlite3")
@@ -1811,6 +1878,7 @@ def test_harness_body_subagent_does_not_intercept_stop_instruction_question(tmp_
     assert memory.recent_tool_calls(request_id="req-body-stop-instruction", limit=10) == []
 
 
+@body_control_paused
 def test_harness_body_subagent_replaces_follow_with_chop_in_one_turn(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -2395,6 +2463,7 @@ def test_harness_local_memory_router_records_current_position_from_snapshot(tmp_
     assert json.loads(calls[0]["args_json"])["query"] == "基地位置"
 
 
+@body_control_paused
 def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -2416,6 +2485,7 @@ def test_harness_offline_fallback_can_start_follow_task(tmp_path) -> None:
     assert response["debug"]["body_subagent"] is True
 
 
+@body_control_paused
 def test_harness_offline_fallback_records_status_and_stop_tool_calls(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -2437,6 +2507,7 @@ def test_harness_offline_fallback_records_status_and_stop_tool_calls(tmp_path) -
     assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-stop", limit=10)] == ["stop_body_task"]
 
 
+@body_control_paused
 def test_harness_offline_fallback_treats_negative_follow_as_stop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -2456,6 +2527,7 @@ def test_harness_offline_fallback_treats_negative_follow_as_stop(tmp_path) -> No
     assert [call["tool_name"] for call in memory.recent_tool_calls(request_id="req-offline-negative-stop", limit=10)] == ["stop_body_task"]
 
 
+@body_control_paused
 def test_harness_offline_fallback_treats_continued_negative_follow_as_stop(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -2643,6 +2715,7 @@ def test_harness_offline_fallback_does_not_chop_for_chinese_tree_question(tmp_pa
     assert memory.recent_tool_calls(request_id="req-offline-tree-question", limit=10) == []
 
 
+@body_control_paused
 def test_harness_offline_fallback_still_chops_for_explicit_tree_action(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())
@@ -2682,6 +2755,7 @@ def test_harness_offline_fallback_still_chops_for_explicit_tree_action(tmp_path)
     assert response["actions"][0]["name"] == "body_move_to_position"
 
 
+@body_control_paused
 def test_harness_offline_fallback_preserves_body_task_failure_message(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, FakeSearch())

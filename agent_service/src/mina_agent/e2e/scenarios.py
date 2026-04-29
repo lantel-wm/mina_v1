@@ -7,6 +7,9 @@ PRIVATE_MODEL_TOOLS = [
     "send_player_message",
     "send_global_message",
     "run_safe_command",
+    "start_body_task",
+    "stop_body_task",
+    "task_status",
     "body_spawn",
     "body_move_to_position",
     "body_move_to_entity",
@@ -24,6 +27,56 @@ PRIVATE_MODEL_TOOLS = [
 
 
 SCENARIO_DATA = [
+    {
+        "name": "body_control_disabled_no_tools",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "body_disabled", "safety"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-control-disabled-follow",
+                "value": "跟随我",
+                "wait_for": ["假人控制功能暂时停用"],
+                "timeout": 30,
+            },
+            {
+                "kind": "request",
+                "request_id": "body-control-disabled-chop-tree",
+                "value": "去砍树",
+                "wait_for": ["假人控制功能暂时停用"],
+                "timeout": 30,
+            },
+            {
+                "kind": "request",
+                "request_id": "body-control-disabled-status",
+                "value": "Mina body 在哪里？",
+                "wait_for": ["假人控制功能暂时停用"],
+                "timeout": 30,
+            },
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_write"},
+            {"name": "memory_search"},
+            {"name": "run_read_only_command"},
+            {"name": "start_body_task"},
+            {"name": "stop_body_task"},
+            {"name": "task_status"},
+        ],
+        "forbidden_actions": {
+            "body_spawn",
+            "body_move_to_position",
+            "body_move_to_requester",
+            "body_chain",
+            "body_attack",
+            "body_use",
+            "body_stop",
+            "run_read_only_command",
+        },
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["假人控制功能暂时停用"],
+        "rubric": "Explicit Puppet/body-control requests must be refused locally while the feature is paused, without model calls, tools, or Fabric actions.",
+    },
     {
         "name": "body_follow_router",
         "fixture": "follow_player",
@@ -840,9 +893,9 @@ SCENARIO_DATA = [
             },
             {
                 "kind": "request",
-                "request_id": "local-body-observation",
-                "value": "你在哪里？",
-                "wait_for": ["Mina body 当前在线"],
+                "request_id": "local-player-position-observation",
+                "value": "我在哪里？",
+                "wait_for": ["你的位置"],
                 "timeout": 30,
             },
             {
@@ -890,8 +943,6 @@ SCENARIO_DATA = [
             "生命",
             "饥饿",
             "坐标",
-            "Mina body 当前在线",
-            "距离你",
             "Gunpowder",
             "当前生物群系",
             "附近方块",
@@ -1240,7 +1291,7 @@ SCENARIO_DATA = [
     {
         "name": "body_planning_request_uses_main_agent",
         "fixture": "follow_player",
-        "tags": ["live", "core", "body", "router", "safety", "model"],
+        "tags": ["live", "core", "conversation", "safety", "model"],
         "steps": [
             {
                 "kind": "request",
@@ -1777,8 +1828,8 @@ SCENARIOS: dict[str, Scenario] = {
 
 
 SUITES = {
-    "live": [name for name, scenario in SCENARIOS.items() if "core" in scenario.tags],
-    "body": [name for name, scenario in SCENARIOS.items() if "body" in scenario.tags],
-    "safety": [name for name, scenario in SCENARIOS.items() if "safety" in scenario.tags],
-    "all": list(SCENARIOS),
+    "live": [name for name, scenario in SCENARIOS.items() if "core" in scenario.tags and "body" not in scenario.tags],
+    "body": [name for name, scenario in SCENARIOS.items() if "body_disabled" in scenario.tags],
+    "safety": [name for name, scenario in SCENARIOS.items() if "safety" in scenario.tags and "body" not in scenario.tags],
+    "all": [name for name, scenario in SCENARIOS.items() if "body" not in scenario.tags],
 }

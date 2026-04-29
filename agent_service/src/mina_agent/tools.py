@@ -44,6 +44,12 @@ FABRIC_ACTION_TOOLS = {
     "body_stop",
 }
 
+BODY_CONTROL_TOOLS = {"start_body_task", "stop_body_task", "task_status"}
+BODY_CONTROL_DISABLED_ERROR = (
+    "Puppet/body control is temporarily disabled; Mina now focuses on chat, knowledge/search, "
+    "read-only command execution, and player/world state observation"
+)
+
 READ_ONLY_TIME_QUERIES = {"daytime", "gametime", "day"}
 READ_ONLY_LOCATE_TARGET = re.compile(r"^[a-z0-9_:.\-/#]+$")
 
@@ -116,7 +122,7 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "memory_search",
-                "description": "Search the current player's memories plus reusable skill reflections.",
+                "description": "Search the current player's memories and stable world facts.",
                 "parameters": _schema(
                     {
                         "query": {"type": "string"},
@@ -138,52 +144,6 @@ def tool_specs() -> list[dict[str, Any]]:
                         "importance": {"type": "integer", "minimum": 1, "maximum": 5},
                     },
                     ["event_type", "content"],
-                ),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "start_body_task",
-                "description": (
-                    "Start a high-level Minecraft body task only for explicit execution requests. Do not use "
-                    "for observation, status, location, or casual conversation questions. Use this instead of low-level movement, look, "
-                    "attack, or command tools. The sidecar will decompose the task into observable PuppetPlayers "
-                    "actions and continue only after Fabric reports real execution results."
-                ),
-                "strict": True,
-                "parameters": _schema(
-                    {
-                        "task_type": {"type": "string", "enum": ["chop_tree", "follow_player"]},
-                        "target_hint": {"type": "string"},
-                    },
-                    ["task_type"],
-                ),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "stop_body_task",
-                "description": "Stop Mina's current high-level body task and release body controls. Omit task_id to stop the current task.",
-                "strict": True,
-                "parameters": _schema({"task_id": {"type": "string"}}, []),
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "task_status",
-                "description": (
-                    "Inspect Mina's current high-level body task status. Omit task_id for the current task. "
-                    "Set include_recent only when the player asks whether the last task finished or failed."
-                ),
-                "parameters": _schema(
-                    {
-                        "task_id": {"type": "string"},
-                        "include_recent": {"type": "boolean"},
-                    },
-                    [],
                 ),
             },
         },
@@ -254,10 +214,7 @@ class ToolRunner:
                 content=json.dumps(
                     {
                         "ok": False,
-                        "error": (
-                            f"{name} is a private executor primitive. Use start_body_task, "
-                            "stop_body_task, or task_status instead."
-                        ),
+                        "error": f"{name} is a private executor primitive and body control is temporarily disabled.",
                     },
                     ensure_ascii=False,
                 )
