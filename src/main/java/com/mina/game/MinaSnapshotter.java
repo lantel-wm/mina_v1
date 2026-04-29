@@ -285,11 +285,39 @@ public final class MinaSnapshotter {
 		}
 		blocks.sort(Comparator.comparingDouble(json -> json.get("distance").getAsDouble()));
 		JsonArray array = new JsonArray();
-		int limit = Math.min(80, blocks.size());
-		for (int index = 0; index < limit; index++) {
-			array.add(blocks.get(index));
+		List<JsonObject> selected = new ArrayList<>();
+		appendCategoryBlocks(selected, blocks, "log", 40, 80);
+		appendCategoryBlocks(selected, blocks, "ore", 20, 80);
+		appendCategoryBlocks(selected, blocks, "crop", 20, 80);
+		appendRemainingBlocks(selected, blocks, 80);
+		for (JsonObject block : selected) {
+			array.add(block);
 		}
 		return array;
+	}
+
+	private static void appendCategoryBlocks(List<JsonObject> selected, List<JsonObject> blocks, String category, int categoryLimit, int totalLimit) {
+		int count = 0;
+		for (JsonObject block : blocks) {
+			if (selected.size() >= totalLimit || count >= categoryLimit) {
+				return;
+			}
+			if (category.equals(block.get("category").getAsString()) && !selected.contains(block)) {
+				selected.add(block);
+				count++;
+			}
+		}
+	}
+
+	private static void appendRemainingBlocks(List<JsonObject> selected, List<JsonObject> blocks, int totalLimit) {
+		for (JsonObject block : blocks) {
+			if (selected.size() >= totalLimit) {
+				return;
+			}
+			if (!selected.contains(block)) {
+				selected.add(block);
+			}
+		}
 	}
 
 	private JsonArray effects(LivingEntity entity) {

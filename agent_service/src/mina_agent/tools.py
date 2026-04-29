@@ -146,7 +146,8 @@ def tool_specs() -> list[dict[str, Any]]:
             "function": {
                 "name": "start_body_task",
                 "description": (
-                    "Start a high-level Minecraft body task. Use this instead of low-level movement, look, "
+                    "Start a high-level Minecraft body task only for explicit execution requests. Do not use "
+                    "for observation, status, location, or casual conversation questions. Use this instead of low-level movement, look, "
                     "attack, or command tools. The sidecar will decompose the task into observable PuppetPlayers "
                     "actions and continue only after Fabric reports real execution results."
                 ),

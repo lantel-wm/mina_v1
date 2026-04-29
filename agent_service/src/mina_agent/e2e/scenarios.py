@@ -319,6 +319,33 @@ SCENARIO_DATA = [
         "rubric": "Explicit chop intent must stay high-level and clear the reachable stacked trunk through observed Fabric monitor results.",
     },
     {
+        "name": "body_leaf_crowded_chop_tree_router",
+        "fixture": "leaf_crowded_chop_tree",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-leaf-crowded-chop-tree-router",
+                "value": "砍树",
+                "wait_for": ["我开始砍树"],
+            },
+            {"kind": "assert", "value": "chop_tree", "timeout": 180},
+            {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_position"},
+            {"name": "body_look_at_position"},
+            {"name": "body_attack"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "trace_invariants": ["no_body_look_monitor_timeout"],
+        "world_asserts": ["chop_tree", "upper_log_absent"],
+        "rubric": "Dense nearby leaves must not crowd reachable logs out of the snapshot used by the deterministic chop_tree skill.",
+    },
+    {
         "name": "body_referential_chop_tree_router",
         "fixture": "chop_tree",
         "tags": ["live", "core", "body", "router"],
@@ -746,7 +773,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "local-body-observation",
-                "value": "Mina 的身体在哪？",
+                "value": "你在哪里？",
                 "wait_for": ["Mina body 当前在线"],
                 "timeout": 30,
             },

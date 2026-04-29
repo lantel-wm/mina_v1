@@ -122,12 +122,16 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     for scenario_name in {
         "body_replace_follow_with_chop_router",
         "body_chop_tree_router",
+        "body_leaf_crowded_chop_tree_router",
         "body_referential_chop_tree_router",
         "body_colloquial_chop_tree_router",
         "body_collect_wood_chop_router",
         "body_get_wood_status_after_completion_router",
     }:
         assert "no_body_look_monitor_timeout" in SCENARIOS[scenario_name].trace_invariants
+    leaf_crowded = SCENARIOS["body_leaf_crowded_chop_tree_router"]
+    assert leaf_crowded.fixture == "leaf_crowded_chop_tree"
+    assert any(expected.name == "start_body_task" and expected.status == "ok" for expected in leaf_crowded.expected_tools)
     collect_wood = SCENARIOS["body_collect_wood_chop_router"]
     assert any(step.value == "帮我收集点木材" for step in collect_wood.steps)
     assert collect_wood.expected_model is not None
@@ -185,6 +189,10 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert danger_observation.expected_model is not None
     assert danger_observation.expected_model.count == 0
     assert "run_read_only_command" in danger_observation.forbidden_actions
+    local_observation = SCENARIOS["local_observation_snapshot_no_tools"]
+    assert any(step.value == "你在哪里？" for step in local_observation.steps)
+    assert any(tool.name == "start_body_task" for tool in local_observation.forbidden_tools)
+    assert "body_move_to_requester" in local_observation.forbidden_actions
 
 
 def test_scenario_manifest_supports_expected_trace_invariants() -> None:

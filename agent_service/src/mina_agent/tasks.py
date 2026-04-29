@@ -392,7 +392,7 @@ class SkillRuntime:
                     "x": args["x"],
                     "y": args["y"],
                     "z": args["z"],
-                    "radius": 0.9,
+                    "radius": 1.5,
                     "deadline_ticks": 160,
                 },
             )

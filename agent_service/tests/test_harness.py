@@ -488,39 +488,40 @@ def test_harness_answers_bare_status_from_snapshot_when_no_body_task(tmp_path) -
 
 
 def test_harness_answers_body_position_from_snapshot_without_model_or_tools(tmp_path) -> None:
-    memory = MemoryStore(tmp_path / "mina.sqlite3")
-    tools = ToolRunner(memory, FakeSearch())
-    deepseek = FailIfCalledDeepSeek()
-    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+    for index, message in enumerate(("Mina 的身体在哪？", "你在哪里？")):
+        memory = MemoryStore(tmp_path / f"mina-body-observation-{index}.sqlite3")
+        tools = ToolRunner(memory, FakeSearch())
+        deepseek = FailIfCalledDeepSeek()
+        harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / f"mina-body-observation-{index}.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
 
-    response = harness.run_turn(
-        {
-            "request_id": "req-body-observation",
-            "trigger": "command",
-            "message": "Mina 的身体在哪？",
-            "player": {"uuid": "player-1", "name": "Tester"},
-            "permissions": {"can_use_actions": True},
-            "snapshot": {
-                "body_state": {
-                    "online": True,
-                    "dimension": "minecraft:overworld",
-                    "x": 3.5,
-                    "y": 80,
-                    "z": -1.5,
-                    "distance_to_requester": 4.25,
-                    "health": 20,
-                }
-            },
-        }
-    )
+        response = harness.run_turn(
+            {
+                "request_id": f"req-body-observation-{index}",
+                "trigger": "command",
+                "message": message,
+                "player": {"uuid": "player-1", "name": "Tester"},
+                "permissions": {"can_use_actions": True},
+                "snapshot": {
+                    "body_state": {
+                        "online": True,
+                        "dimension": "minecraft:overworld",
+                        "x": 3.5,
+                        "y": 80,
+                        "z": -1.5,
+                        "distance_to_requester": 4.25,
+                        "health": 20,
+                    }
+                },
+            }
+        )
 
-    content = response["messages"][0]["content"]
-    assert "Mina body 当前在线" in content
-    assert "坐标 (3.5, 80, -1.5)" in content
-    assert "距离你 4.25 格" in content
-    assert response["debug"]["intent"] == "body_observation"
-    assert deepseek.calls == 0
-    assert memory.recent_tool_calls(request_id="req-body-observation", limit=10) == []
+        content = response["messages"][0]["content"]
+        assert "Mina body 当前在线" in content
+        assert "坐标 (3.5, 80, -1.5)" in content
+        assert "距离你 4.25 格" in content
+        assert response["debug"]["intent"] == "body_observation"
+        assert deepseek.calls == 0
+        assert memory.recent_tool_calls(request_id=f"req-body-observation-{index}", limit=10) == []
 
 
 def test_harness_answers_player_inventory_from_snapshot_without_model_or_tools(tmp_path) -> None:

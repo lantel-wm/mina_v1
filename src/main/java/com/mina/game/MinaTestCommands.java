@@ -54,6 +54,7 @@ public final class MinaTestCommands {
 				literal("mina-test")
 					.then(literal("setup")
 						.then(literal("chop_tree").executes(context -> setupChopTree(context.getSource())))
+						.then(literal("leaf_crowded_chop_tree").executes(context -> setupLeafCrowdedChopTree(context.getSource())))
 						.then(literal("follow_player").executes(context -> setupFollowPlayer(context.getSource())))
 						.then(literal("blocked_chop_tree").executes(context -> setupBlockedChopTree(context.getSource()))))
 				.then(literal("request")
@@ -119,6 +120,13 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
+	private int setupLeafCrowdedChopTree(CommandSourceStack source) {
+		setupWorldAndPlayers(source);
+		crowdSnapshotWithLeaves(source.getLevel());
+		source.sendSuccess(() -> Component.literal("Mina test leaf_crowded_chop_tree setup complete. Poll /mina-test ready before requesting."), false);
+		return 1;
+	}
+
 	private int setupFollowPlayer(CommandSourceStack source) {
 		setupWorldAndPlayers(source);
 		source.sendSuccess(() -> Component.literal("Mina test follow_player setup complete. Poll /mina-test ready before requesting."), false);
@@ -137,6 +145,12 @@ public final class MinaTestCommands {
 			case "chop_tree" -> {
 				setupWorldAndPlayers(source);
 				source.sendSuccess(() -> Component.literal("Mina test fixture chop_tree reset complete. Poll /mina-test ready before requesting."), false);
+				yield 1;
+			}
+			case "leaf_crowded_chop_tree" -> {
+				setupWorldAndPlayers(source);
+				crowdSnapshotWithLeaves(source.getLevel());
+				source.sendSuccess(() -> Component.literal("Mina test fixture leaf_crowded_chop_tree reset complete. Poll /mina-test ready before requesting."), false);
 				yield 1;
 			}
 			case "follow_player" -> {
@@ -526,5 +540,22 @@ public final class MinaTestCommands {
 			level.setBlock(log.east(), Blocks.COBBLESTONE.defaultBlockState(), 3);
 			level.setBlock(log.west(), Blocks.COBBLESTONE.defaultBlockState(), 3);
 		}
+	}
+
+	private static void crowdSnapshotWithLeaves(ServerLevel level) {
+		for (int x = -3; x <= 3; x++) {
+			for (int z = -4; z <= 2; z++) {
+				for (int y : new int[]{TREE_Y - 3, TREE_Y - 2, TREE_Y - 1, TREE_Y + 2, TREE_Y + 3}) {
+					BlockPos pos = new BlockPos(x, y, z);
+					if (pos.equals(TARGET_LOG) || pos.equals(UPPER_LOG)) {
+						continue;
+					}
+					level.setBlock(pos, Blocks.SPRUCE_LEAVES.defaultBlockState(), 3);
+				}
+			}
+		}
+		level.setBlock(SETUP_MARKER, Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+		level.setBlock(TARGET_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
+		level.setBlock(UPPER_LOG, Blocks.SPRUCE_LOG.defaultBlockState(), 3);
 	}
 }
