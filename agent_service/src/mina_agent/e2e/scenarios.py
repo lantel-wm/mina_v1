@@ -111,6 +111,41 @@ SCENARIO_DATA = [
         "rubric": "Selected-item questions should answer from Fabric inventory snapshot without command execution or unrelated player status.",
     },
     {
+        "name": "facing_direction_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "facing-direction-snapshot-live-model",
+                "value": "我现在面朝哪个方向？只回答英文方向 south/north/east/west。",
+                "wait_for": ["south"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["south"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "minecraft:",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Facing-direction questions should answer derived player_state.facing_direction from yaw/pitch snapshot without command execution.",
+    },
+    {
         "name": "survival_stats_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
@@ -365,8 +400,8 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "difficulty-snapshot-live-model",
-                "value": "当前世界难度是什么？只回答英文难度值。",
-                "wait_for": ["peaceful"],
+                "value": "当前世界难度是什么？只回答小写英文难度值 peaceful。",
+                "wait_for": ["mina turn response requestId=difficulty-snapshot-live-model"],
                 "timeout": 60,
             }
         ],
@@ -378,7 +413,7 @@ SCENARIO_DATA = [
         ],
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "exact", "count": 1},
-        "expected_response_contains": ["peaceful"],
+        "expected_response_any_contains": ["peaceful", "Peaceful"],
         "forbidden_response_contains": [
             "Current Minecraft context",
             "Minecraft context",

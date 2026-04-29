@@ -235,6 +235,7 @@ _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE = re.compile(
 _CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")
 _HISTORICAL_MEMORY_REFERENCE_RE = re.compile(
     r"(?i)(?:"
+    r"(?:已|已经)?(?:记住|记下|记好|保存)的|"
     r"(?:之前|以前|先前|此前|上次|早些时候|刚才).{0,16}(?:记住|记下|记好|保存)|"
     r"(?:我|咱们|我们).{0,4}(?:已经|早已).{0,6}(?:记住|记下|记好|保存)(?:了|过)|"
     r"(?:previously|earlier|before).{0,20}(?:remembered|remember|saved|noted)|"

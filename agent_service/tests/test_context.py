@@ -29,6 +29,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "game mode" in SYSTEM_PROMPT
     assert "world difficulty" in SYSTEM_PROMPT
     assert "world spawn" in SYSTEM_PROMPT
+    assert "facing direction/yaw/pitch" in SYSTEM_PROMPT
     assert "health/food/armor/XP" in SYSTEM_PROMPT
     assert "active effects/status effects" in SYSTEM_PROMPT
     assert "light/sky" in SYSTEM_PROMPT
@@ -121,6 +122,8 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
                 "x": 0.5,
                 "y": 80,
                 "z": -2.5,
+                "yaw": 0.0,
+                "pitch": 0.0,
                 "health": 20,
                 "food": 20,
                 "armor": 0,
@@ -152,6 +155,9 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert '"on_ground": true' in context
     assert '"on_fire": false' in context
     assert '"game_mode": "survival"' in context
+    assert '"yaw": 0.0' in context
+    assert '"pitch": 0.0' in context
+    assert '"facing_direction": "south"' in context
     assert '"weather": "clear"' in context
     assert "Remembered facts" in context
     assert "玩家基地在樱花林旁边" in context
@@ -171,7 +177,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "do not call memory_search first" in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 6800
+    assert len(context) < 6900
 
 
 def test_context_summary_labels_health_points_and_hearts() -> None:
@@ -216,6 +222,28 @@ def test_context_summary_includes_survival_hud_stats() -> None:
     assert '"armor": 7' in summary
     assert '"experience_level": 3' in summary
     assert '"total_experience": 42' in summary
+
+
+def test_context_summary_includes_facing_direction() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "yaw": -90.0,
+                "pitch": 15.5,
+            },
+            "nearby_entities": [],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"yaw": -90.0' in summary
+    assert '"pitch": 15.5' in summary
+    assert '"facing_direction": "east"' in summary
 
 
 def test_context_summary_includes_active_effects() -> None:

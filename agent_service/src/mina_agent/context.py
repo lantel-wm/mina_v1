@@ -29,7 +29,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -380,6 +380,9 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "x": player_state.get("x"),
             "y": player_state.get("y"),
             "z": player_state.get("z"),
+            "yaw": player_state.get("yaw"),
+            "pitch": player_state.get("pitch"),
+            "facing_direction": _facing_direction(player_state.get("yaw")),
         },
         "world_state": {
             "day_time": world_state.get("day_time"),
@@ -496,6 +499,20 @@ def _half_health(value: Any) -> float | int | None:
         return None
     half = parsed / 2.0
     return int(half) if half.is_integer() else half
+
+
+def _facing_direction(value: Any) -> str | None:
+    yaw = _float_value(value)
+    if yaw is None:
+        return None
+    normalized = yaw % 360.0
+    if normalized < 45.0 or normalized >= 315.0:
+        return "south"
+    if normalized < 135.0:
+        return "west"
+    if normalized < 225.0:
+        return "north"
+    return "east"
 
 
 def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
