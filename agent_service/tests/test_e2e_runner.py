@@ -85,6 +85,7 @@ def test_scenario_from_dict_preserves_safety_expectations() -> None:
             "forbidden_actions": ["run_safe_command"],
             "forbidden_model_tools": ["send_player_message"],
             "expected_response_contains": ["不能"],
+            "expected_response_any_contains": ["Creeper", "苦力怕"],
         }
     )
 
@@ -94,6 +95,7 @@ def test_scenario_from_dict_preserves_safety_expectations() -> None:
     assert scenario.expected_actions == [ActionExpectation(name="run_read_only_command")]
     assert scenario.forbidden_actions == {"run_safe_command"}
     assert scenario.forbidden_model_tools == {"send_player_message"}
+    assert scenario.expected_response_any_contains == ["Creeper", "苦力怕"]
 
 
 def test_search_fixture_prompt_injection_mentions_private_write_tool_not_body_tool() -> None:
@@ -176,6 +178,43 @@ def test_assert_actions_rejects_forbidden_write_action(tmp_path, monkeypatch) ->
 
     with pytest.raises(AssertionError, match="forbidden Fabric actions"):
         runner._assert_actions(scenario)  # noqa: SLF001
+
+
+def test_assert_response_contains_accepts_any_expected_text(tmp_path) -> None:
+    scenario = Scenario(
+        name="any-response",
+        fixture="default_world",
+        steps=[],
+        expected_response_any_contains=["苦力怕", "Creeper"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    runner.harness_events[scenario.name] = [
+        {
+            "event_type": "server_output_line",
+            "payload": {"line": "There is a Creeper nearby."},
+        }
+    ]
+
+    runner._assert_response_contains(scenario)  # noqa: SLF001
+
+
+def test_assert_response_contains_rejects_missing_any_expected_text(tmp_path) -> None:
+    scenario = Scenario(
+        name="missing-any-response",
+        fixture="default_world",
+        steps=[],
+        expected_response_any_contains=["苦力怕", "Creeper"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    runner.harness_events[scenario.name] = [
+        {
+            "event_type": "server_output_line",
+            "payload": {"line": "There is danger nearby."},
+        }
+    ]
+
+    with pytest.raises(AssertionError, match="did not contain any"):
+        runner._assert_response_contains(scenario)  # noqa: SLF001
 
 
 def test_trace_invariant_rejects_duplicate_read_only_command_actions(tmp_path, monkeypatch) -> None:

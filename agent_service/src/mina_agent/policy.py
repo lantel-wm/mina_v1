@@ -69,8 +69,8 @@ def minecraft_chat_text(content: str) -> str:
     text = text.replace("`", "")
     text = _EMOJI_RE.sub("", text)
     text = re.sub(r"(?m)^\s*[-*•]\s+", "", text)
-    text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]*\n+[ \t]*", " ", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
     return text.strip()
 
 

@@ -52,6 +52,7 @@ class Scenario:
     forbidden_model_tools: set[str] = field(default_factory=set)
     expected_model: ModelExpectation | None = None
     expected_response_contains: list[str] = field(default_factory=list)
+    expected_response_any_contains: list[str] = field(default_factory=list)
     forbidden_response_contains: list[str] = field(default_factory=list)
     trace_invariants: list[str] = field(default_factory=list)
     world_asserts: list[str] = field(default_factory=list)
@@ -117,6 +118,7 @@ def scenario_from_dict(payload: dict[str, Any]) -> Scenario:
             else None
         ),
         expected_response_contains=[str(item) for item in payload.get("expected_response_contains", [])],
+        expected_response_any_contains=[str(item) for item in payload.get("expected_response_any_contains", [])],
         forbidden_response_contains=[str(item) for item in payload.get("forbidden_response_contains", [])],
         trace_invariants=[str(item) for item in payload.get("trace_invariants", [])],
         world_asserts=[str(item) for item in payload.get("world_asserts", [])],

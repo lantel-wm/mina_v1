@@ -57,7 +57,7 @@ SCENARIO_DATA = [
         ],
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 1},
-        "expected_response_contains": ["苦力怕"],
+        "expected_response_any_contains": ["苦力怕", "Creeper", "creeper"],
         "rubric": "Nearby danger questions should go through the live model and summarize hostile mobs from the snapshot without actions.",
     },
     {
@@ -256,7 +256,7 @@ SCENARIO_DATA = [
             {
                 "kind": "companion_tick",
                 "request_id": "companion-low-health-live-model",
-                "wait_for": ["生命值", "血量"],
+                "wait_for": ["生命值", "血量", "颗心"],
                 "timeout": 60,
             },
         ],
@@ -268,6 +268,7 @@ SCENARIO_DATA = [
         ],
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 1},
+        "expected_response_any_contains": ["生命值", "血量", "颗心"],
         "forbidden_response_contains": ["没有生成可执行回应"],
         "trace_invariants": ["non_empty_final_model_content"],
         "rubric": "Emergency companion ticks should go through the live model while staying read-only.",

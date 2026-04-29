@@ -9,6 +9,16 @@ def test_minecraft_chat_text_strips_markdown_and_emoji() -> None:
     assert minecraft_chat_text("**你好** `Mina` ✨") == "你好 Mina"
 
 
+def test_minecraft_chat_text_collapses_markdown_lists_to_plain_chat() -> None:
+    content = """
+    **状态**
+    - 坐标：X=0.5
+    - 生命值：20
+    """
+
+    assert minecraft_chat_text(content) == "状态 坐标：X=0.5 生命值：20"
+
+
 def test_policy_replaces_write_command_advice_with_safe_refusal() -> None:
     policy = ResponsePolicyRuntime()
 
