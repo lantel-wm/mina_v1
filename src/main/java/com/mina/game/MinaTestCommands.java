@@ -11,6 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -108,6 +109,7 @@ public final class MinaTestCommands {
 				.then(literal("assert")
 					.then(literal("chop_tree").executes(context -> assertChopTree(context.getSource())))
 					.then(literal("follow_player").executes(context -> assertFollowPlayer(context.getSource())))
+					.then(literal("body_has_log").executes(context -> assertBodyHasLog(context.getSource())))
 					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource())))
 					.then(literal("upper_log_absent").executes(context -> assertUpperLogAbsent(context.getSource()))))
 				.then(literal("stop").executes(context -> stop(context.getSource())))
@@ -441,6 +443,28 @@ public final class MinaTestCommands {
 		}
 		String actual = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 		source.sendSuccess(() -> Component.literal("Mina test upper_log_absent passed: replacement block is " + actual + "."), false);
+		return 1;
+	}
+
+	private int assertBodyHasLog(CommandSourceStack source) {
+		ServerPlayer body = source.getServer().getPlayerList().getPlayer(config.bodyUsername);
+		if (body == null) {
+			source.sendFailure(Component.literal("Mina test body_has_log failed: body is offline."));
+			return 0;
+		}
+		int count = 0;
+		for (int slot = 0; slot < body.getInventory().getContainerSize(); slot++) {
+			ItemStack stack = body.getInventory().getItem(slot);
+			if (stack.is(ItemTags.LOGS)) {
+				count += stack.getCount();
+			}
+		}
+		if (count <= 0) {
+			source.sendFailure(Component.literal("Mina test body_has_log failed: Mina body has no logs."));
+			return 0;
+		}
+		int logCount = count;
+		source.sendSuccess(() -> Component.literal("Mina test body_has_log passed: log count " + logCount + "."), false);
 		return 1;
 	}
 
