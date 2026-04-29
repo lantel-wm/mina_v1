@@ -9,10 +9,12 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -55,6 +57,7 @@ public final class MinaSnapshotter {
 		snapshot.add("world_state", worldState(server, level, player));
 		snapshot.add("inventory", inventory(player, config));
 		snapshot.add("nearby_entities", nearbyEntities(level, player, config));
+		snapshot.add("body_nearby_entities", bodyNearbyEntities(server, config));
 		snapshot.add("nearby_blocks", nearbyBlocks(server, level, player, config));
 		snapshot.add("environment", environment(level, player));
 		return snapshot;
@@ -170,10 +173,10 @@ public final class MinaSnapshotter {
 		return array;
 	}
 
-	private JsonArray nearbyEntities(ServerLevel level, ServerPlayer player, MinaConfig config) {
-		AABB box = player.getBoundingBox().inflate(config.nearbyEntityRadius);
-		List<Entity> entities = level.getEntities(player, box, entity -> entity.isAlive() && entity != player);
-		entities.sort(Comparator.comparingDouble(player::distanceToSqr));
+	private JsonArray nearbyEntities(ServerLevel level, Entity anchor, MinaConfig config) {
+		AABB box = anchor.getBoundingBox().inflate(config.nearbyEntityRadius);
+		List<Entity> entities = level.getEntities(anchor, box, entity -> entity.isAlive() && entity != anchor);
+		entities.sort(Comparator.comparingDouble(anchor::distanceToSqr));
 
 		JsonArray array = new JsonArray();
 		int count = 0;
@@ -186,7 +189,7 @@ public final class MinaSnapshotter {
 			json.addProperty("type", BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
 			json.addProperty("name", entity.getName().getString());
 			json.addProperty("category", category(entity));
-			json.addProperty("distance", round(Math.sqrt(player.distanceToSqr(entity))));
+			json.addProperty("distance", round(Math.sqrt(anchor.distanceToSqr(entity))));
 			json.addProperty("x", round(entity.getX()));
 			json.addProperty("y", round(entity.getY()));
 			json.addProperty("z", round(entity.getZ()));
@@ -194,10 +197,26 @@ public final class MinaSnapshotter {
 				json.addProperty("health", living.getHealth());
 				json.addProperty("max_health", living.getMaxHealth());
 			}
+			if (entity instanceof ItemEntity itemEntity) {
+				ItemStack stack = itemEntity.getItem();
+				json.addProperty("item", BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+				json.addProperty("count", stack.getCount());
+				if (stack.is(ItemTags.LOGS)) {
+					json.addProperty("item_category", "log");
+				}
+			}
 			array.add(json);
 			count++;
 		}
 		return array;
+	}
+
+	private JsonArray bodyNearbyEntities(MinecraftServer server, MinaConfig config) {
+		ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
+		if (body == null || !(body.level() instanceof ServerLevel bodyLevel)) {
+			return new JsonArray();
+		}
+		return nearbyEntities(bodyLevel, body, config);
 	}
 
 	private JsonObject environment(ServerLevel level, ServerPlayer player) {

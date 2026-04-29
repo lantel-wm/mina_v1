@@ -413,6 +413,7 @@ SCENARIO_DATA = [
             {"kind": "assert", "value": "chop_tree", "timeout": 180},
             {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
             {"kind": "assert", "value": "body_has_log", "timeout": 30},
+            {"kind": "assert", "value": "no_log_drops", "timeout": 30},
         ],
         "expected_tools": [
             {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
@@ -424,8 +425,8 @@ SCENARIO_DATA = [
         ],
         "expected_model": {"mode": "exact", "count": 0},
         "trace_invariants": ["no_body_look_monitor_timeout", "no_action_monitor_timeout"],
-        "world_asserts": ["chop_tree", "upper_log_absent", "body_has_log"],
-        "rubric": "Natural collect-lumber requests must route to the deterministic chop_tree skill and leave collected logs in the Mina body inventory without exposing low-level body actions to the model.",
+        "world_asserts": ["chop_tree", "upper_log_absent", "body_has_log", "no_log_drops"],
+        "rubric": "Natural collect-lumber requests must route to the deterministic chop_tree skill, leave logs in the Mina body inventory, and sweep nearby log drops without exposing low-level body actions to the model.",
     },
     {
         "name": "body_get_wood_status_after_completion_router",
@@ -441,6 +442,7 @@ SCENARIO_DATA = [
             {"kind": "assert", "value": "chop_tree", "timeout": 180},
             {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
             {"kind": "assert", "value": "body_has_log", "timeout": 30},
+            {"kind": "assert", "value": "no_log_drops", "timeout": 30},
             {
                 "kind": "request",
                 "request_id": "body-get-wood-status-after-completion",
@@ -460,7 +462,7 @@ SCENARIO_DATA = [
         "expected_model": {"mode": "exact", "count": 0},
         "expected_response_contains": ["最近任务：chop_tree", "状态：completed"],
         "trace_invariants": ["no_body_look_monitor_timeout", "no_action_monitor_timeout"],
-        "world_asserts": ["chop_tree", "upper_log_absent", "body_has_log"],
+        "world_asserts": ["chop_tree", "upper_log_absent", "body_has_log", "no_log_drops"],
         "rubric": "Get-wood requests should route to chop_tree, and follow-up status questions after completion should report the recent completed task without model calls.",
     },
     {

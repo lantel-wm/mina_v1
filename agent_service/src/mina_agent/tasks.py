@@ -10,6 +10,9 @@ from .memory import MemoryStore
 from .schemas import TurnResponse
 
 
+MAX_COLLECT_CYCLES = 6
+
+
 class SkillRuntime:
     """Durable-enough in-process runtime for Minecraft body tasks.
 
@@ -239,11 +242,19 @@ class SkillRuntime:
         command_success = result.get("command_success")
 
         if command_success is False or status in {"command_failed", "failed"}:
+            if task.get("type") == "chop_tree" and step_id.startswith("collect"):
+                task["last_error"] = str(result.get("error") or "collect command failed")
+                self.memory.record_task_event(task["task_id"], "collect_command_failed", {"reason": task["last_error"]})
+                return self._collect_or_complete_chop(task, task.get("latest_snapshot") or {})
             recovered = self._recover_or_fail(task, result.get("error") or "command failed")
             if task.get("type") == "chop_tree" and step_id.startswith("attack"):
                 return _prepend_action(recovered, _attack_release_action(task, step_id))
             return recovered
         if monitor_status in {"failed", "timeout"} or status in {"monitor_failed", "timeout"}:
+            if task.get("type") == "chop_tree" and step_id.startswith("collect"):
+                task["last_error"] = str(monitor.get("reason") or result.get("error") or "collect monitor failed")
+                self.memory.record_task_event(task["task_id"], "collect_monitor_failed", {"reason": task["last_error"], "monitor": monitor})
+                return self._collect_or_complete_chop(task, task.get("latest_snapshot") or {})
             if task.get("type") == "chop_tree" and step_id.startswith("look"):
                 snapshot = task.get("latest_snapshot") or {}
                 current_target = self._current_or_replacement_target(task, snapshot, task.get("target") or {})
@@ -316,21 +327,10 @@ class SkillRuntime:
                 )
                 advanced = self._advance(task, snapshot)
                 return _prepend_action(advanced, _attack_release_action(task, step_id))
-            task["status"] = "completed"
-            task["stage"] = "done"
-            task["updated_at"] = time.time()
-            self.memory.record_task_event(task["task_id"], "completed", {"target": task.get("target")})
-            self._clear_current_if_terminal(task)
-            self.memory.add_skill_reflection(
-                "chop_tree",
-                "Chop tree completed after observed block removal.",
-                {"task_id": task["task_id"], "target": task.get("target")},
-            )
-            return TurnResponse(
-                messages=[{"target": "requester", "content": "砍树完成。"}],
-                actions=[_attack_release_action(task, step_id)],
-                debug={"task_status": _public_task(task)},
-            )
+            advanced = self._collect_or_complete_chop(task, snapshot)
+            return _prepend_action(advanced, _attack_release_action(task, step_id))
+        if step_id.startswith("collect"):
+            return self._handle_collect_result(task, snapshot)
         return self._advance(task, snapshot)
 
     def _handle_follow_result(self, task: dict[str, Any], result: dict[str, Any], status: str, monitor_status: str) -> TurnResponse:
@@ -486,6 +486,39 @@ class SkillRuntime:
             task["stage"] = "attack_sent"
             return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
 
+        if task.get("stage") == "collect":
+            target = task.get("collect_target") if isinstance(task.get("collect_target"), dict) else _choose_log_drop_target(snapshot)
+            if target is None:
+                return self._complete_chop(task, collected=bool(task.get("collect_cycles")))
+            cycle = int(task.get("collect_cycles") or 0) + 1
+            task["collect_cycles"] = cycle
+            task["collect_target"] = target
+            action = _action(
+                task,
+                "body_move_to_position",
+                {
+                    "x": float(target["x"]),
+                    "y": float(target["y"]),
+                    "z": float(target["z"]),
+                    "sprint": False,
+                    "jump": True,
+                },
+                step=f"collect:{cycle}",
+                monitor={
+                    "type": "log_drop_collected",
+                    "x": float(target["x"]),
+                    "y": float(target["y"]),
+                    "z": float(target["z"]),
+                    "body_radius": 1.5,
+                    "item_radius": 1.75,
+                    "deadline_ticks": 160,
+                },
+            )
+            self._mark_action(task, action)
+            task["stage"] = "collect_sent"
+            self.memory.record_task_event(task["task_id"], "collect_drop_scheduled", {"target": target, "cycle": cycle})
+            return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
+
         return TurnResponse(debug={"task_status": _public_task(task)})
 
     def _advance_follow(self, task: dict[str, Any]) -> TurnResponse:
@@ -506,6 +539,63 @@ class SkillRuntime:
         self._mark_action(task, action)
         task["stage"] = "follow_sent"
         return TurnResponse(actions=[action], debug={"task_status": _public_task(task)})
+
+    def _collect_or_complete_chop(self, task: dict[str, Any], snapshot: dict[str, Any]) -> TurnResponse:
+        drop = _choose_log_drop_target(snapshot)
+        if drop is None:
+            return self._complete_chop(task, collected=bool(task.get("collect_cycles")))
+        if int(task.get("collect_cycles") or 0) >= MAX_COLLECT_CYCLES:
+            task["status"] = "failed"
+            task["stage"] = "failed"
+            task["last_error"] = "log drops remain after collection retries"
+            task["updated_at"] = time.time()
+            self.memory.record_task_event(task["task_id"], "failed", {"reason": task["last_error"], "drop": drop})
+            self._clear_current_if_terminal(task)
+            return TurnResponse(
+                messages=[{"target": "requester", "content": "树已经砍掉，但还有掉落木头没能稳定捡起，我先停下。"}],
+                debug={"task_status": _public_task(task)},
+            )
+        task["collect_target"] = drop
+        task["stage"] = "collect"
+        task["last_error"] = None
+        return self._advance(task, snapshot)
+
+    def _handle_collect_result(self, task: dict[str, Any], snapshot: dict[str, Any]) -> TurnResponse:
+        remaining = _choose_log_drop_target(snapshot)
+        if remaining is not None:
+            task["collect_target"] = remaining
+            task["stage"] = "collect"
+            self.memory.record_task_event(
+                task["task_id"],
+                "collect_drop_remaining",
+                {"target": remaining, "cycle": int(task.get("collect_cycles") or 0)},
+            )
+            return self._collect_or_complete_chop(task, snapshot)
+        return self._complete_chop(task, collected=True)
+
+    def _complete_chop(self, task: dict[str, Any], *, collected: bool) -> TurnResponse:
+        task["status"] = "completed"
+        task["stage"] = "done"
+        task["updated_at"] = time.time()
+        self.memory.record_task_event(
+            task["task_id"],
+            "completed",
+            {"target": task.get("target"), "collect_cycles": int(task.get("collect_cycles") or 0)},
+        )
+        self._clear_current_if_terminal(task)
+        reflection = "Chop tree completed after observed block removal."
+        if collected:
+            reflection = "Chop tree completed after observed block removal and log-drop pickup sweep."
+        self.memory.add_skill_reflection(
+            "chop_tree",
+            reflection,
+            {"task_id": task["task_id"], "target": task.get("target"), "collect_cycles": int(task.get("collect_cycles") or 0)},
+        )
+        content = "砍树完成，木头已收集。" if collected else "砍树完成。"
+        return TurnResponse(
+            messages=[{"target": "requester", "content": content}],
+            debug={"task_status": _public_task(task)},
+        )
 
     def _current_or_replacement_target(
         self,
@@ -873,6 +963,63 @@ def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _choose_log_drop_target(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = _log_drop_candidates(snapshot)
+    if not candidates:
+        return None
+    return candidates[0]
+
+
+def _log_drop_candidates(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for priority, entities in (
+        (0, snapshot.get("body_nearby_entities")),
+        (1, snapshot.get("nearby_entities")),
+    ):
+        if not isinstance(entities, list):
+            continue
+        for entity in entities:
+            if not isinstance(entity, dict) or not _is_log_item_entity(entity):
+                continue
+            entity_id = str(entity.get("id") or "")
+            if entity_id and entity_id in seen:
+                continue
+            if entity_id:
+                seen.add(entity_id)
+            x = _float_value(entity.get("x"))
+            y = _float_value(entity.get("y"))
+            z = _float_value(entity.get("z"))
+            if x is None or y is None or z is None:
+                continue
+            target = {
+                "id": entity_id,
+                "x": x,
+                "y": y,
+                "z": z,
+                "item": str(entity.get("item") or ""),
+                "name": str(entity.get("name") or ""),
+                "count": int(_float_value(entity.get("count")) or 1),
+                "distance": float(_float_value(entity.get("distance")) or 9999.0),
+                "priority": priority,
+            }
+            candidates.append(target)
+    candidates.sort(key=lambda item: (int(item.get("priority") or 9), float(item.get("distance") or 9999.0)))
+    return candidates
+
+
+def _is_log_item_entity(entity: dict[str, Any]) -> bool:
+    if str(entity.get("type") or "") != "minecraft:item":
+        return False
+    if str(entity.get("item_category") or "") == "log":
+        return True
+    item_id = str(entity.get("item") or "").lower().removeprefix("minecraft:")
+    if item_id.endswith(("_log", "_wood", "_stem", "_hyphae")):
+        return True
+    name = str(entity.get("name") or "").lower()
+    return " log" in f" {name}" or name.endswith("log")
+
+
 def _body_online(snapshot: dict[str, Any]) -> bool:
     body_state = snapshot.get("body_state")
     return bool(body_state.get("online")) if isinstance(body_state, dict) else False
@@ -892,6 +1039,8 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
         "attempts": task.get("attempts"),
         "target_ordinal": task.get("target_ordinal"),
         "target": task.get("target"),
+        "collect_target": task.get("collect_target"),
+        "collect_cycles": task.get("collect_cycles"),
         "last_error": task.get("last_error"),
         "active_action_id": task.get("active_action_id"),
         "active_step_id": task.get("active_step_id"),
@@ -911,6 +1060,7 @@ def _snapshot_summary(snapshot: dict[str, Any]) -> dict[str, Any]:
         "distance_to_requester": body.get("distance_to_requester"),
         "interesting_blocks": len(blocks),
         "logs": sum(1 for block in blocks if block.get("category") == "log"),
+        "log_drops": len(_log_drop_candidates(snapshot)),
     }
 
 

@@ -10,9 +10,12 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.AABB;
 
 import java.util.Iterator;
 import java.util.UUID;
@@ -165,6 +168,23 @@ public final class MinaActionMonitor {
 					}
 				}
 			}
+		} else if ("log_drop_collected".equals(type)) {
+			ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
+			if (body != null) {
+				double x = doubleValue(monitor, "x", body.getX());
+				double y = doubleValue(monitor, "y", body.getY());
+				double z = doubleValue(monitor, "z", body.getZ());
+				double bodyRadius = doubleValue(monitor, "body_radius", 1.5D);
+				double itemRadius = doubleValue(monitor, "item_radius", 1.75D);
+				double distance = Math.sqrt(body.distanceToSqr(x, y, z));
+				if (distance <= bodyRadius) {
+					int drops = logDropCount(body.level(), x, y, z, itemRadius);
+					if (drops <= 0) {
+						success = result("success", "log drop collected");
+						success.addProperty("distance", round(distance));
+					}
+				}
+			}
 		} else if ("follow_requester".equals(type)) {
 			ServerPlayer body = server.getPlayerList().getPlayer(config.bodyUsername);
 			if (body != null && requester != null) {
@@ -192,6 +212,15 @@ public final class MinaActionMonitor {
 			return timeout;
 		}
 		return null;
+	}
+
+	private static int logDropCount(ServerLevel level, double x, double y, double z, double radius) {
+		AABB box = new AABB(x, y, z, x, y, z).inflate(radius);
+		int count = 0;
+		for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, box, entity -> entity.isAlive() && entity.getItem().is(ItemTags.LOGS))) {
+			count += item.getItem().getCount();
+		}
+		return count;
 	}
 
 	private static JsonObject result(String status, String reason) {

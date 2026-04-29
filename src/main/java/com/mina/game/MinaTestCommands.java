@@ -12,9 +12,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 
 import java.util.regex.Pattern;
 
@@ -110,6 +112,7 @@ public final class MinaTestCommands {
 					.then(literal("chop_tree").executes(context -> assertChopTree(context.getSource())))
 					.then(literal("follow_player").executes(context -> assertFollowPlayer(context.getSource())))
 					.then(literal("body_has_log").executes(context -> assertBodyHasLog(context.getSource())))
+					.then(literal("no_log_drops").executes(context -> assertNoLogDrops(context.getSource())))
 					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource())))
 					.then(literal("upper_log_absent").executes(context -> assertUpperLogAbsent(context.getSource()))))
 				.then(literal("stop").executes(context -> stop(context.getSource())))
@@ -178,6 +181,7 @@ public final class MinaTestCommands {
 		prepareChopTreeWorld(source.getLevel());
 		run(server, "difficulty peaceful");
 		run(server, "kill @e[type=minecraft:creeper]");
+		run(server, "kill @e[type=minecraft:item]");
 		run(server, "time set day");
 		run(server, "weather clear");
 		run(server, "puppet " + TEST_PLAYER + " spawn");
@@ -199,6 +203,7 @@ public final class MinaTestCommands {
 		}
 		if (body != null) {
 			run(server, "tp " + config.bodyUsername + " 0.5 " + TREE_Y + " -1.5 0 0");
+			resetBodyInventory(body);
 		}
 		if (!markerReady || !targetReady || requester == null || body == null) {
 			source.sendFailure(Component.literal(
@@ -394,6 +399,12 @@ public final class MinaTestCommands {
 		player.getInventory().setItem(selectedSlot, new ItemStack(Items.GUNPOWDER, 1));
 	}
 
+	private void resetBodyInventory(ServerPlayer player) {
+		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+			player.getInventory().setItem(slot, ItemStack.EMPTY);
+		}
+	}
+
 	private int snapshot(CommandSourceStack source) {
 		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
 		if (requester == null) {
@@ -465,6 +476,22 @@ public final class MinaTestCommands {
 		}
 		int logCount = count;
 		source.sendSuccess(() -> Component.literal("Mina test body_has_log passed: log count " + logCount + "."), false);
+		return 1;
+	}
+
+	private int assertNoLogDrops(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		AABB box = new AABB(TARGET_LOG).inflate(8.0D, 6.0D, 8.0D);
+		int count = 0;
+		for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, box, entity -> entity.isAlive() && entity.getItem().is(ItemTags.LOGS))) {
+			count += item.getItem().getCount();
+		}
+		if (count > 0) {
+			int dropCount = count;
+			source.sendFailure(Component.literal("Mina test no_log_drops failed: log drops remain " + dropCount + "."));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("Mina test no_log_drops passed: no log drops remain."), false);
 		return 1;
 	}
 

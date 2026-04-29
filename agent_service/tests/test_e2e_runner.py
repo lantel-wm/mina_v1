@@ -136,7 +136,9 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     collect_wood = SCENARIOS["body_collect_wood_chop_router"]
     assert any(step.value == "帮我收集点木材" for step in collect_wood.steps)
     assert any(step.value == "body_has_log" for step in collect_wood.steps)
+    assert any(step.value == "no_log_drops" for step in collect_wood.steps)
     assert "body_has_log" in collect_wood.world_asserts
+    assert "no_log_drops" in collect_wood.world_asserts
     assert "no_action_monitor_timeout" in collect_wood.trace_invariants
     assert collect_wood.expected_model is not None
     assert collect_wood.expected_model.count == 0
@@ -144,6 +146,7 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert any(step.value == "帮我拿点木头" for step in get_wood.steps)
     assert any(step.value == "砍完了吗？" for step in get_wood.steps)
     assert any(step.value == "body_has_log" for step in get_wood.steps)
+    assert any(step.value == "no_log_drops" for step in get_wood.steps)
     assert any(expected.name == "task_status" and expected.status == "ok" for expected in get_wood.expected_tools)
     assert "最近任务：chop_tree" in get_wood.expected_response_contains
     assert get_wood.expected_model is not None
