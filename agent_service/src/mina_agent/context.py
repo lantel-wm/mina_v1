@@ -246,6 +246,7 @@ def build_target_summary(snapshot: dict[str, Any]) -> str:
 def build_context_summary(turn: dict[str, Any]) -> str:
     snapshot = turn.get("snapshot") or {}
     player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    world_state = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
     permissions = turn.get("permissions") or {}
     nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
     nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
@@ -267,6 +268,17 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "x": player_state.get("x"),
             "y": player_state.get("y"),
             "z": player_state.get("z"),
+        },
+        "world_state": {
+            "day_time": world_state.get("day_time"),
+            "day_count": world_state.get("day_count"),
+            "difficulty": world_state.get("difficulty"),
+            "raining": world_state.get("raining"),
+            "thundering": world_state.get("thundering"),
+            "weather": _weather_label(world_state),
+            "dimension": world_state.get("dimension"),
+            "seed": world_state.get("seed"),
+            "online_players": world_state.get("online_players"),
         },
         "candidate_logs": [_compact_block_target(block) for block in logs],
         "nearby_hostiles": hostile,
@@ -319,6 +331,18 @@ def _format_number(value: float) -> str:
     if value.is_integer():
         return str(int(value))
     return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _weather_label(world_state: dict[str, Any]) -> str | None:
+    if not world_state:
+        return None
+    if world_state.get("thundering") is True:
+        return "thunder"
+    if world_state.get("raining") is True:
+        return "rain"
+    if world_state.get("raining") is False or world_state.get("thundering") is False:
+        return "clear"
+    return None
 
 
 def _half_health(value: Any) -> float | int | None:

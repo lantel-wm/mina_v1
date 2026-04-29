@@ -19,6 +19,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     names = set(SCENARIOS)
 
     assert "player_status_snapshot_live_model" in names
+    assert "world_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
     assert "literal_read_only_command_local_route" in names
     assert "literal_weather_query_local_route" in names

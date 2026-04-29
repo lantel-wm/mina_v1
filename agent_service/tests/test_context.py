@@ -67,6 +67,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
         "permissions": {"can_use_actions": True},
         "snapshot": {
             "player_state": {"x": 0.5, "y": 80, "z": -2.5, "health": 20, "food": 20},
+            "world_state": {"day_time": 1000, "day_count": 0, "raining": False, "thundering": False},
             "nearby_entities": [{"type": "minecraft:cow", "category": "passive", "distance": 4}],
             "nearby_blocks": {"requester": [{"block": "minecraft:spruce_log", "category": "log", "x": 2, "y": 80, "z": 0}]},
         },
@@ -77,6 +78,8 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
 
     assert "candidate_logs" in context
     assert "nearby_hostiles" in context
+    assert '"world_state"' in context
+    assert '"weather": "clear"' in context
     assert "Agent memory loaded for this turn" in context
     assert "玩家基地在樱花林旁边" in context
     assert "Recent verified Minecraft command/action results" in context
@@ -102,6 +105,36 @@ def test_context_summary_labels_health_points_and_hearts() -> None:
     assert '"max_health_points": 20' in summary
     assert '"health_hearts": 2' in summary
     assert '"max_health_hearts": 10' in summary
+
+
+def test_context_summary_includes_world_state_for_observation() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {
+            "player_state": {"health": 20, "max_health": 20},
+            "world_state": {
+                "day_time": 1000,
+                "day_count": 0,
+                "difficulty": "peaceful",
+                "raining": False,
+                "thundering": False,
+                "dimension": "minecraft:overworld",
+                "seed": 12345,
+                "online_players": 1,
+            },
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"day_time": 1000' in summary
+    assert '"day_count": 0' in summary
+    assert '"difficulty": "peaceful"' in summary
+    assert '"weather": "clear"' in summary
+    assert '"seed": 12345' in summary
+    assert '"online_players": 1' in summary
 
 
 def test_build_messages_marks_explicit_command_execution_requests(tmp_path) -> None:

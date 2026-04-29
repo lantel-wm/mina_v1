@@ -62,6 +62,31 @@ SCENARIO_DATA = [
         "rubric": "Nearby danger questions should go through the live model and summarize hostile mobs from the snapshot without actions.",
     },
     {
+        "name": "world_status_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "world-status-snapshot-live-model",
+                "value": "现在天气和时间怎么样？",
+                "wait_for": ["mina turn response requestId=world-status-snapshot-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "at_least", "min_count": 1},
+        "expected_response_any_contains": ["clear", "晴", "不下雨", "无雨"],
+        "forbidden_response_contains": ["我会执行这个只读查询", "The time is 0", "Weather:"],
+        "rubric": "Natural local world-state questions should be answered from Fabric snapshot context without running read-only commands.",
+    },
+    {
         "name": "read_only_time_command_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],
