@@ -114,7 +114,7 @@ def normalize_health_unit_claims(content: str, snapshot: dict[str, Any] | None) 
 
 
 def contains_write_command_advice(content: str) -> bool:
-    return bool(_WRITE_COMMAND_ADVICE_RE.search(content))
+    return bool(_WRITE_COMMAND_ADVICE_RE.search(content) or _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE.search(content))
 
 
 def claims_memory_saved(content: str) -> bool:
@@ -181,6 +181,14 @@ _HEALTH_POINTS_AS_HEARTS_RE = re.compile(r"(?<![\d.])(?P<value>\d+(?:\.\d+)?)\s*
 _WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(^|[^\w-])"
     r"(?:minecraft:)?"
-    r"(setblock|fill|fillbiome|tp|teleport|gamemode|give|clear|summon|kill|execute|gamerule|op|deop|ban|stop)\b"
+    r"(setblock|fill|fillbiome|gamemode|give|summon|gamerule|op|deop|ban)\b"
+)
+_AMBIGUOUS_WRITE_COMMAND_ADVICE_RE = re.compile(
+    r"(?im)(?:"
+    r"(^|[^\w-])/(?:clear|kill|stop|execute|tp|teleport)\b|"
+    r"(^|[^\w-])(?:minecraft:)(?:clear|kill|stop|execute|tp|teleport)\b|"
+    r"(?:执行|运行|调用|使用|run|execute|call|use)\s+/?(?:clear|kill|stop|execute|tp|teleport)\b|"
+    r"(?:clear|kill|stop|execute|tp|teleport)\s*(?:命令|command)\b"
+    r")"
 )
 _CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")

@@ -13,6 +13,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "call run_read_only_command even when the same command appears in recent results" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
+    assert "Do not advertise MCP" in SYSTEM_PROMPT
     assert "separate Minecraft character" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
     assert "body_chain" not in SYSTEM_PROMPT
@@ -212,6 +213,7 @@ def test_build_messages_marks_explicit_memory_write_requests(tmp_path) -> None:
 
     assert "explicitly asks you to save stable memory" in content
     assert "Call memory_write before claiming" in content
+    assert "Do not call run_read_only_command" in content
 
 
 def test_build_messages_does_not_mark_memory_recall_as_write_request(tmp_path) -> None:
@@ -250,6 +252,62 @@ def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) 
     assert "我记得你的家" not in content
     assert "This user message is a memory recall request" not in content
     assert "Recent conversation memory is intentionally omitted" not in content
+
+
+def test_build_messages_omits_recent_task_messages_for_generic_smalltalk(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
+    memory.add_conversation("old-command", "player-1", "user", "执行 time query day")
+    turn = {
+        "request_id": "req-smalltalk",
+        "trigger": "command",
+        "message": "你好 Mina，用一句话说说你现在能帮我做什么。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Recent player messages for continuity only" not in content
+    assert "钻石矿" not in content
+    assert "user: 执行 time query day" not in content
+
+
+def test_build_messages_does_not_match_english_followup_markers_as_substrings(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
+    turn = {
+        "request_id": "req-minecraft",
+        "trigger": "command",
+        "message": "Tell me about Minecraft weather.",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Recent player messages for continuity only" not in content
+    assert "钻石矿" not in content
+
+
+def test_build_messages_keeps_recent_task_messages_for_followups(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
+    turn = {
+        "request_id": "req-followup",
+        "trigger": "command",
+        "message": "刚才那个结果是什么？",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Recent player messages for continuity only" in content
+    assert "钻石矿" in content
 
 
 def test_companion_low_health_prompt_marks_alert_reason(tmp_path) -> None:

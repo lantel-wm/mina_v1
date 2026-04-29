@@ -59,6 +59,26 @@ def test_policy_replaces_write_command_after_cjk_punctuation() -> None:
     assert "不能执行或提供写入世界的命令" in review.content
 
 
+def test_policy_does_not_treat_clear_weather_as_clear_command() -> None:
+    policy = ResponsePolicyRuntime()
+
+    review = policy.review_final_content("当前天气晴朗（clear），没有下雨或打雷。", can_repair=True)
+
+    assert not review.needs_repair
+    assert "clear" in review.content
+    assert "不能执行或提供写入世界的命令" not in review.content
+
+
+def test_policy_still_replaces_ambiguous_clear_command_advice() -> None:
+    policy = ResponsePolicyRuntime()
+
+    review = policy.review_final_content("我不能执行，但你可以运行 /clear @p。", can_repair=True)
+
+    assert not review.needs_repair
+    assert "/clear" not in review.content
+    assert "不能执行或提供写入世界的命令" in review.content
+
+
 def test_policy_normalizes_health_points_misread_as_hearts() -> None:
     snapshot = {"player_state": {"health": 4, "max_health": 20}}
 

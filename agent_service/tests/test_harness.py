@@ -217,6 +217,81 @@ def test_explicit_read_only_command_repairs_model_answer_without_tool(tmp_path) 
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
+def test_snapshot_status_request_blocks_unrequested_command_tool_before_repair(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-weather",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "weather query"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "现在天气晴朗，时间是白天。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("现在天气和时间怎么样？", "req-world-status"))
+
+    assert response["messages"][0]["content"] == "现在天气晴朗，时间是白天。"
+    assert response.get("actions", []) == []
+    assert len(model.calls) == 2
+    repair_context = "\n".join(message["content"] for message in model.calls[1]["messages"])
+    assert "already available in this turn's Minecraft snapshot" in repair_context
+    assert memory.recent_tool_calls("req-world-status") == []
+
+
+def test_snapshot_status_guard_does_not_block_locate_requests(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-locate",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "locate structure minecraft:village_plains"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("最近村庄坐标在哪里？", "req-locate-structure"))
+
+    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["actions"][0]["args"] == {"command": "locate structure minecraft:village_plains"}
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-locate-structure")] == ["run_read_only_command"]
+
+
 def test_literal_read_only_command_bypasses_model(tmp_path) -> None:
     model = FakeDeepSeek()
     harness, memory, _model, _search = _harness(tmp_path, model)
@@ -355,6 +430,69 @@ def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
     assert "我的基地在樱花林旁边" in recall_context
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-write")] == ["memory_write"]
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]
+
+
+def test_memory_write_request_blocks_unrequested_command_tool_before_repair(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-locate",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "locate biome minecraft:cherry_grove"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-memory-write",
+                            "type": "function",
+                            "function": {
+                                "name": "memory_write",
+                                "arguments": json.dumps(
+                                    {"event_type": "player_fact", "content": "我的基地在樱花林旁边", "importance": 3}
+                                ),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "我记住了。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("请记住：我的基地在樱花林旁边", "req-memory-command-block"))
+
+    assert response["messages"][0]["content"] == "我记住了。"
+    assert response.get("actions", []) == []
+    assert len(model.calls) == 3
+    repair_context = "\n".join(message["content"] for message in model.calls[1]["messages"])
+    assert "explicit memory-save request" in repair_context
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-command-block")] == ["memory_write"]
 
 
 def test_memory_recall_is_not_repaired_by_local_intent_classifier(tmp_path) -> None:

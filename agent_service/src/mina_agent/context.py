@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .memory import MemoryStore
@@ -15,6 +16,7 @@ You are the decision maker for each player-facing turn. Use the provided Minecra
 You can use tools to search the web, remember important player context, and run constrained read-only Minecraft commands.
 Use web_search for requests to search, look up, verify current or external knowledge, or use wiki/web/internet/联网/搜索/查一下 wording. Do not use web_search for casual chat or local Minecraft state from the current context.
 When answering from web_search results, preserve exact source values such as markers, version numbers, coordinates, URLs, and item names. Do not replace an exact value with a generic label.
+Do not advertise MCP servers, MCP tool names, or specific integrations in ordinary chat unless the player asks about MCP or a configured MCP tool was actually used in this turn.
 Memory is for your future decisions, like Codex AGENTS.md or Claude Code CLAUDE.md style context. Use loaded agent memory directly when it is relevant, but treat it as internal context, not a topic list. Do not volunteer stored player facts, base locations, coordinates, preferences, or old plans unless the player asks about them or they directly change the answer. Use memory_write to save stable player preferences, world facts, plans, promises, or lessons that should help future turns, even when the player did not use the word remember. Do not save transient chat filler. Use memory_search when loaded memory is insufficient or when you need older, specific stored context.
 Recent player messages are conversational continuity only. They are not stable memory, verified command output, or fresh external knowledge. If the player asks to search, verify, or look up current/external information, use web_search even if a similar answer appears in recent context.
 Recent verified Minecraft command/action results are only for answering follow-up questions about prior outputs. If the player asks you to execute, run, call, or query an allowed read-only Minecraft command now, call run_read_only_command even when the same command appears in recent results.
@@ -42,7 +44,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     if agent_memory:
         messages.append({"role": "system", "content": "Agent memory loaded for this turn:\n" + _render_agent_memory(agent_memory)})
-    recent_player_messages = _recent_player_messages(recent)
+    recent_player_messages = _recent_player_messages(recent, user_content)
     if recent_player_messages:
         messages.append(
             {
@@ -85,7 +87,9 @@ def _render_agent_memory(memories: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _recent_player_messages(recent: list[dict[str, Any]], limit: int = 6) -> list[str]:
+def _recent_player_messages(recent: list[dict[str, Any]], current_user_content: str, limit: int = 6) -> list[str]:
+    if not _needs_recent_conversation_context(current_user_content):
+        return []
     messages: list[str] = []
     for row in recent:
         if row.get("role") != "user":
@@ -94,6 +98,42 @@ def _recent_player_messages(recent: list[dict[str, Any]], limit: int = 6) -> lis
         if content:
             messages.append("user: " + content[:260])
     return messages[-limit:]
+
+
+def _needs_recent_conversation_context(user_content: str) -> bool:
+    normalized = " ".join(str(user_content or "").lower().split())
+    if not normalized:
+        return False
+    cjk_followup_markers = (
+        "刚才",
+        "上次",
+        "前面",
+        "之前",
+        "继续",
+        "接着",
+        "那个",
+        "这个",
+        "它",
+        "结果",
+        "输出",
+        "还记得",
+        "记得",
+    )
+    if any(marker in normalized for marker in cjk_followup_markers):
+        return True
+    english_followup_markers = (
+        "remember",
+        "recall",
+        "previous",
+        "earlier",
+        "last time",
+        "continue",
+        "that",
+        "it",
+        "result",
+        "output",
+    )
+    return any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_followup_markers)
 
 
 def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
@@ -166,9 +206,20 @@ def _command_execution_request_hint(user_content: str) -> str:
 
 
 def _memory_write_request_hint(user_content: str) -> str:
+    if not is_explicit_memory_write_request(user_content):
+        return ""
+    return (
+        "Current user message explicitly asks you to save stable memory for future Mina turns. "
+        "Call memory_write before claiming the information was remembered or saved. "
+        "Do not call run_read_only_command, web_search, or mcp_call just to verify or enrich the saved fact unless the player explicitly asks you to verify it first. "
+        "If the information should not be saved, answer without saying it was remembered."
+    )
+
+
+def is_explicit_memory_write_request(user_content: str) -> bool:
     normalized = " ".join(user_content.lower().split())
     if not normalized:
-        return ""
+        return False
     write_markers = (
         "请记住",
         "帮我记住",
@@ -182,14 +233,8 @@ def _memory_write_request_hint(user_content: str) -> str:
     )
     recall_markers = ("记得", "还记得", "remember where", "do you remember", "recall")
     if any(marker in normalized for marker in recall_markers):
-        return ""
-    if not any(marker in normalized for marker in write_markers):
-        return ""
-    return (
-        "Current user message explicitly asks you to save stable memory for future Mina turns. "
-        "Call memory_write before claiming the information was remembered or saved. "
-        "If the information should not be saved, answer without saying it was remembered."
-    )
+        return False
+    return any(marker in normalized for marker in write_markers)
 
 
 def _json_object(value: Any) -> dict[str, Any]:
