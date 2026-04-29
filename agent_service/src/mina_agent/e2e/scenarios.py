@@ -146,6 +146,41 @@ SCENARIO_DATA = [
         "rubric": "Block-below questions should answer from Fabric environment snapshot without command execution or unrelated player status.",
     },
     {
+        "name": "sky_light_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "sky-light-snapshot-live-model",
+                "value": "我现在能看到天空吗？当前位置光照等级是多少？只回答小写 true 和数字 15。",
+                "wait_for": ["mina turn response requestId=sky-light-snapshot-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["true", "15"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "minecraft:",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Sky-visibility and light-level questions should answer from Fabric environment.sky_visible/light without command execution or unrelated player status.",
+    },
+    {
         "name": "dimension_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
