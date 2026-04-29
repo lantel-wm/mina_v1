@@ -127,7 +127,9 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
                 "name": "memory_write",
                 "description": (
                     "Persist a remembered fact that should help future Mina turns, such as a stable player preference, "
-                    "world fact, plan, promise, or lesson. Do not store transient filler."
+                    "world fact, plan, promise, or lesson. Use scope='world' for shared places, landmarks, bases, farms, "
+                    "portals, or plans tied to the current Minecraft save/world/server; use scope='player' for facts tied "
+                    "only to the requester. Do not store transient filler."
                 ),
                 "parameters": _schema(
                     {

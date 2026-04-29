@@ -55,6 +55,8 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "Do not use the Minecraft username as greeting/filler" in SYSTEM_PROMPT
     assert "For player-scoped memories" in SYSTEM_PROMPT
+    assert "Use scope=world for stable facts about this save/world/server" in SYSTEM_PROMPT
+    assert "Use scope=player for personal preferences" in SYSTEM_PROMPT
     assert "call memory_write directly" in SYSTEM_PROMPT
     assert "do not first call memory_search" in SYSTEM_PROMPT
     assert "memory_write content/label must omit the current Minecraft username" in SYSTEM_PROMPT
