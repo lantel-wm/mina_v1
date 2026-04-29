@@ -9,6 +9,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "preserve exact source values" in SYSTEM_PROMPT
     assert "memory_search" in SYSTEM_PROMPT
     assert "Agent memory" in SYSTEM_PROMPT or "agent memory" in SYSTEM_PROMPT
+    assert "Do not volunteer stored player facts" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "separate Minecraft character" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
