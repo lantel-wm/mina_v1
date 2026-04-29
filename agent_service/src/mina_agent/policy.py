@@ -71,6 +71,8 @@ def minecraft_chat_text(content: str) -> str:
     text = re.sub(r"__([^_\n]+)__", r"\1", text)
     text = text.replace("`", "")
     text = _EMOJI_RE.sub("", text)
+    text = _DECORATIVE_CHAT_RE.sub("", text)
+    text = _PROCESS_PREAMBLE_RE.sub("", text)
     text = re.sub(r"(?m)^\s*[-*•]\s+", "", text)
     text = re.sub(r"[ \t]*\n+[ \t]*", " ", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
@@ -168,6 +170,13 @@ def _format_number(value: float) -> str:
 
 
 _EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0e\ufe0f\u200d\u20e3]")
+_DECORATIVE_CHAT_RE = re.compile("[\u301c\uff5e]")
+_PROCESS_PREAMBLE_RE = re.compile(
+    r"(?is)^\s*(?:"
+    r"(?:我(?:来|先)?(?:看[看下]?|查(?:看|一下)?|确认(?:一下)?)[^。！？!?]{0,40}[。！？!?]\s*)|"
+    r"(?:let me (?:check|look|see)[^.!?]{0,80}[.!?]\s*)"
+    r")+"
+)
 _HEALTH_POINTS_AS_HEARTS_RE = re.compile(r"(?<![\d.])(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>颗心|hearts|heart)")
 _WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(^|[^\w-])"

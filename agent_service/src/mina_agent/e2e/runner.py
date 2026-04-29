@@ -38,7 +38,7 @@ SERVER_DIR = ROOT / "build" / "e2e" / "server"
 RUNS_DIR = ROOT / "build" / "e2e" / "runs"
 PUPPET_VERSION_ID = "VccNE5wh"
 KOTLIN_VERSION = "1.13.11+kotlin.2.3.21"
-_CHAT_UNSAFE_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0e\ufe0f\u200d\u20e3]")
+_CHAT_UNSAFE_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0e\ufe0f\u200d\u20e3\u301c\uff5e]")
 
 
 @dataclass

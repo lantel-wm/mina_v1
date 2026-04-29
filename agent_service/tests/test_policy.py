@@ -29,6 +29,15 @@ def test_minecraft_chat_text_collapses_markdown_lists_to_plain_chat() -> None:
     assert minecraft_chat_text(content) == "状态 坐标：X=0.5 生命值：20"
 
 
+def test_minecraft_chat_text_strips_process_preamble() -> None:
+    assert minecraft_chat_text("我来看看你的位置和附近情况。附近有一只苦力怕。") == "附近有一只苦力怕。"
+    assert minecraft_chat_text("Let me check your current surroundings. There is a Creeper nearby.") == "There is a Creeper nearby."
+
+
+def test_minecraft_chat_text_strips_decorative_wave() -> None:
+    assert minecraft_chat_text("我可以帮你查询世界状态～") == "我可以帮你查询世界状态"
+
+
 def test_policy_replaces_write_command_advice_with_safe_refusal() -> None:
     policy = ResponsePolicyRuntime()
 

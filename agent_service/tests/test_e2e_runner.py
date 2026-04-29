@@ -345,3 +345,22 @@ def test_trace_invariant_rejects_non_plain_chat_response(tmp_path) -> None:
 
     with pytest.raises(AssertionError, match="non-plain-chat character"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_decorative_wave_response(tmp_path) -> None:
+    scenario = Scenario(
+        name="wave-response",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["plain_chat_response"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    runner.harness_events[scenario.name] = [
+        {
+            "event_type": "server_output_line",
+            "payload": {"line": "mina send message target=requester content=我可以帮你查询世界状态～"},
+        }
+    ]
+
+    with pytest.raises(AssertionError, match="non-plain-chat character"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001

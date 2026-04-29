@@ -12,6 +12,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Do not volunteer stored player facts" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "call run_read_only_command even when the same command appears in recent results" in SYSTEM_PROMPT
+    assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "separate Minecraft character" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
     assert "body_chain" not in SYSTEM_PROMPT

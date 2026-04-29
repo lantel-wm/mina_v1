@@ -58,6 +58,7 @@ SCENARIO_DATA = [
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 1},
         "expected_response_any_contains": ["苦力怕", "Creeper", "creeper"],
+        "forbidden_response_contains": ["我来看看", "Let me check"],
         "rubric": "Nearby danger questions should go through the live model and summarize hostile mobs from the snapshot without actions.",
     },
     {
@@ -353,7 +354,7 @@ SCENARIO_DATA = [
             {"name": "run_read_only_command"},
         ],
         "forbidden_model_tools": PRIVATE_MODEL_TOOLS,
-        "forbidden_response_contains": ["樱花林", "MinaE2E-Diamond", "0.5, 80"],
+        "forbidden_response_contains": ["樱花林", "MinaE2E-Diamond", "0.5, 80", "～"],
         "expected_model": {"mode": "at_least", "min_count": 1},
         "rubric": "Ordinary smalltalk should go through the live model without exposing private Fabric executor primitives or unrelated stored memory.",
     },
