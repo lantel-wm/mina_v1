@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 
 import pytest
@@ -39,6 +40,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "nearby_log_block_snapshot_live_model" in names
     assert "world_status_snapshot_live_model" in names
     assert "current_date_context_live_model" in names
+    assert "tomorrow_date_context_live_model" in names
     assert "read_only_time_command_live_model" in names
     assert "exact_read_only_time_command_live_model" in names
     assert "exact_gametime_command_live_model" in names
@@ -61,6 +63,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "spawn_distance_response_matches_snapshot" in SCENARIOS["spawn_distance_snapshot_live_model"].trace_invariants
     assert "spawn_coordinates_response_matches_snapshot" in SCENARIOS["spawn_coordinates_snapshot_live_model"].trace_invariants
     assert "response_contains_current_date" in SCENARIOS["current_date_context_live_model"].trace_invariants
+    assert "response_contains_tomorrow_date" in SCENARIOS["tomorrow_date_context_live_model"].trace_invariants
 
 
 def test_parse_args_rejects_removed_body_suite() -> None:
@@ -84,6 +87,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
                 "concise_single_sentence_response",
                 "non_empty_final_model_content",
                 "response_contains_current_date",
+                "response_contains_tomorrow_date",
                 "single_memory_write_tool_call",
                 "single_read_only_command_action",
                 "spawn_coordinates_response_matches_snapshot",
@@ -827,7 +831,7 @@ def test_trace_invariant_accepts_current_date_response(tmp_path, monkeypatch) ->
         trace_invariants=["response_contains_current_date"],
     )
     runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
-    monkeypatch.setattr(e2e_runner, "_current_local_date", lambda: "2026-04-30")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
     monkeypatch.setattr(
         runner,
         "_combined",
@@ -836,7 +840,34 @@ def test_trace_invariant_accepts_current_date_response(tmp_path, monkeypatch) ->
                 "request_id": "req-date",
                 "status": "ok",
                 "finish_reason": "stop",
+                "created_at": created_at,
                 "response_json": json.dumps({"content": "2026-04-30"}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_accepts_tomorrow_date_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="tomorrow-date",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_tomorrow_date"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-date",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": "2026-05-01"}),
             }
         ] if key == "model_calls" else [],
     )
@@ -852,7 +883,7 @@ def test_trace_invariant_rejects_wrong_current_date_response(tmp_path, monkeypat
         trace_invariants=["response_contains_current_date"],
     )
     runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
-    monkeypatch.setattr(e2e_runner, "_current_local_date", lambda: "2026-04-30")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
     monkeypatch.setattr(
         runner,
         "_combined",
@@ -861,10 +892,11 @@ def test_trace_invariant_rejects_wrong_current_date_response(tmp_path, monkeypat
                 "request_id": "req-date",
                 "status": "ok",
                 "finish_reason": "stop",
+                "created_at": created_at,
                 "response_json": json.dumps({"content": "2025-01-01"}),
             }
         ] if key == "model_calls" else [],
     )
 
-    with pytest.raises(AssertionError, match="current date"):
+    with pytest.raises(AssertionError, match="expected runtime date"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001

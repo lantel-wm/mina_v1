@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
@@ -152,6 +152,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "non_empty_final_model_content",
         "plain_chat_response",
         "response_contains_current_date",
+        "response_contains_tomorrow_date",
         "single_memory_write_tool_call",
         "single_read_only_command_action",
         "spawn_coordinates_response_matches_snapshot",
@@ -786,7 +787,7 @@ class E2ERunner:
                     raise AssertionError(
                         f"{scenario.name}: response trace contained non-plain-chat character {match.group(0)!r}"
                     )
-            elif invariant == "response_contains_current_date":
+            elif invariant in {"response_contains_current_date", "response_contains_tomorrow_date"}:
                 calls = self._combined("model_calls", scenario.request_ids())
                 final_content = "\n".join(
                     _model_content_preview(call).strip()
@@ -795,10 +796,12 @@ class E2ERunner:
                     and call.get("finish_reason") != "tool_calls"
                     and _model_content_preview(call).strip()
                 )
-                expected = _current_local_date()
+                days = 1 if invariant == "response_contains_tomorrow_date" else 0
+                expected = _runtime_date_for_model_calls(calls, days=days)
                 if expected not in final_content:
                     raise AssertionError(
-                        f"{scenario.name}: final response did not include current date {expected}: {final_content!r}"
+                        f"{scenario.name}: final response did not include expected runtime date "
+                        f"{expected}: {final_content!r}"
                     )
             elif invariant == "spawn_distance_response_matches_snapshot":
                 calls = self._combined("model_calls", scenario.request_ids())
@@ -1531,8 +1534,14 @@ def _model_content_preview(call: dict[str, Any]) -> str:
     return str(response.get("content") or response.get("content_preview") or "")
 
 
-def _current_local_date() -> str:
-    return datetime.now().astimezone().date().isoformat()
+def _runtime_date_for_model_calls(calls: list[dict[str, Any]], *, days: int = 0) -> str:
+    for call in calls:
+        if call.get("status") != "ok" or call.get("finish_reason") == "tool_calls":
+            continue
+        created_at = _float_value(call.get("created_at"))
+        if created_at is not None:
+            return (datetime.fromtimestamp(created_at).astimezone().date() + timedelta(days=days)).isoformat()
+    return (datetime.now().astimezone().date() + timedelta(days=days)).isoformat()
 
 
 def _sentence_terminal_count(content: str) -> int:

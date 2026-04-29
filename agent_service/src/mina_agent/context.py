@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import re
 from typing import Any
@@ -163,13 +163,16 @@ def build_runtime_context(now: datetime | None = None) -> str:
         current = now
     offset = current.strftime("%z")
     offset_display = f"{offset[:3]}:{offset[3:]}" if offset else "local"
+    current_date = current.date()
     return "\n".join(
         [
             "Runtime:",
-            f"- current_date: {current.date().isoformat()}",
+            f"- yesterday_date: {(current_date - timedelta(days=1)).isoformat()}",
+            f"- current_date: {current_date.isoformat()}",
+            f"- tomorrow_date: {(current_date + timedelta(days=1)).isoformat()}",
             f"- current_time: {current.strftime('%H:%M:%S')}",
             f"- utc_offset: {offset_display}",
-            "- Use current_date for today, tomorrow, yesterday, 今天, 明天, and 昨天.",
+            "- Use these date fields for today, tomorrow, yesterday, 今天, 明天, and 昨天.",
         ]
     )
 

@@ -896,6 +896,39 @@ SCENARIO_DATA = [
         "rubric": "Relative date questions should be answered from the dynamic sidecar runtime context, without web or Minecraft command tools.",
     },
     {
+        "name": "tomorrow_date_context_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "knowledge"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "tomorrow-date-context-live-model",
+                "value": "明天是哪一天？请只回答 YYYY-MM-DD。",
+                "wait_for": ["mina turn response requestId=tomorrow-date-context-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "forbidden_model_tools": PRIVATE_MODEL_TOOLS,
+        "expected_model": {"mode": "exact", "count": 1},
+        "forbidden_response_contains": [
+            "Runtime",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "web_search",
+            "run_read_only_command",
+            "明天是",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command", "response_contains_tomorrow_date"],
+        "rubric": "Tomorrow-date questions should be answered from dynamic runtime context, without local routing or tools.",
+    },
+    {
         "name": "read_only_time_command_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],

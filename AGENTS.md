@@ -40,7 +40,7 @@ Mina uses a sidecar architecture.
 
 - The Fabric mod registers `/mina <content>` and `/mina-admin ...`, samples Minecraft player/world state, and executes approved read-only Minecraft actions on the server thread.
 - The Python sidecar handles DeepSeek API calls, agent tool loops, SQLite memory, SearXNG search, and MCP integration points. Runtime turns are LLM-first when `MINA_API_KEY` is configured; deterministic code should stay at safety/tool boundaries, not as player-facing intent routes.
-- The sidecar injects dynamic runtime context, including current local date/time and UTC offset, as a separate prompt section so the model can resolve relative-date wording without a local intent route.
+- The sidecar injects dynamic runtime context, including yesterday/current/tomorrow local dates, current local time, and UTC offset, as a separate prompt section so the model can resolve relative-date wording without a local intent route.
 - The current product scope is text conversation, knowledge/search, memory, tightly constrained read-only Minecraft commands, and player/world state observation.
 - There is no separate controllable Mina character in the runtime. Movement, mining, attacking, item use, and world mutation tools are not model-facing and should not be reintroduced.
 - Model-facing tools are limited to `web_search`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.
@@ -116,7 +116,7 @@ UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario read_only_time_command_live_model --require-live-model
 ```
 
-The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar, starts a deterministic SearXNG-compatible search fixture unless `--searxng-url` is provided, and starts a dedicated Fabric server in `build/e2e/server`. Built-in scenarios cover LLM-mediated player/world observation, runtime-date context, read-only command tool selection, web-search tool use and filtering, memory tool use, companion tick alerts, smalltalk, and write-command refusal.
+The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar, starts a deterministic SearXNG-compatible search fixture unless `--searxng-url` is provided, and starts a dedicated Fabric server in `build/e2e/server`. Built-in scenarios cover LLM-mediated player/world observation, runtime-date and relative-date context, read-only command tool selection, web-search tool use and filtering, memory tool use, companion tick alerts, smalltalk, and write-command refusal.
 
 Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `run_manifest.json`, root `summary.json`, `trace-summary.json`, root `trace.jsonl`, `scenario_summaries.jsonl`, `server.log`, `sidecar.log`, `sidecar-stdout.log`, per-scenario `manifest.json`, per-scenario `summary.json`, `final_snapshot.json`, `trace.json`, `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, and `/v1/traces/{request_id}` for focused debugging.
 
