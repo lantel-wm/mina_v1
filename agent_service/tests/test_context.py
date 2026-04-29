@@ -28,6 +28,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
     assert "Player name/username" in SYSTEM_PROMPT
     assert "online player count/names" in SYSTEM_PROMPT
+    assert "server rules (PVP/command blocks)" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
     assert "game mode" in SYSTEM_PROMPT
     assert "inventory contents/counts" in SYSTEM_PROMPT
@@ -689,6 +690,8 @@ def test_context_summary_includes_world_state_for_observation() -> None:
                 "player_distance_from_spawn": 176.0,
                 "online_players": 1,
                 "online_player_names": ["Tester"],
+                "pvp_allowed": True,
+                "command_blocks_enabled": True,
             },
         },
     }
@@ -707,6 +710,8 @@ def test_context_summary_includes_world_state_for_observation() -> None:
     assert '"player_distance_from_spawn_display": "176 格"' in summary
     assert '"online_players": 1' in summary
     assert '"online_player_names": ["Tester"]' in summary
+    assert '"pvp_allowed": true' in summary
+    assert '"command_blocks_enabled": true' in summary
 
 
 def test_build_messages_does_not_add_explicit_command_keyword_hint(tmp_path) -> None:

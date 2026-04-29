@@ -577,6 +577,39 @@ SCENARIO_DATA = [
         "rubric": "Difficulty questions should answer from Fabric world_state.difficulty without command execution or unrelated player status.",
     },
     {
+        "name": "server_rules_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "server-rules-snapshot-live-model",
+                "value": "这个服务器允许 PVP 吗？命令方块启用了吗？只回答 true true。",
+                "wait_for": ["mina turn response requestId=server-rules-snapshot-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["true true"],
+        "forbidden_response_contains": [
+            "false",
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "run_read_only_command",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Server-rule questions should answer from Fabric world_state.pvp_allowed and command_blocks_enabled without command execution.",
+    },
+    {
         "name": "spawn_distance_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
