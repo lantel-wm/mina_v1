@@ -193,7 +193,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Seed: [98765]" in context
     assert "Tool selection reminder" not in context
     assert "final user message itself is an allowed command text" not in context
-    assert "The exact command `list` must call run_read_only_command" not in context
+    assert "The exact commands `list` and `list uuids` must call run_read_only_command" not in context
     assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
@@ -215,7 +215,24 @@ def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:
     assert "Tool selection reminder" in context
     assert "final user message itself is an allowed command text" in context
     assert "Do not answer exact command text with recent output" in context
-    assert "The exact command `list` must call run_read_only_command" in context
+    assert "The exact commands `list` and `list uuids` must call run_read_only_command" in context
+
+
+def test_command_policy_reminder_is_dynamic_for_exact_list_uuids_command(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-list-uuids",
+        "trigger": "command",
+        "message": "list uuids",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
+
+    assert "Tool selection reminder" in context
+    assert "final user message itself is an allowed command text" in context
+    assert "list uuids" in context
 
 
 def test_command_policy_reminder_is_dynamic_for_explicit_command_request(tmp_path) -> None:

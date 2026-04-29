@@ -42,6 +42,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "exact_read_only_time_command_live_model" in names
     assert "weather_query_command_live_model" in names
     assert "exact_player_list_live_model" in names
+    assert "exact_player_list_uuids_live_model" in names
     assert "read_only_command_result_recall_live_model" in names
     assert "web_search_fixture_filters_injection_live_model" in names
     assert "web_search_top_level_answer_live_model" in names

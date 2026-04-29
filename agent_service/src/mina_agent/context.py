@@ -77,7 +77,7 @@ COMMAND_POLICY_REMINDER = (
     "not text. Do not answer exact command text with recent output. Exact command strings are commands, not observations. "
     "Must call the tool for: time query day; weather query; list; list uuids; seed; locate structure <id>; locate biome <id>. "
     "For command requests, never answer from snapshot or recent results. Natural-language weather/time/status questions "
-    "are observations; answer from Observed Minecraft state without tools. The exact command `list` must call "
+    "are observations; answer from Observed Minecraft state without tools. The exact commands `list` and `list uuids` must call "
     "run_read_only_command and must not be answered from online_players."
 )
 

@@ -961,6 +961,34 @@ SCENARIO_DATA = [
         "rubric": "Exact player-list commands should go through the live model while proving Fabric command output is captured.",
     },
     {
+        "name": "exact_player_list_uuids_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "command"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "exact-player-list-uuids-live-model",
+                "value": "list uuids",
+                "wait_for": ["mina command callback command=list uuids success=true"],
+                "timeout": 60,
+            }
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "list uuids"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "mina_tester"},
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_write"},
+        ],
+        "expected_model": {"mode": "exact", "count": 1},
+        "trace_invariants": ["no_action_monitor_timeout"],
+        "rubric": "Exact list uuids commands should go through the live model and return Fabric command output instead of being answered from snapshot online players.",
+    },
+    {
         "name": "read_only_seed_command_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],
