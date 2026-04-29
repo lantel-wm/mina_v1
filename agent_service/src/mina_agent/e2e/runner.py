@@ -152,6 +152,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "plain_chat_response",
         "single_memory_write_tool_call",
         "single_read_only_command_action",
+        "spawn_coordinates_response_matches_snapshot",
         "spawn_distance_response_matches_snapshot",
     }
     seen: dict[str, str] = {}
@@ -812,6 +813,35 @@ class E2ERunner:
                 if any(token in final_content for token in squared_tokens):
                     raise AssertionError(
                         f"{scenario.name}: final response appears to use squared spawn distance: {final_content!r}"
+                    )
+            elif invariant == "spawn_coordinates_response_matches_snapshot":
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_content = "\n".join(
+                    _model_content_preview(call).strip()
+                    for call in calls
+                    if call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and _model_content_preview(call).strip()
+                )
+                if not final_content:
+                    raise AssertionError(f"{scenario.name}: no final model content for spawn-coordinate check")
+                snapshot = self._capture_world_snapshot(scenario.name, "spawn_coordinates_invariant")
+                summary = snapshot.get("snapshot_summary") if isinstance(snapshot.get("snapshot_summary"), dict) else {}
+                world = summary.get("world") if isinstance(summary.get("world"), dict) else {}
+                expected = {
+                    "spawn_x": world.get("spawn_x"),
+                    "spawn_y": world.get("spawn_y"),
+                    "spawn_z": world.get("spawn_z"),
+                }
+                missing = [
+                    name
+                    for name, value in expected.items()
+                    if not _coordinate_value_appears(final_content, value)
+                ]
+                if missing:
+                    raise AssertionError(
+                        f"{scenario.name}: final response did not include snapshot spawn coordinates "
+                        f"{expected}: {final_content!r}"
                     )
 
     def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
@@ -1504,6 +1534,16 @@ def _distance_number_tokens(value: float) -> list[str]:
         str(int(round(value))),
     }
     return sorted((token for token in tokens if token), key=len, reverse=True)
+
+
+def _coordinate_value_appears(content: str, value: Any) -> bool:
+    coordinate = _float_value(value)
+    if coordinate is None:
+        return False
+    tokens = {_compact_number(coordinate, 2), _compact_number(coordinate, 1)}
+    if coordinate.is_integer():
+        tokens.add(str(int(coordinate)))
+    return any(token and token in content for token in sorted(tokens, key=len, reverse=True))
 
 
 def _compact_number(value: float, digits: int) -> str:

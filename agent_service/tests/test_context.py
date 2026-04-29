@@ -28,6 +28,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
     assert "game mode" in SYSTEM_PROMPT
     assert "world difficulty" in SYSTEM_PROMPT
+    assert "world spawn" in SYSTEM_PROMPT
     assert "held item" in SYSTEM_PROMPT
     assert "dimension" in SYSTEM_PROMPT
     assert "block at/below feet" in SYSTEM_PROMPT

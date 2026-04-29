@@ -283,6 +283,39 @@ SCENARIO_DATA = [
         "rubric": "Spawn-distance questions should use the Fabric snapshot's actual distance from spawn, not squared distance or command execution.",
     },
     {
+        "name": "spawn_coordinates_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "spawn-coordinates-snapshot-live-model",
+                "value": "世界出生点坐标是多少？只回答 X Y Z 三个数字。",
+                "wait_for": ["mina turn response requestId=spawn-coordinates-snapshot-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "天气",
+            "生命",
+            "minecraft:",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command", "spawn_coordinates_response_matches_snapshot"],
+        "rubric": "Spawn-coordinate questions should answer from Fabric world_state.spawn_x/y/z without command execution or unrelated player status.",
+    },
+    {
         "name": "nearby_danger_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation", "safety"],
