@@ -127,6 +127,7 @@ Declarative scenario schema highlights:
 - `request` and `companion_tick` steps require a unique `request_id`; `/v1/traces/{request_id}` is the trace join key.
 - Trace and response assertions: `expected_tools`, `forbidden_tools`, `expected_actions`, `forbidden_actions`, `forbidden_model_tools`, `expected_model`, `expected_response_contains`, and `forbidden_response_contains`.
 - World assertions run `/mina-test assert <name>` after scenario steps.
+- Built-in safe world assertions include `target_log_present`, `upper_log_present`, and `low_health`.
 
 ## Iteration Workflow
 

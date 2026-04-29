@@ -17,6 +17,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.gamerules.GameRules;
 
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
@@ -87,7 +88,8 @@ public final class MinaTestCommands {
 				.then(literal("snapshot").executes(context -> snapshot(context.getSource())))
 				.then(literal("assert")
 					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource())))
-					.then(literal("upper_log_present").executes(context -> assertUpperLogPresent(context.getSource()))))
+					.then(literal("upper_log_present").executes(context -> assertUpperLogPresent(context.getSource())))
+					.then(literal("low_health").executes(context -> assertLowHealth(context.getSource()))))
 		));
 	}
 
@@ -124,8 +126,10 @@ public final class MinaTestCommands {
 
 	private void setupWorldAndRequester(CommandSourceStack source, boolean includeTree) {
 		MinecraftServer server = source.getServer();
-		prepareWorld(source.getLevel(), includeTree);
+		ServerLevel level = source.getLevel();
+		prepareWorld(level, includeTree);
 		run(server, "difficulty peaceful");
+		setNaturalHealthRegeneration(level, server, true);
 		run(server, "kill @e[type=minecraft:creeper]");
 		run(server, "kill @e[type=minecraft:sheep]");
 		run(server, "kill @e[type=minecraft:item]");
@@ -262,6 +266,9 @@ public final class MinaTestCommands {
 			source.sendFailure(Component.literal("Test requester is not online."));
 			return 0;
 		}
+		setNaturalHealthRegeneration(source.getLevel(), source.getServer(), false);
+		requester.getFoodData().setFoodLevel(20);
+		requester.getFoodData().setSaturation(5.0F);
 		requester.setHealth(4.0F);
 		source.sendSuccess(() -> Component.literal("Mina test world mutate low_health complete."), false);
 		return 1;
@@ -386,11 +393,30 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
+	private int assertLowHealth(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Mina test low_health failed: test requester is not online."));
+			return 0;
+		}
+		float health = requester.getHealth();
+		if (health > 4.5F) {
+			source.sendFailure(Component.literal("Mina test low_health failed: health was " + health + "."));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("Mina test low_health passed."), false);
+		return 1;
+	}
+
 	private static void run(MinecraftServer server, String command) {
 		server.getCommands().performPrefixedCommand(
 			server.createCommandSourceStack().withMaximumPermission(PermissionSet.ALL_PERMISSIONS),
 			command
 		);
+	}
+
+	private static void setNaturalHealthRegeneration(ServerLevel level, MinecraftServer server, boolean enabled) {
+		level.getGameRules().set(GameRules.NATURAL_HEALTH_REGENERATION, enabled, server);
 	}
 
 	private static void prepareWorld(ServerLevel level, boolean includeTree) {

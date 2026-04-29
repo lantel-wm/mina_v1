@@ -53,6 +53,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert all("no_mcp_tool_exposed" in scenario.trace_invariants for scenario in SCENARIOS.values())
     assert all("no_internal_label_leak" in scenario.trace_invariants for scenario in SCENARIOS.values())
     assert "no_model_tools_exposed" in SCENARIOS["companion_low_health_live_model"].trace_invariants
+    assert SCENARIOS["companion_low_health_live_model"].world_asserts == ["low_health"]
     assert "concise_single_sentence_response" in SCENARIOS["smalltalk_live_model_no_tools"].trace_invariants
     assert "spawn_distance_response_matches_snapshot" in SCENARIOS["spawn_distance_snapshot_live_model"].trace_invariants
     assert "spawn_coordinates_response_matches_snapshot" in SCENARIOS["spawn_coordinates_snapshot_live_model"].trace_invariants

@@ -1366,6 +1366,7 @@ SCENARIO_DATA = [
                 "timeout": 60,
             },
         ],
+        "world_asserts": ["low_health"],
         "forbidden_tools": [
             {"name": "web_search"},
             {"name": "memory_search"},
