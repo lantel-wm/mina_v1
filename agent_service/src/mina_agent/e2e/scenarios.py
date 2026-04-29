@@ -929,6 +929,39 @@ SCENARIO_DATA = [
         "rubric": "Tomorrow-date questions should be answered from dynamic runtime context, without local routing or tools.",
     },
     {
+        "name": "current_time_context_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "knowledge"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "current-time-context-live-model",
+                "value": "现在现实时间是几点？请只回答 HH:MM。",
+                "wait_for": ["mina turn response requestId=current-time-context-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "forbidden_model_tools": PRIVATE_MODEL_TOOLS,
+        "expected_model": {"mode": "exact", "count": 1},
+        "forbidden_response_contains": [
+            "Runtime",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "web_search",
+            "run_read_only_command",
+            "现在是",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command", "response_contains_current_minute"],
+        "rubric": "Current real-time questions should be answered from dynamic runtime context, without local routing or tools.",
+    },
+    {
         "name": "read_only_time_command_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "command"],

@@ -171,8 +171,9 @@ def build_runtime_context(now: datetime | None = None) -> str:
             f"- current_date: {current_date.isoformat()}",
             f"- tomorrow_date: {(current_date + timedelta(days=1)).isoformat()}",
             f"- current_time: {current.strftime('%H:%M:%S')}",
+            f"- current_minute: {current.strftime('%H:%M')}",
             f"- utc_offset: {offset_display}",
-            "- Use these date fields for today, tomorrow, yesterday, 今天, 明天, and 昨天.",
+            "- Use these date/time fields for today, tomorrow, yesterday, now, 今天, 明天, 昨天, and 现在.",
         ]
     )
 

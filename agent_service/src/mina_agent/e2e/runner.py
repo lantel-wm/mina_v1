@@ -152,6 +152,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "non_empty_final_model_content",
         "plain_chat_response",
         "response_contains_current_date",
+        "response_contains_current_minute",
         "response_contains_tomorrow_date",
         "single_memory_write_tool_call",
         "single_read_only_command_action",
@@ -802,6 +803,21 @@ class E2ERunner:
                     raise AssertionError(
                         f"{scenario.name}: final response did not include expected runtime date "
                         f"{expected}: {final_content!r}"
+                    )
+            elif invariant == "response_contains_current_minute":
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_content = "\n".join(
+                    _model_content_preview(call).strip()
+                    for call in calls
+                    if call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and _model_content_preview(call).strip()
+                )
+                expected = _runtime_minute_candidates_for_model_calls(calls)
+                if not any(candidate in final_content for candidate in expected):
+                    raise AssertionError(
+                        f"{scenario.name}: final response did not include expected runtime minute "
+                        f"one of {expected}: {final_content!r}"
                     )
             elif invariant == "spawn_distance_response_matches_snapshot":
                 calls = self._combined("model_calls", scenario.request_ids())
@@ -1542,6 +1558,22 @@ def _runtime_date_for_model_calls(calls: list[dict[str, Any]], *, days: int = 0)
         if created_at is not None:
             return (datetime.fromtimestamp(created_at).astimezone().date() + timedelta(days=days)).isoformat()
     return (datetime.now().astimezone().date() + timedelta(days=days)).isoformat()
+
+
+def _runtime_minute_candidates_for_model_calls(calls: list[dict[str, Any]], *, tolerance_minutes: int = 2) -> list[str]:
+    current = datetime.now().astimezone()
+    for call in calls:
+        if call.get("status") != "ok" or call.get("finish_reason") == "tool_calls":
+            continue
+        created_at = _float_value(call.get("created_at"))
+        if created_at is not None:
+            current = datetime.fromtimestamp(created_at).astimezone()
+            break
+    base = current.replace(second=0, microsecond=0)
+    return [
+        (base + timedelta(minutes=delta)).strftime("%H:%M")
+        for delta in range(-tolerance_minutes, tolerance_minutes + 1)
+    ]
 
 
 def _sentence_terminal_count(content: str) -> int:

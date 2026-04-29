@@ -41,6 +41,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "world_status_snapshot_live_model" in names
     assert "current_date_context_live_model" in names
     assert "tomorrow_date_context_live_model" in names
+    assert "current_time_context_live_model" in names
     assert "read_only_time_command_live_model" in names
     assert "exact_read_only_time_command_live_model" in names
     assert "exact_gametime_command_live_model" in names
@@ -64,6 +65,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "spawn_coordinates_response_matches_snapshot" in SCENARIOS["spawn_coordinates_snapshot_live_model"].trace_invariants
     assert "response_contains_current_date" in SCENARIOS["current_date_context_live_model"].trace_invariants
     assert "response_contains_tomorrow_date" in SCENARIOS["tomorrow_date_context_live_model"].trace_invariants
+    assert "response_contains_current_minute" in SCENARIOS["current_time_context_live_model"].trace_invariants
 
 
 def test_parse_args_rejects_removed_body_suite() -> None:
@@ -87,6 +89,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
                 "concise_single_sentence_response",
                 "non_empty_final_model_content",
                 "response_contains_current_date",
+                "response_contains_current_minute",
                 "response_contains_tomorrow_date",
                 "single_memory_write_tool_call",
                 "single_read_only_command_action",
@@ -875,6 +878,62 @@ def test_trace_invariant_accepts_tomorrow_date_response(tmp_path, monkeypatch) -
     runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
+def test_trace_invariant_accepts_current_minute_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="current-minute",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_current_minute"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
+    expected = datetime.fromtimestamp(created_at).astimezone().strftime("%H:%M")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-time",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": expected}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_accepts_nearby_current_minute_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="current-minute-nearby",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_current_minute"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
+    expected = e2e_runner._runtime_minute_candidates_for_model_calls(  # noqa: SLF001
+        [{"status": "ok", "finish_reason": "stop", "created_at": created_at}]
+    )[0]
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-time",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": expected}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
 def test_trace_invariant_rejects_wrong_current_date_response(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="current-date",
@@ -899,4 +958,37 @@ def test_trace_invariant_rejects_wrong_current_date_response(tmp_path, monkeypat
     )
 
     with pytest.raises(AssertionError, match="expected runtime date"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_wrong_current_minute_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="current-minute",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_current_minute"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
+    candidates = set(
+        e2e_runner._runtime_minute_candidates_for_model_calls(  # noqa: SLF001
+            [{"status": "ok", "finish_reason": "stop", "created_at": created_at}]
+        )
+    )
+    wrong = next(candidate for candidate in ("00:00", "04:17", "12:34", "23:59") if candidate not in candidates)
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-time",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": wrong}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="expected runtime minute"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
