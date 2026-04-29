@@ -8,7 +8,7 @@ from .config import Settings
 from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
-from .policy import ResponsePolicyRuntime, is_tool_error
+from .policy import ResponsePolicyRuntime, is_tool_error, normalize_health_unit_claims
 from .schemas import TurnResponse
 from .tools import (
     ToolRunner,
@@ -181,7 +181,7 @@ class AgentHarness:
                         state.messages.append({"role": "system", "content": review.repair_message})
                         self._debug("turn repair request_id=%s reason=%s", request_id, review.repair_reason)
                         continue
-                    content = review.content
+                    content = normalize_health_unit_claims(review.content, turn.get("snapshot"))
                     if content:
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
                         self._debug("turn final request_id=%s messages=1 actions=%s", request_id, len(state.actions))
@@ -340,7 +340,12 @@ def _companion_empty_message(turn: dict[str, Any]) -> str | None:
     health = _float_value(player_state.get("health"))
     max_health = _float_value(player_state.get("max_health")) or 20.0
     if health is not None and health <= max(6.0, max_health * 0.5):
-        return f"你的生命值偏低（{_format_number(health)}/{_format_number(max_health)}），先注意安全并尽快恢复。"
+        return (
+            "你的生命值偏低（"
+            f"{_format_number(health)}/{_format_number(max_health)}点，"
+            f"约{_format_number(health / 2.0)}/{_format_number(max_health / 2.0)}颗心），"
+            "先注意安全并尽快恢复。"
+        )
     nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
     for entity in nearby_entities:
         if not isinstance(entity, dict) or entity.get("category") != "hostile":

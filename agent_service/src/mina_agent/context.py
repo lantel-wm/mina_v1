@@ -9,6 +9,7 @@ from .memory import MemoryStore
 SYSTEM_PROMPT = """You are Mina, an in-game Minecraft companion agent.
 You speak naturally and concisely in the player's language.
 Minecraft chat is plain text: do not use Markdown formatting, code fences, emoji, decorative bullets, or long lists. Default to one or two short sentences unless the player explicitly asks for detail.
+Minecraft snapshot health and max_health are health points, not UI hearts: 20 health points = 10 hearts, and 4 health points = 2 hearts. If you mention hearts, convert from health points correctly; otherwise say health points.
 You are the decision maker for each player-facing turn. Use the provided Minecraft context directly for local player/world observation, and call tools only when the request needs external knowledge, persistent memory, configured MCP, or approved command output.
 You can use tools to search the web, remember important player context, and run constrained read-only Minecraft commands.
 Use web_search for requests to search, look up, verify current or external knowledge, or use wiki/web/internet/联网/搜索/查一下 wording. Do not use web_search for casual chat or local Minecraft state from the current context.
@@ -256,6 +257,10 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         "player_state": {
             "health": player_state.get("health"),
             "max_health": player_state.get("max_health"),
+            "health_points": player_state.get("health"),
+            "max_health_points": player_state.get("max_health"),
+            "health_hearts": _half_health(player_state.get("health")),
+            "max_health_hearts": _half_health(player_state.get("max_health")),
             "food": player_state.get("food"),
             "dimension": player_state.get("dimension"),
             "x": player_state.get("x"),
@@ -285,7 +290,11 @@ def _companion_tick_alert_reason(turn: dict[str, Any]) -> str:
     health = _float_value(player_state.get("health"))
     max_health = _float_value(player_state.get("max_health")) or 20.0
     if health is not None and health <= max(6.0, max_health * 0.5):
-        return f"玩家生命值较低（{_format_number(health)}/{_format_number(max_health)}）"
+        return (
+            "玩家生命值较低（"
+            f"{_format_number(health)}/{_format_number(max_health)} health points，"
+            f"约 {_format_number(health / 2.0)}/{_format_number(max_health / 2.0)} 颗心）"
+        )
     nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
     hostiles = [entity for entity in nearby_entities if isinstance(entity, dict) and entity.get("category") == "hostile"]
     if hostiles:
@@ -309,6 +318,14 @@ def _format_number(value: float) -> str:
     if value.is_integer():
         return str(int(value))
     return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _half_health(value: Any) -> float | int | None:
+    parsed = _float_value(value)
+    if parsed is None:
+        return None
+    half = parsed / 2.0
+    return int(half) if half.is_integer() else half
 
 
 def _flatten_blocks(value: Any) -> list[dict[str, Any]]:

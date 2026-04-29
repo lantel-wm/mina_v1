@@ -329,7 +329,7 @@ SCENARIO_DATA = [
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 1},
         "expected_response_any_contains": ["生命值", "血量", "颗心"],
-        "forbidden_response_contains": ["没有生成可执行回应"],
+        "forbidden_response_contains": ["没有生成可执行回应", "4颗心", "4 颗心", "4 hearts"],
         "trace_invariants": ["non_empty_final_model_content"],
         "rubric": "Emergency companion ticks should go through the live model while staying read-only.",
     },

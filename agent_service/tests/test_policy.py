@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from mina_agent.policy import ResponsePolicyRuntime, is_tool_error, minecraft_chat_text
+from mina_agent.policy import (
+    ResponsePolicyRuntime,
+    is_tool_error,
+    minecraft_chat_text,
+    normalize_health_unit_claims,
+)
 
 
 def test_minecraft_chat_text_strips_markdown_and_emoji() -> None:
@@ -43,6 +48,28 @@ def test_policy_replaces_write_command_after_cjk_punctuation() -> None:
     assert not review.needs_repair
     assert "setblock" not in review.content
     assert "不能执行或提供写入世界的命令" in review.content
+
+
+def test_policy_normalizes_health_points_misread_as_hearts() -> None:
+    snapshot = {"player_state": {"health": 4, "max_health": 20}}
+
+    content = normalize_health_unit_claims("你现在只剩4颗心，满值是20颗心。", snapshot)
+
+    assert "4颗心" not in content
+    assert "20颗心" not in content
+    assert "4点生命值（约2颗心）" in content
+    assert "20点生命值（约10颗心）" in content
+
+
+def test_policy_normalizes_english_health_points_misread_as_hearts() -> None:
+    snapshot = {"player_state": {"health": 4, "max_health": 20}}
+
+    content = normalize_health_unit_claims("You have 4 hearts out of 20 hearts.", snapshot)
+
+    assert "4 hearts" not in content
+    assert "20 hearts" not in content
+    assert "4 health points (about 2 hearts)" in content
+    assert "20 health points (about 10 hearts)" in content
 
 
 def test_policy_repairs_memory_claim_until_memory_write_succeeds() -> None:

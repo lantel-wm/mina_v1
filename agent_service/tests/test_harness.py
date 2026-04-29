@@ -524,6 +524,31 @@ def test_companion_low_health_goes_through_model(tmp_path) -> None:
     assert len(model.calls) == 1
 
 
+def test_companion_low_health_corrects_heart_unit_misread(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "你现在只剩4颗心了，先撤退。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+    snapshot = _snapshot()
+    snapshot["player_state"]["health"] = 4
+    snapshot["player_state"]["max_health"] = 20
+    turn = _turn("", "req-companion-health-units", snapshot)
+    turn["trigger"] = "companion_tick"
+
+    response = harness.run_turn(turn)
+
+    content = response["messages"][0]["content"]
+    assert "4颗心" not in content
+    assert "4点生命值（约2颗心）" in content
+
+
 def test_companion_empty_model_low_health_uses_safety_fallback(tmp_path) -> None:
     model = FakeDeepSeek(
         [
@@ -545,6 +570,8 @@ def test_companion_empty_model_low_health_uses_safety_fallback(tmp_path) -> None
     response = harness.run_turn(turn)
 
     assert "生命值偏低" in response["messages"][0]["content"]
+    assert "4/20点" in response["messages"][0]["content"]
+    assert "2/10颗心" in response["messages"][0]["content"]
     assert response["debug"]["empty_companion_safety_fallback"] is True
     assert len(model.calls) == 1
 

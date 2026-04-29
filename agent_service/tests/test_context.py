@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mina_agent.context import SYSTEM_PROMPT, build_messages, build_target_summary
+from mina_agent.context import SYSTEM_PROMPT, build_context_summary, build_messages, build_target_summary
 from mina_agent.memory import MemoryStore
 
 
@@ -82,6 +82,25 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Seed: [98765]" in context
     assert "body_state" not in context
     assert len(context) < 6000
+
+
+def test_context_summary_labels_health_points_and_hearts() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "permissions": {"can_use_actions": True},
+        "snapshot": {
+            "player_state": {"health": 4, "max_health": 20, "food": 20},
+            "nearby_entities": [],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"health_points": 4' in summary
+    assert '"max_health_points": 20' in summary
+    assert '"health_hearts": 2' in summary
+    assert '"max_health_hearts": 10' in summary
 
 
 def test_build_messages_marks_explicit_command_execution_requests(tmp_path) -> None:
@@ -217,4 +236,6 @@ def test_companion_low_health_prompt_marks_alert_reason(tmp_path) -> None:
 
     assert "及时提醒理由" in user_message
     assert "生命值较低" in user_message
+    assert "health points" in user_message
+    assert "2.5/10 颗心" in user_message
     assert "不要调用工具" in user_message

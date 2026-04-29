@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 
 UNSAFE_WRITE_REFUSAL = "抱歉，我不能执行或提供写入世界的命令。我可以帮你查询只读信息，或说明当前方块和世界状态。"
@@ -76,6 +77,40 @@ def minecraft_chat_text(content: str) -> str:
     return text.strip()
 
 
+def normalize_health_unit_claims(content: str, snapshot: dict[str, Any] | None) -> str:
+    if not content or not isinstance(snapshot, dict):
+        return content
+    player_state = snapshot.get("player_state")
+    if not isinstance(player_state, dict):
+        return content
+
+    replacements: dict[float, float] = {}
+    for value in (player_state.get("health"), player_state.get("max_health")):
+        health_points = _float_value(value)
+        if health_points is None:
+            continue
+        hearts = health_points / 2.0
+        if abs(health_points - hearts) > 0.001:
+            replacements[health_points] = hearts
+    if not replacements:
+        return content
+
+    def replace(match: re.Match[str]) -> str:
+        value = _float_value(match.group("value"))
+        unit = match.group("unit")
+        if value is None:
+            return match.group(0)
+        for health_points, hearts in replacements.items():
+            if abs(value - health_points) > 0.001:
+                continue
+            if unit.lower().startswith("heart"):
+                return f"{_format_number(health_points)} health points (about {_format_number(hearts)} hearts)"
+            return f"{_format_number(health_points)}点生命值（约{_format_number(hearts)}颗心）"
+        return match.group(0)
+
+    return _HEALTH_POINTS_AS_HEARTS_RE.sub(replace, content)
+
+
 def contains_write_command_advice(content: str) -> bool:
     return bool(_WRITE_COMMAND_ADVICE_RE.search(content))
 
@@ -119,7 +154,21 @@ def is_tool_error(content: str) -> bool:
     return isinstance(payload, dict) and payload.get("ok") is False
 
 
+def _float_value(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_number(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
 _EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0e\ufe0f\u200d\u20e3]")
+_HEALTH_POINTS_AS_HEARTS_RE = re.compile(r"(?<![\d.])(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>颗心|hearts|heart)")
 _WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(^|[^\w-])"
     r"(?:minecraft:)?"
