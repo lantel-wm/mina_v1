@@ -536,8 +536,8 @@ class SkillRuntime:
             monitor={
                 "type": "follow_requester",
                 "max_distance": 4.0,
-                "grace_ticks": 80,
-                "deadline_ticks": 160,
+                "grace_ticks": 30,
+                "deadline_ticks": 120,
             },
         )
         self._mark_action(task, action)

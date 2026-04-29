@@ -270,6 +270,7 @@ public final class MinaActionExecutor {
 	}
 
 	private void bodyLookAtPosition(MinecraftServer server, ServerPlayer requester, MinaConfig config, JsonObject args) {
+		interruptBodyMovement(server, requester, config);
 		puppetAction(server, requester, config, lookAction(bodyEyePosition(server, config), targetPosition(args)));
 	}
 
@@ -285,6 +286,7 @@ public final class MinaActionExecutor {
 		position.addProperty("x", requester.getX());
 		position.addProperty("y", requester.getEyeY());
 		position.addProperty("z", requester.getZ());
+		interruptBodyMovement(server, requester, config);
 		puppetAction(server, requester, config, lookAction(bodyEyePosition(server, config), targetPosition(position)));
 	}
 
@@ -358,6 +360,11 @@ public final class MinaActionExecutor {
 		requireBodyAvailable(config);
 		clearBodyControls(server, requester, config);
 		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run " + action);
+	}
+
+	private void interruptBodyMovement(MinecraftServer server, ServerPlayer requester, MinaConfig config) {
+		requireBodyAvailable(config);
+		runCommand(server, requester, "puppet " + config.bodyUsername + " actions run minecraft:interrupt_move_to");
 	}
 
 	private void requireBodyAvailable(MinaConfig config) {

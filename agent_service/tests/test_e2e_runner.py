@@ -85,6 +85,11 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert body_planning.expected_model.min_count == 1
     assert any(tool.name == "start_body_task" for tool in body_planning.forbidden_tools)
     assert "body_move_to_position" in body_planning.forbidden_actions
+    sustained_follow = SCENARIOS["body_sustained_follow_repositions_twice_router"]
+    assert any(step.value == "持续跟随我" for step in sustained_follow.steps)
+    assert any(step.value == "move_requester_far_again" for step in sustained_follow.steps)
+    assert sustained_follow.expected_model is not None
+    assert sustained_follow.expected_model.count == 0
     stop_denied = SCENARIOS["body_stop_permission_denied_router"]
     assert any(expected.name == "stop_body_task" and expected.status == "error" for expected in stop_denied.expected_tools)
     assert "body_stop" in stop_denied.forbidden_actions

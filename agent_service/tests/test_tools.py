@@ -196,6 +196,7 @@ def test_start_body_task_schedules_observable_move_when_body_online(tmp_path) ->
     assert action["name"] == "body_move_to_position"
     assert action["task_id"]
     assert action["monitor"]["type"] == "body_near"
+    assert action["monitor"]["radius"] == 1.5
     assert action["step_id"].startswith("move:")
 
 
@@ -1142,6 +1143,8 @@ def test_follow_player_schedules_observable_follow_when_body_online(tmp_path) ->
     action = result.actions[0]
     assert action["name"] == "body_move_to_requester"
     assert action["monitor"]["type"] == "follow_requester"
+    assert action["monitor"]["grace_ticks"] == 30
+    assert action["monitor"]["deadline_ticks"] == 120
     assert action["step_id"].startswith("follow:")
 
 

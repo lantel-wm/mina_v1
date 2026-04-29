@@ -50,6 +50,33 @@ SCENARIO_DATA = [
         "rubric": "Explicit follow intent must be handled by the deterministic body router without main-model calls.",
     },
     {
+        "name": "body_sustained_follow_repositions_twice_router",
+        "fixture": "follow_player",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-sustained-follow-start",
+                "value": "持续跟随我",
+                "wait_for": ["我开始跟随你"],
+            },
+            {"kind": "assert", "value": "follow_player", "timeout": 45},
+            {"kind": "world_mutate", "value": "move_requester_far", "wait_for": ["Mina test requester moved far"]},
+            {"kind": "assert", "value": "follow_player", "timeout": 60},
+            {"kind": "world_mutate", "value": "move_requester_far_again", "wait_for": ["Mina test requester moved far again"]},
+            {"kind": "assert", "value": "follow_player", "timeout": 60},
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "follow_player"'},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_requester"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "world_asserts": ["follow_player"],
+        "rubric": "Sustained follow must recover from repeated requester movement without main-model calls.",
+    },
+    {
         "name": "body_spawn_follow_router",
         "fixture": "follow_player",
         "tags": ["live", "core", "body", "router"],

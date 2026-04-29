@@ -105,6 +105,7 @@ public final class MinaTestCommands {
 				.then(literal("allow_actions").executes(context -> allowActions(context.getSource())))
 				.then(literal("leave_body").executes(context -> leaveBody(context.getSource())))
 				.then(literal("move_requester_far").executes(context -> moveRequesterFar(context.getSource())))
+				.then(literal("move_requester_far_again").executes(context -> moveRequesterFarAgain(context.getSource())))
 				.then(literal("move_body_far").executes(context -> moveBodyFar(context.getSource())))
 				.then(literal("remove_target_log").executes(context -> removeTargetLog(context.getSource())))
 				.then(literal("snapshot").executes(context -> snapshot(context.getSource())))
@@ -305,6 +306,7 @@ public final class MinaTestCommands {
 				yield 1;
 			}
 			case "move_requester_far" -> moveRequesterFar(source);
+			case "move_requester_far_again" -> moveRequesterFarAgain(source);
 			case "move_body_far" -> moveBodyFar(source);
 			case "deny_actions" -> denyActions(source);
 			case "allow_actions" -> allowActions(source);
@@ -337,6 +339,17 @@ public final class MinaTestCommands {
 		}
 		run(source.getServer(), "tp " + TEST_PLAYER + " 4.5 " + TREE_Y + " -4.5 0 0");
 		source.sendSuccess(() -> Component.literal("Mina test requester moved far."), false);
+		return 1;
+	}
+
+	private int moveRequesterFarAgain(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		run(source.getServer(), "tp " + TEST_PLAYER + " -4.5 " + TREE_Y + " 4.5 0 0");
+		source.sendSuccess(() -> Component.literal("Mina test requester moved far again."), false);
 		return 1;
 	}
 
