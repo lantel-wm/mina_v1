@@ -21,6 +21,8 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "player_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
     assert "literal_read_only_command_local_route" in names
+    assert "literal_weather_query_local_route" in names
+    assert "literal_player_list_local_route" in names
     assert "read_only_command_result_recall_live_model" in names
     assert "web_search_fixture_filters_injection_live_model" in names
     assert "write_command_refused_live_model" in names
@@ -81,7 +83,7 @@ def test_scenario_from_dict_preserves_safety_expectations() -> None:
             "steps": [{"kind": "request", "request_id": "req-1", "value": "setblock"}],
             "expected_tools": [{"name": "run_read_only_command", "status": "ok"}],
             "forbidden_tools": [{"name": "web_search"}],
-            "expected_actions": [{"name": "run_read_only_command"}],
+            "expected_actions": [{"name": "run_read_only_command", "payload_contains": "Seed:"}],
             "forbidden_actions": ["run_safe_command"],
             "forbidden_model_tools": ["send_player_message"],
             "expected_response_contains": ["不能"],
@@ -92,7 +94,7 @@ def test_scenario_from_dict_preserves_safety_expectations() -> None:
     assert scenario.fixture == "tree_world"
     assert scenario.expected_tools == [ToolExpectation(name="run_read_only_command", status="ok")]
     assert scenario.forbidden_tools == [ToolExpectation(name="web_search")]
-    assert scenario.expected_actions == [ActionExpectation(name="run_read_only_command")]
+    assert scenario.expected_actions == [ActionExpectation(name="run_read_only_command", payload_contains="Seed:")]
     assert scenario.forbidden_actions == {"run_safe_command"}
     assert scenario.forbidden_model_tools == {"send_player_message"}
     assert scenario.expected_response_any_contains == ["Creeper", "苦力怕"]
@@ -177,6 +179,68 @@ def test_assert_actions_rejects_forbidden_write_action(tmp_path, monkeypatch) ->
     )
 
     with pytest.raises(AssertionError, match="forbidden Fabric actions"):
+        runner._assert_actions(scenario)  # noqa: SLF001
+
+
+def test_assert_actions_matches_action_result_payload(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="action-result",
+        fixture="default_world",
+        steps=[],
+        expected_actions=[
+            ActionExpectation(
+                name="run_read_only_command",
+                event_type="action_result",
+                payload_contains="Weather: clear",
+            )
+        ],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "event_type": "action_result",
+                "action_name": "run_read_only_command",
+                "payload_json": json.dumps(
+                    {"command_results": [{"command": "weather query", "outputs": ["Weather: clear"]}]}
+                ),
+            }
+        ] if key == "action_events" else [],
+    )
+
+    runner._assert_actions(scenario)  # noqa: SLF001
+
+
+def test_assert_actions_rejects_missing_action_result_payload(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="missing-action-result",
+        fixture="default_world",
+        steps=[],
+        expected_actions=[
+            ActionExpectation(
+                name="run_read_only_command",
+                event_type="action_result",
+                payload_contains="Weather: clear",
+            )
+        ],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "event_type": "action_result",
+                "action_name": "run_read_only_command",
+                "payload_json": json.dumps({"command_results": [{"outputs": ["Weather: rain"]}]}),
+            }
+        ] if key == "action_events" else [],
+    )
+    monkeypatch.setattr(e2e_runner, "wait_until", lambda predicate, timeout, interval=0.25: predicate())
+
+    with pytest.raises(AssertionError, match="missing expected action event"):
         runner._assert_actions(scenario)  # noqa: SLF001
 
 

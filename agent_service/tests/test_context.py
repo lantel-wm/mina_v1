@@ -11,6 +11,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Agent memory" in SYSTEM_PROMPT or "agent memory" in SYSTEM_PROMPT
     assert "Do not volunteer stored player facts" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
+    assert "call run_read_only_command even when the same command appears in recent results" in SYSTEM_PROMPT
     assert "separate Minecraft character" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
     assert "body_chain" not in SYSTEM_PROMPT
@@ -81,6 +82,66 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Seed: [98765]" in context
     assert "body_state" not in context
     assert len(context) < 6000
+
+
+def test_build_messages_marks_explicit_command_execution_requests(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.record_action_event(
+        "old-command",
+        "action_result",
+        {
+            "action_id": "old-action",
+            "name": "run_read_only_command",
+            "status": "completed",
+            "command_success": True,
+            "command_results": [{"command": "time query day", "outputs": ["The time is 0"]}],
+        },
+    )
+    turn = {
+        "request_id": "req-1",
+        "trigger": "command",
+        "message": "执行 time query day",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"world_state": {"day_time": 1200}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "explicit Minecraft command execution request" in content
+    assert "Do not answer it from the current snapshot" in content
+
+
+def test_build_messages_does_not_mark_plain_observation_as_command_execution(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-1",
+        "trigger": "command",
+        "message": "现在是第几天？",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"world_state": {"day_time": 1200}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "explicit Minecraft command execution request" not in content
+
+
+def test_build_messages_does_not_mark_command_result_followup_as_execution(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-1",
+        "trigger": "command",
+        "message": "刚才 time query day 的 Minecraft 命令输出是什么？",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "explicit Minecraft command execution request" not in content
 
 
 def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) -> None:

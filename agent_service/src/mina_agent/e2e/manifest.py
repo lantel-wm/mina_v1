@@ -19,6 +19,7 @@ class ActionExpectation:
     name: str
     step_id: str = ""
     event_type: str = "action_scheduled"
+    payload_contains: str = ""
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ def scenario_from_dict(payload: dict[str, Any]) -> Scenario:
                 name=str(item["name"]),
                 step_id=str(item.get("step_id") or ""),
                 event_type=str(item.get("event_type") or "action_scheduled"),
+                payload_contains=str(item.get("payload_contains") or ""),
             )
             for item in payload.get("expected_actions", [])
         ],

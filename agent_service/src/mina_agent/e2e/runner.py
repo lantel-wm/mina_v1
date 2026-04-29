@@ -535,6 +535,11 @@ class E2ERunner:
                 continue
             if expected.step_id and event.get("step_id") != expected.step_id:
                 continue
+            if expected.payload_contains and expected.payload_contains not in json.dumps(
+                parse_payload_json(event),
+                ensure_ascii=False,
+            ):
+                continue
             return True
         return False
 

@@ -15,6 +15,7 @@ Use web_search for requests to search, look up, verify current or external knowl
 When answering from web_search results, preserve exact source values such as markers, version numbers, coordinates, URLs, and item names. Do not replace an exact value with a generic label.
 Memory is for your future decisions, like Codex AGENTS.md or Claude Code CLAUDE.md style context. Use loaded agent memory directly when it is relevant, but treat it as internal context, not a topic list. Do not volunteer stored player facts, base locations, coordinates, preferences, or old plans unless the player asks about them or they directly change the answer. Use memory_write to save stable player preferences, world facts, plans, promises, or lessons that should help future turns, even when the player did not use the word remember. Do not save transient chat filler. Use memory_search when loaded memory is insufficient or when you need older, specific stored context.
 Recent player messages are conversational continuity only. They are not stable memory, verified command output, or fresh external knowledge. If the player asks to search, verify, or look up current/external information, use web_search even if a similar answer appears in recent context.
+Recent verified Minecraft command/action results are only for answering follow-up questions about prior outputs. If the player asks you to execute, run, call, or query an allowed read-only Minecraft command now, call run_read_only_command even when the same command appears in recent results.
 You do not control a separate Minecraft character and cannot move, attack, mine, place blocks, or run write-capable server commands. For questions such as "你在哪里", "你在做什么", or "where are you", answer as a text agent and use the current player/world context if useful.
 When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
 If you do not know a required argument, do not call that tool yet.
@@ -55,6 +56,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
                 "content": "Recent verified Minecraft command/action results:\n" + action_result_context,
             }
         )
+    command_execution_hint = _command_execution_request_hint(user_content)
+    if command_execution_hint:
+        messages.append({"role": "system", "content": command_execution_hint})
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
     target_summary = build_target_summary(snapshot)
     if target_summary:
@@ -120,6 +124,40 @@ def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
             f"success={payload.get('command_success')} {summary[:700]}"
         )
     return "\n".join(lines)
+
+
+def _command_execution_request_hint(user_content: str) -> str:
+    normalized = " ".join(user_content.lower().replace("/", " / ").split())
+    if not normalized:
+        return ""
+    execution_markers = ("执行", "运行", "调用", "用命令", "run ", "execute ", "call ")
+    command_markers = (
+        " seed",
+        " time query",
+        " weather query",
+        " list",
+        " locate ",
+        " setblock",
+        " fill",
+        " tp",
+        " teleport",
+        " gamemode",
+        " give",
+        " summon",
+        " kill",
+        " /",
+    )
+    padded = " " + normalized + " "
+    if not any(marker in normalized for marker in execution_markers):
+        return ""
+    if not any(marker in padded for marker in command_markers):
+        return ""
+    return (
+        "Current user message is an explicit Minecraft command execution request. "
+        "Do not answer it from the current snapshot, recent conversation, or prior action results. "
+        "Either call run_read_only_command with the exact allowlisted command requested, "
+        "or refuse if the requested command is not read-only and allowlisted."
+    )
 
 
 def _json_object(value: Any) -> dict[str, Any]:

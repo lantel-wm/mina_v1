@@ -76,7 +76,10 @@ SCENARIO_DATA = [
         "expected_tools": [
             {"name": "run_read_only_command", "status": "ok", "args_contains": "time query day"},
         ],
-        "expected_actions": [{"name": "run_read_only_command"}],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "The time is 0"},
+        ],
         "expected_model": {"mode": "at_least", "min_count": 1},
         "trace_invariants": ["no_action_monitor_timeout"],
         "rubric": "Natural-language read-only command requests should be selected by the live model and executed through the Fabric read-only action.",
@@ -97,10 +100,61 @@ SCENARIO_DATA = [
         "expected_tools": [
             {"name": "run_read_only_command", "status": "ok", "args_contains": "time query day"},
         ],
-        "expected_actions": [{"name": "run_read_only_command"}],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "The time is 0"},
+        ],
         "expected_model": {"mode": "exact", "count": 0},
         "trace_invariants": ["no_action_monitor_timeout"],
         "rubric": "Exact allowlisted read-only command forms should bypass the live model while still going through Fabric's read-only action policy.",
+    },
+    {
+        "name": "literal_weather_query_local_route",
+        "fixture": "default_world",
+        "tags": ["live", "core", "command"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "literal-weather-query-local-route",
+                "value": "weather query",
+                "wait_for": ["我会执行这个只读查询"],
+                "timeout": 60,
+            }
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "weather query"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "Weather: clear"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "trace_invariants": ["no_action_monitor_timeout"],
+        "rubric": "Exact weather query commands should bypass the live model and return Fabric's deterministic weather observation.",
+    },
+    {
+        "name": "literal_player_list_local_route",
+        "fixture": "default_world",
+        "tags": ["live", "core", "command"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "literal-player-list-local-route",
+                "value": "list",
+                "wait_for": ["我会执行这个只读查询"],
+                "timeout": 60,
+            }
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "list"},
+        ],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "mina_tester"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "trace_invariants": ["no_action_monitor_timeout"],
+        "rubric": "Exact player-list commands should bypass the live model while proving Fabric command output is captured.",
     },
     {
         "name": "read_only_seed_command_live_model",
@@ -118,7 +172,10 @@ SCENARIO_DATA = [
         "expected_tools": [
             {"name": "run_read_only_command", "status": "ok", "args_contains": "seed"},
         ],
-        "expected_actions": [{"name": "run_read_only_command"}],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "Seed:"},
+        ],
         "expected_model": {"mode": "at_least", "min_count": 1},
         "trace_invariants": ["no_action_monitor_timeout"],
         "rubric": "Explicit world-seed command requests should be selected by the live model and constrained to the exact read-only seed command.",
@@ -146,7 +203,10 @@ SCENARIO_DATA = [
         "expected_tools": [
             {"name": "run_read_only_command", "status": "ok", "args_contains": "time query day"},
         ],
-        "expected_actions": [{"name": "run_read_only_command"}],
+        "expected_actions": [
+            {"name": "run_read_only_command"},
+            {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "The time is 0"},
+        ],
         "forbidden_tools": [
             {"name": "web_search"},
             {"name": "memory_write"},
