@@ -113,12 +113,26 @@ def normalize_health_unit_claims(content: str, snapshot: dict[str, Any] | None) 
     return _HEALTH_POINTS_AS_HEARTS_RE.sub(replace, content)
 
 
+def strip_player_name_address(content: str, player_name: str | None) -> str:
+    name = str(player_name or "").strip()
+    if not content or not name:
+        return content
+    return re.sub(
+        rf"(?i)^\s*@?{re.escape(name)}\s*(?:[,，:：、]\s*)+",
+        "",
+        content,
+        count=1,
+    ).strip()
+
+
 def contains_write_command_advice(content: str) -> bool:
     return bool(_WRITE_COMMAND_ADVICE_RE.search(content) or _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE.search(content))
 
 
 def claims_memory_saved(content: str) -> bool:
     normalized = content.lower()
+    if _HISTORICAL_MEMORY_REFERENCE_RE.search(normalized):
+        return False
     return any(
         token in normalized
         for token in (
@@ -143,9 +157,16 @@ def claims_memory_saved(content: str) -> bool:
 
 
 def normalize_memory_write_ack(content: str) -> str:
-    if _CANONICAL_MEMORY_ACK_RE.search(content):
-        return content
-    return f"已记住。{content}"
+    text = content.strip()
+    if _CANONICAL_MEMORY_ACK_RE.search(text):
+        return text
+    if _SAVE_ONLY_ACK_RE.fullmatch(text):
+        return "已记住。"
+    save_prefix = _SAVE_PREFIX_RE.match(text)
+    if save_prefix:
+        suffix = text[save_prefix.end():].strip()
+        return "已记住。" + suffix if suffix else "已记住。"
+    return f"已记住。{text}"
 
 
 def is_tool_error(content: str) -> bool:
@@ -192,3 +213,12 @@ _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE = re.compile(
     r")"
 )
 _CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")
+_HISTORICAL_MEMORY_REFERENCE_RE = re.compile(
+    r"(?i)(?:"
+    r"(?:之前|以前|先前|此前|上次|早些时候|刚才).{0,16}(?:记住|记下|记好|保存)|"
+    r"(?:previously|earlier|before).{0,20}(?:remembered|remember|saved|noted)|"
+    r"(?:remembered|saved|noted).{0,20}(?:previously|earlier|before)"
+    r")"
+)
+_SAVE_ONLY_ACK_RE = re.compile(r"(?i)^\s*(?:已保存|已经保存|保存了|saved|done)\s*[。.!！]?\s*$")
+_SAVE_PREFIX_RE = re.compile(r"(?i)^\s*(?:已保存|已经保存|保存了)\s*[。.!！]\s*")

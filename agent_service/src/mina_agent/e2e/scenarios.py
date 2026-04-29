@@ -422,11 +422,12 @@ SCENARIO_DATA = [
             "Agent memory",
             "memory_search",
             "memory_write",
+            "保存到我的记忆",
             "Relevant remembered facts",
             "Remembered facts",
             "mina_tester",
         ],
-        "trace_invariants": ["no_test_username_in_memory_write"],
+        "trace_invariants": ["no_test_username_in_memory_write", "single_memory_write_tool_call"],
         "rubric": "Memory should serve the agent: the live model writes stable context, then answers natural recall from loaded remembered facts or a model-selected memory_search.",
     },
     {

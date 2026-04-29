@@ -15,7 +15,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "answer only the relevant remembered fact" in SYSTEM_PROMPT
     assert "Do not mention internal section/tool names" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
-    assert "Do not answer command requests from snapshot or recent results" in SYSTEM_PROMPT
+    assert "never answer them from snapshot or recent results" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "Do not use the Minecraft username as greeting/filler" in SYSTEM_PROMPT
@@ -115,6 +115,20 @@ def test_context_summary_labels_health_points_and_hearts() -> None:
     assert '"max_health_points": 20' in summary
     assert '"health_hearts": 2' in summary
     assert '"max_health_hearts": 10' in summary
+
+
+def test_companion_context_summary_omits_player_name() -> None:
+    turn = {
+        "trigger": "companion_tick",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 4, "max_health": 20}},
+    }
+
+    summary = build_context_summary(turn)
+
+    assert "Tester" not in summary
+    assert "player-1" not in summary
+    assert '"player": {"present": true}' in summary
 
 
 def test_context_summary_includes_world_state_for_observation() -> None:

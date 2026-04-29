@@ -7,6 +7,7 @@ from mina_agent.policy import (
     is_tool_error,
     minecraft_chat_text,
     normalize_health_unit_claims,
+    strip_player_name_address,
 )
 
 
@@ -101,6 +102,11 @@ def test_policy_normalizes_english_health_points_misread_as_hearts() -> None:
     assert "20 health points (about 10 hearts)" in content
 
 
+def test_policy_strips_player_name_address_prefix() -> None:
+    assert strip_player_name_address("mina_tester，你只有2颗心了。", "mina_tester") == "你只有2颗心了。"
+    assert strip_player_name_address("你只有2颗心了。", "mina_tester") == "你只有2颗心了。"
+
+
 def test_policy_repairs_memory_claim_until_memory_write_succeeds() -> None:
     policy = ResponsePolicyRuntime()
 
@@ -126,6 +132,15 @@ def test_policy_replaces_repeated_memory_claim_without_write() -> None:
     assert "樱花林" not in second.content
 
 
+def test_policy_allows_historical_memory_recall_reference() -> None:
+    policy = ResponsePolicyRuntime()
+
+    review = policy.review_final_content("你的基地在樱花林旁边，我之前已经记下了。", can_repair=True)
+
+    assert not review.needs_repair
+    assert review.content == "你的基地在樱花林旁边，我之前已经记下了。"
+
+
 def test_policy_normalizes_successful_memory_write_ack() -> None:
     policy = ResponsePolicyRuntime()
     policy.note_successful_tool_result("memory_write", json.dumps({"ok": True}))
@@ -135,6 +150,16 @@ def test_policy_normalizes_successful_memory_write_ack() -> None:
     assert not review.needs_repair
     assert review.content.startswith("已记住。")
     assert "樱花林" in review.content
+
+
+def test_policy_normalizes_save_only_memory_write_ack() -> None:
+    policy = ResponsePolicyRuntime()
+    policy.note_successful_tool_result("memory_write", json.dumps({"ok": True}))
+
+    review = policy.review_final_content("已保存。", can_repair=True)
+
+    assert not review.needs_repair
+    assert review.content == "已记住。"
 
 
 def test_is_tool_error_reads_standard_tool_result_envelope() -> None:

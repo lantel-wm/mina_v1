@@ -54,6 +54,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
                 "no_model_requested_read_only_command",
                 "no_model_write_command_advice",
                 "non_empty_final_model_content",
+                "single_memory_write_tool_call",
                 "single_read_only_command_action",
             ],
             "expected_model": {"mode": "exact", "count": 0},
@@ -383,6 +384,27 @@ def test_trace_invariant_rejects_test_username_in_memory_write(tmp_path, monkeyp
     )
 
     with pytest.raises(AssertionError, match="memory_write args contained test username"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_duplicate_memory_write_tool_calls(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="duplicate-memory-write",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["single_memory_write_tool_call"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {"request_id": "req-1", "tool_name": "memory_write", "args_json": "{}"},
+            {"request_id": "req-2", "tool_name": "memory_write", "args_json": "{}"},
+        ] if key == "tool_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="duplicate memory_write tool calls"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 

@@ -8,7 +8,7 @@ from .config import Settings
 from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
-from .policy import ResponsePolicyRuntime, is_tool_error, normalize_health_unit_claims
+from .policy import ResponsePolicyRuntime, is_tool_error, normalize_health_unit_claims, strip_player_name_address
 from .schemas import TurnResponse
 from .tools import (
     ToolRunner,
@@ -107,6 +107,8 @@ class AgentHarness:
                         self._debug("turn repair request_id=%s reason=%s", request_id, review.repair_reason)
                         continue
                     content = normalize_health_unit_claims(review.content, turn.get("snapshot"))
+                    if str(turn.get("trigger") or "") == "companion_tick":
+                        content = strip_player_name_address(content, player.get("name"))
                     if content:
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
                         self._debug("turn final request_id=%s messages=1 actions=%s", request_id, len(state.actions))

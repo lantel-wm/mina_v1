@@ -22,12 +22,12 @@ Chat style:
 - Snapshot health/max_health are health points, not UI hearts: 20 points = 10 hearts, 4 points = 2 hearts.
 
 Decision order:
-1. If the player asks to run an allowed read-only command or gives an exact allowed command form, call run_read_only_command. Do not answer command requests from snapshot or recent results.
-2. Questions about the player's base, home, saved places, projects, preferences, plans, promises, or earlier statements are memory questions. Answer from loaded remembered facts or memory_search; do not mix in current location unless asked.
+1. Allowed read-only command requests must call run_read_only_command; never answer them from snapshot or recent results.
+2. Questions about the player's base, home, saved places, projects, preferences, plans, promises, or earlier statements are memory questions. Answer from loaded remembered facts or memory_search; do not mix in current location unless asked. Do not call memory_write for recall unless new or changed stable information is provided.
 3. For local player/world observations, answer directly from observed Minecraft state and only the fields asked for. Do not call tools or append unrelated snapshot details.
 4. For greetings, casual chat, or "what can you do" capability questions, answer generally. Do not volunteer snapshot details or stored personal facts unless asked.
 5. For current or external knowledge, web/wiki/internet/search wording, or requests to verify outside information, call web_search. Do not use web_search for casual chat or local Minecraft state from the current context.
-6. For stable preferences, world facts, plans, promises, or lessons useful later, use memory_write. Do not save filler. For player-scoped memories, phrase facts as about "you/你" or neutrally; do not include the current Minecraft username unless that username is the fact being saved.
+6. For stable preferences, world facts, plans, promises, or lessons useful later, use memory_write. Do not save filler or re-save loaded facts. For player-scoped memories, phrase facts as about "you/你" or neutrally; do not include the current Minecraft username unless that username is the fact being saved.
 7. Use loaded remembered facts only when directly relevant. Treat memory as historical context for future decisions, not proof of current world state.
 8. For questions about remembered or stored context, answer only the relevant remembered fact. Do not append coordinates, safety, biome, weather, time, inventory, entities, command offers, or search offers unless asked.
 9. Use memory_search only when loaded memory is insufficient or the player asks for older specific stored context.
@@ -54,9 +54,9 @@ Answer authority:
 """
 
 COMMAND_POLICY_REMINDER = (
-    "Tool selection reminder: exact command messages (weather query, time query day, seed, list, list uuids, "
-    "locate structure <id>, locate biome <id>) must call run_read_only_command every time; "
-    "never answer from snapshot or prior results."
+    "Tool selection reminder: if the player message is exactly, mainly, or asks to execute/run/query "
+    "weather query, time query day, seed, list, list uuids, locate structure <id>, or locate biome <id>, "
+    "call run_read_only_command every time; direct text answers from snapshot or previous results are invalid."
 )
 
 
@@ -114,6 +114,7 @@ def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_availab
             "Companion tick policy:\n"
             "- Use observed Minecraft state only.\n"
             "- Do not call tools.\n"
+            "- Address the player as 你/you; do not prefix the Minecraft username.\n"
             "- Speak only for timely, useful alerts. Return an empty string when nothing is worth interrupting the player."
         )
     if _mentions_mcp(user_content):
@@ -300,9 +301,12 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
     logs = [block for block in nearby_blocks if block.get("category") == "log"][:12]
     hostile = [entity for entity in nearby_entities if entity.get("category") == "hostile"][:8]
+    player_context: dict[str, Any] = turn.get("player") or {}
+    if str(turn.get("trigger") or "") == "companion_tick":
+        player_context = {"present": bool(player_context)}
     payload = {
         "trigger": turn.get("trigger"),
-        "player": turn.get("player") or {},
+        "player": player_context,
         "permissions": permissions,
         "player_state": {
             "health": player_state.get("health"),

@@ -546,6 +546,26 @@ def test_memory_recall_is_not_repaired_by_local_intent_classifier(tmp_path) -> N
     assert memory.recent_tool_calls("req-memory-direct") == []
 
 
+def test_memory_recall_historical_saved_reference_is_not_repaired(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "你的基地在樱花林旁边，我之前已经记下了。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("我的基地在哪里？", "req-memory-historical-reference"))
+
+    assert "樱花林" in response["messages"][0]["content"]
+    assert len(model.calls) == 1
+    assert memory.recent_tool_calls("req-memory-historical-reference") == []
+
+
 def test_memory_save_claim_is_repaired_until_memory_write_runs(tmp_path) -> None:
     model = FakeDeepSeek(
         [
@@ -716,6 +736,31 @@ def test_companion_low_health_corrects_heart_unit_misread(tmp_path) -> None:
     content = response["messages"][0]["content"]
     assert "4颗心" not in content
     assert "4点生命值（约2颗心）" in content
+
+
+def test_companion_output_strips_player_name_address(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "Tester，你只有2颗心了，先别冒险。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+    snapshot = _snapshot()
+    snapshot["player_state"]["health"] = 4
+    snapshot["player_state"]["max_health"] = 20
+    turn = _turn("", "req-companion-name-strip", snapshot)
+    turn["trigger"] = "companion_tick"
+
+    response = harness.run_turn(turn)
+
+    content = response["messages"][0]["content"]
+    assert content.startswith("你只有2颗心")
+    assert "Tester" not in content
 
 
 def test_companion_empty_model_low_health_uses_safety_fallback(tmp_path) -> None:
