@@ -17,6 +17,11 @@ SCENARIO_DATA = [
         "tags": ["live", "core", "observation"],
         "steps": [
             {
+                "kind": "assert",
+                "value": "no_nearby_entities",
+                "timeout": 10,
+            },
+            {
                 "kind": "request",
                 "request_id": "player-status-snapshot-live-model",
                 "value": "我的坐标和状态怎么样？",

@@ -126,8 +126,9 @@ Declarative scenario schema highlights:
 - Supported step kinds: `request`, `companion_tick`, `world_mutate`, and `assert`.
 - `request` and `companion_tick` steps require a unique `request_id`; `/v1/traces/{request_id}` is the trace join key.
 - Trace and response assertions: `expected_tools`, `forbidden_tools`, `expected_actions`, `forbidden_actions`, `forbidden_model_tools`, `expected_model`, `expected_response_contains`, and `forbidden_response_contains`.
-- World assertions run `/mina-test assert <name>` after scenario steps.
-- Built-in safe world assertions include `target_log_present`, `upper_log_present`, and `low_health`.
+- `assert` steps and world assertions run `/mina-test assert <name>`; use explicit `assert` steps when a condition must hold before a model request.
+- Built-in safe world assertions include `target_log_present`, `upper_log_present`, `low_health`, and `no_nearby_entities`.
+- Fixture reset disables natural mob spawning and clears non-player entities so snapshot E2E contexts stay deterministic; scenario-specific entities must be added through explicit `world_mutate` steps.
 
 ## Iteration Workflow
 

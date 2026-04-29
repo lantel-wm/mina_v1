@@ -14,10 +14,12 @@ import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.phys.AABB;
 
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
@@ -89,7 +91,8 @@ public final class MinaTestCommands {
 				.then(literal("assert")
 					.then(literal("target_log_present").executes(context -> assertTargetLogPresent(context.getSource())))
 					.then(literal("upper_log_present").executes(context -> assertUpperLogPresent(context.getSource())))
-					.then(literal("low_health").executes(context -> assertLowHealth(context.getSource()))))
+					.then(literal("low_health").executes(context -> assertLowHealth(context.getSource())))
+					.then(literal("no_nearby_entities").executes(context -> assertNoNearbyEntities(context.getSource()))))
 		));
 	}
 
@@ -130,9 +133,8 @@ public final class MinaTestCommands {
 		prepareWorld(level, includeTree);
 		run(server, "difficulty peaceful");
 		setNaturalHealthRegeneration(level, server, true);
-		run(server, "kill @e[type=minecraft:creeper]");
-		run(server, "kill @e[type=minecraft:sheep]");
-		run(server, "kill @e[type=minecraft:item]");
+		setMobSpawning(level, server, false);
+		clearNonPlayerEntities(server);
 		run(server, "time set day");
 		run(server, "weather clear");
 		run(server, "puppet " + TEST_PLAYER + " spawn");
@@ -146,6 +148,8 @@ public final class MinaTestCommands {
 		boolean markerReady = level.getBlockState(SETUP_MARKER).is(Blocks.GRASS_BLOCK);
 		if (requester != null) {
 			run(server, "tp " + TEST_PLAYER + " 0.5 " + TREE_Y + " -2.5 0 0");
+			clearNonPlayerEntities(server);
+			clearNearbyNonPlayerEntities(level, requester);
 			resetVitals(requester);
 			resetRequesterInventory(requester);
 		}
@@ -408,6 +412,39 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
+	private int assertNoNearbyEntities(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Mina test no_nearby_entities failed: test requester is not online."));
+			return 0;
+		}
+		clearNearbyNonPlayerEntities(source.getLevel(), requester);
+		AABB box = requester.getBoundingBox().inflate(config.nearbyEntityRadius);
+		var entities = source.getLevel().getEntities(
+			requester,
+			box,
+			entity -> entity.isAlive() && !(entity instanceof Player)
+		);
+		if (!entities.isEmpty()) {
+			source.sendFailure(Component.literal("Mina test no_nearby_entities failed: found " + entities.size() + " nearby non-player entities."));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("Mina test no_nearby_entities passed."), false);
+		return 1;
+	}
+
+	private void clearNearbyNonPlayerEntities(ServerLevel level, ServerPlayer requester) {
+		AABB box = requester.getBoundingBox().inflate(config.nearbyEntityRadius);
+		var entities = level.getEntities(
+			requester,
+			box,
+			entity -> entity.isAlive() && !(entity instanceof Player)
+		);
+		for (var entity : entities) {
+			entity.discard();
+		}
+	}
+
 	private static void run(MinecraftServer server, String command) {
 		server.getCommands().performPrefixedCommand(
 			server.createCommandSourceStack().withMaximumPermission(PermissionSet.ALL_PERMISSIONS),
@@ -415,8 +452,16 @@ public final class MinaTestCommands {
 		);
 	}
 
+	private static void clearNonPlayerEntities(MinecraftServer server) {
+		run(server, "kill @e[type=!minecraft:player]");
+	}
+
 	private static void setNaturalHealthRegeneration(ServerLevel level, MinecraftServer server, boolean enabled) {
 		level.getGameRules().set(GameRules.NATURAL_HEALTH_REGENERATION, enabled, server);
+	}
+
+	private static void setMobSpawning(ServerLevel level, MinecraftServer server, boolean enabled) {
+		level.getGameRules().set(GameRules.SPAWN_MOBS, enabled, server);
 	}
 
 	private static void prepareWorld(ServerLevel level, boolean includeTree) {
