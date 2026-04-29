@@ -29,7 +29,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -326,17 +326,20 @@ def _world_id(snapshot: dict[str, Any]) -> str | None:
 def build_target_summary(snapshot: dict[str, Any]) -> str:
     lines: list[str] = []
     nearby_blocks = snapshot.get("nearby_blocks")
+    player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
     blocks = _flatten_blocks(nearby_blocks)
     if blocks:
         lines.append("Nearby notable blocks for observation:")
         for block in blocks[:12]:
             if not isinstance(block, dict):
                 continue
-            compact = _compact_block_target(block)
+            compact = _compact_block_target(block, player_state)
             block_pos = f"block=({compact.get('x')},{compact.get('y')},{compact.get('z')})"
+            direction = compact.get("relative_direction") or "unknown"
             lines.append(
                 f"- {compact.get('category')} {compact.get('block')} {block_pos} "
-                f"distance={compact.get('distance')} approach_available={compact.get('approach_available')}"
+                f"distance={compact.get('distance')} direction={direction} "
+                f"approach_available={compact.get('approach_available')}"
             )
     return "\n".join(lines)
 
@@ -399,8 +402,8 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "player_distance_from_spawn": world_state.get("player_distance_from_spawn"),
             "online_players": world_state.get("online_players"),
         },
-        "candidate_logs": [_compact_block_target(block) for block in logs],
-        "nearby_hostiles": hostile,
+        "candidate_logs": [_compact_block_target(block, player_state) for block in logs],
+        "nearby_hostiles": [_compact_entity_target(entity, player_state) for entity in hostile],
     }
     distance_display = _distance_display(world_state.get("player_distance_from_spawn"))
     if distance_display:
@@ -572,8 +575,8 @@ def _compact_environment(environment: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in compact.items() if value is not None}
 
 
-def _compact_block_target(block: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _compact_block_target(block: dict[str, Any], player_state: dict[str, Any] | None = None) -> dict[str, Any]:
+    compact = {
         "block": block.get("block"),
         "category": block.get("category"),
         "x": block.get("x"),
@@ -582,3 +585,81 @@ def _compact_block_target(block: dict[str, Any]) -> dict[str, Any]:
         "distance": block.get("distance"),
         "approach_available": all(key in block for key in ("approach_x", "approach_y", "approach_z")),
     }
+    compact.update(_relative_fields(player_state or {}, block, center=True))
+    return compact
+
+
+def _compact_entity_target(entity: dict[str, Any], player_state: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        "type": entity.get("type"),
+        "name": entity.get("name"),
+        "category": entity.get("category"),
+        "distance": entity.get("distance"),
+        "x": entity.get("x"),
+        "y": entity.get("y"),
+        "z": entity.get("z"),
+        "health": entity.get("health"),
+        "max_health": entity.get("max_health"),
+    }
+    compact.update(_relative_fields(player_state, entity, center=False))
+    return compact
+
+
+def _relative_fields(
+    player_state: dict[str, Any], target: dict[str, Any], *, center: bool
+) -> dict[str, Any]:
+    origin_x = _float_value(player_state.get("x"))
+    origin_y = _float_value(player_state.get("y"))
+    origin_z = _float_value(player_state.get("z"))
+    target_x = _float_value(target.get("center_x") if center else target.get("x"))
+    target_y = _float_value(target.get("center_y") if center else target.get("y"))
+    target_z = _float_value(target.get("center_z") if center else target.get("z"))
+    if target_x is None:
+        target_x = _float_value(target.get("x"))
+    if target_y is None:
+        target_y = _float_value(target.get("y"))
+    if target_z is None:
+        target_z = _float_value(target.get("z"))
+    if origin_x is None or origin_z is None or target_x is None or target_z is None:
+        return {}
+    dx = target_x - origin_x
+    dz = target_z - origin_z
+    fields: dict[str, Any] = {
+        "relative_direction": _horizontal_direction(dx, dz),
+        "relative_x": _rounded_delta(dx),
+        "relative_z": _rounded_delta(dz),
+    }
+    if origin_y is not None and target_y is not None:
+        dy = target_y - origin_y
+        fields["relative_y"] = _rounded_delta(dy)
+        vertical = _vertical_relation(dy)
+        if vertical:
+            fields["relative_vertical"] = vertical
+    return fields
+
+
+def _horizontal_direction(dx: float, dz: float) -> str:
+    abs_dx = abs(dx)
+    abs_dz = abs(dz)
+    if abs_dx < 0.25 and abs_dz < 0.25:
+        return "here"
+    if abs_dx >= abs_dz * 2:
+        return "east" if dx > 0 else "west"
+    if abs_dz >= abs_dx * 2:
+        return "south" if dz > 0 else "north"
+    north_south = "south" if dz > 0 else "north"
+    east_west = "east" if dx > 0 else "west"
+    return north_south + east_west
+
+
+def _vertical_relation(dy: float) -> str | None:
+    if dy > 1.0:
+        return "above"
+    if dy < -1.0:
+        return "below"
+    return "same_level"
+
+
+def _rounded_delta(value: float) -> float | int:
+    rounded = round(value, 2)
+    return int(rounded) if float(rounded).is_integer() else rounded

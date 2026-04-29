@@ -32,6 +32,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "difficulty_snapshot_live_model" in names
     assert "spawn_distance_snapshot_live_model" in names
     assert "spawn_coordinates_snapshot_live_model" in names
+    assert "nearby_hostile_direction_snapshot_live_model" in names
     assert "world_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
     assert "exact_read_only_time_command_live_model" in names

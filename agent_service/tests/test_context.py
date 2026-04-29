@@ -30,6 +30,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "world difficulty" in SYSTEM_PROMPT
     assert "world spawn" in SYSTEM_PROMPT
     assert "facing direction/yaw/pitch" in SYSTEM_PROMPT
+    assert "nearby relative directions" in SYSTEM_PROMPT
     assert "health/food/armor/XP" in SYSTEM_PROMPT
     assert "active effects/status effects" in SYSTEM_PROMPT
     assert "light/sky" in SYSTEM_PROMPT
@@ -93,6 +94,7 @@ def test_target_summary_is_observation_only(tmp_path) -> None:
 
     assert "Nearby notable blocks for observation" in summary
     assert "minecraft:spruce_log" in summary
+    assert "direction=" in summary
     assert "body-control" not in summary
 
 
@@ -158,6 +160,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert '"yaw": 0.0' in context
     assert '"pitch": 0.0' in context
     assert '"facing_direction": "south"' in context
+    assert '"relative_direction": "southeast"' in context
     assert '"weather": "clear"' in context
     assert "Remembered facts" in context
     assert "玩家基地在樱花林旁边" in context
@@ -177,7 +180,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "do not call memory_search first" in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 6900
+    assert len(context) < 7000
 
 
 def test_context_summary_labels_health_points_and_hearts() -> None:
@@ -244,6 +247,44 @@ def test_context_summary_includes_facing_direction() -> None:
     assert '"yaw": -90.0' in summary
     assert '"pitch": 15.5' in summary
     assert '"facing_direction": "east"' in summary
+
+
+def test_context_summary_includes_nearby_hostile_relative_direction() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "x": 0.5,
+                "y": 80.0,
+                "z": -2.5,
+            },
+            "nearby_entities": [
+                {
+                    "type": "minecraft:creeper",
+                    "name": "Creeper",
+                    "category": "hostile",
+                    "distance": 1.0,
+                    "x": 1.5,
+                    "y": 80.0,
+                    "z": -2.5,
+                    "health": 20.0,
+                    "max_health": 20.0,
+                }
+            ],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"nearby_hostiles"' in summary
+    assert '"type": "minecraft:creeper"' in summary
+    assert '"relative_direction": "east"' in summary
+    assert '"relative_x": 1' in summary
+    assert '"relative_z": 0' in summary
+    assert '"relative_vertical": "same_level"' in summary
 
 
 def test_context_summary_includes_active_effects() -> None:
