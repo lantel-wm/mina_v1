@@ -45,6 +45,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
             "steps": [{"kind": "request", "request_id": "req-sample", "value": "hi"}],
             "trace_invariants": [
                 "no_action_monitor_timeout",
+                "no_model_requested_read_only_command",
                 "non_empty_final_model_content",
                 "single_read_only_command_action",
             ],
@@ -302,6 +303,30 @@ def test_trace_invariant_rejects_duplicate_read_only_command_actions(tmp_path, m
     )
 
     with pytest.raises(AssertionError, match="duplicate read-only command"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_model_requested_read_only_command(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="model-requested-read-only",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["no_model_requested_read_only_command"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-1",
+                "status": "ok",
+                "response_json": json.dumps({"tool_names": ["run_read_only_command"]}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="model requested run_read_only_command"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 

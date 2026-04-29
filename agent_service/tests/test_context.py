@@ -9,11 +9,13 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "preserve exact source values" in SYSTEM_PROMPT
     assert "memory_search" in SYSTEM_PROMPT
     assert "Agent memory" in SYSTEM_PROMPT or "agent memory" in SYSTEM_PROMPT
-    assert "Do not volunteer stored player facts" in SYSTEM_PROMPT
+    assert "Treat memory as historical context" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
-    assert "call run_read_only_command even when the same command appears in recent results" in SYSTEM_PROMPT
+    assert "call run_read_only_command even if the current snapshot or recent results" in SYSTEM_PROMPT
+    assert "capability questions" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
-    assert "Do not advertise MCP" in SYSTEM_PROMPT
+    assert "MCP" not in SYSTEM_PROMPT
+    assert "companion tick" not in SYSTEM_PROMPT.lower()
     assert "separate Minecraft character" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
     assert "body_chain" not in SYSTEM_PROMPT
@@ -180,6 +182,43 @@ def test_build_messages_does_not_mark_plain_observation_as_command_execution(tmp
     content = "\n".join(message["content"] for message in messages)
 
     assert "explicit Minecraft command execution request" not in content
+    assert "local Minecraft observation request" in content
+    assert "Do not call run_read_only_command" in content
+
+
+def test_build_messages_ordinary_turn_omits_conditional_mcp_and_companion_policy(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-plain",
+        "trigger": "command",
+        "message": "你好 Mina，用一句话说说你能做什么。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    system_content = "\n".join(message["content"] for message in messages if message["role"] == "system")
+
+    assert "MCP policy for this turn" not in system_content
+    assert "mcp_call" not in system_content
+    assert "Companion tick policy" not in system_content
+
+
+def test_build_messages_adds_mcp_policy_only_when_requested(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-mcp",
+        "trigger": "command",
+        "message": "帮我列出 MCP 工具有哪些。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    system_content = "\n".join(message["content"] for message in messages if message["role"] == "system")
+
+    assert "MCP policy for this turn" in system_content
+    assert "mcp_call" in system_content
 
 
 def test_build_messages_does_not_mark_command_result_followup_as_execution(tmp_path) -> None:
@@ -324,8 +363,11 @@ def test_companion_low_health_prompt_marks_alert_reason(tmp_path) -> None:
     }
 
     messages = build_messages(turn, memory)
+    system_content = "\n".join(message["content"] for message in messages if message["role"] == "system")
     user_message = messages[-1]["content"]
 
+    assert "Companion tick policy" in system_content
+    assert "Do not call tools" in system_content
     assert "及时提醒理由" in user_message
     assert "生命值较低" in user_message
     assert "health points" in user_message

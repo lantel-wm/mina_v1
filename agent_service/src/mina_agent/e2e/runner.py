@@ -124,6 +124,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
     }
     allowed_trace_invariants = {
         "no_action_monitor_timeout",
+        "no_model_requested_read_only_command",
         "non_empty_final_model_content",
         "plain_chat_response",
         "single_read_only_command_action",
@@ -621,6 +622,17 @@ class E2ERunner:
                 ]
                 if len(scheduled) > 1:
                     raise AssertionError(f"{scenario.name}: duplicate read-only command actions found: {scheduled!r}")
+            elif invariant == "no_model_requested_read_only_command":
+                calls = self._combined("model_calls", scenario.request_ids())
+                offenders = [
+                    {"request_id": call.get("request_id"), "tool_names": _model_requested_tool_names(call)}
+                    for call in calls
+                    if "run_read_only_command" in _model_requested_tool_names(call)
+                ]
+                if offenders:
+                    raise AssertionError(
+                        f"{scenario.name}: model requested run_read_only_command despite prompt invariant: {offenders!r}"
+                    )
             elif invariant == "non_empty_final_model_content":
                 calls = self._combined("model_calls", scenario.request_ids())
                 final_calls = [

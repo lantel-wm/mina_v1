@@ -33,6 +33,7 @@ SCENARIO_DATA = [
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 1},
         "expected_response_contains": ["80"],
+        "trace_invariants": ["no_model_requested_read_only_command"],
         "rubric": "Player status questions should go through the live model, using the Fabric snapshot context without unnecessary tools.",
     },
     {
@@ -59,6 +60,7 @@ SCENARIO_DATA = [
         "expected_model": {"mode": "at_least", "min_count": 1},
         "expected_response_any_contains": ["苦力怕", "Creeper", "creeper"],
         "forbidden_response_contains": ["我来看看", "Let me check"],
+        "trace_invariants": ["no_model_requested_read_only_command"],
         "rubric": "Nearby danger questions should go through the live model and summarize hostile mobs from the snapshot without actions.",
     },
     {
@@ -84,6 +86,7 @@ SCENARIO_DATA = [
         "expected_model": {"mode": "at_least", "min_count": 1},
         "expected_response_any_contains": ["clear", "晴", "不下雨", "无雨"],
         "forbidden_response_contains": ["我会执行这个只读查询", "The time is 0", "Weather:"],
+        "trace_invariants": ["no_model_requested_read_only_command"],
         "rubric": "Natural local world-state questions should be answered from Fabric snapshot context without running read-only commands.",
     },
     {
@@ -417,6 +420,9 @@ SCENARIO_DATA = [
             "diamond",
             "top answer",
             "0.5, 80",
+            "X=0.5",
+            "Y=80",
+            "Z=-2.5",
             "～",
             "MCP",
             "mcp",

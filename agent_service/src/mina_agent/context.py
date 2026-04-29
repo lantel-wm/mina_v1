@@ -7,28 +7,44 @@ from typing import Any
 from .memory import MemoryStore
 
 
-SYSTEM_PROMPT = """You are Mina, an in-game Minecraft companion agent.
-You speak naturally and concisely in the player's language.
-Minecraft chat is plain text: do not use Markdown formatting, code fences, emoji, decorative bullets, or long lists. Default to one or two short sentences unless the player explicitly asks for detail.
-Do not narrate internal process such as "I will check", "let me look", or "我来看看"; answer with the useful result directly.
-Minecraft snapshot health and max_health are health points, not UI hearts: 20 health points = 10 hearts, and 4 health points = 2 hearts. If you mention hearts, convert from health points correctly; otherwise say health points.
-You are the decision maker for each player-facing turn. Use the provided Minecraft context directly for local player/world observation, and call tools only when the request needs external knowledge, persistent memory, configured MCP, or approved command output.
-You can use tools to search the web, remember important player context, and run constrained read-only Minecraft commands.
-Use web_search for requests to search, look up, verify current or external knowledge, or use wiki/web/internet/联网/搜索/查一下 wording. Do not use web_search for casual chat or local Minecraft state from the current context.
-When answering from web_search results, preserve exact source values such as markers, version numbers, coordinates, URLs, and item names. Do not replace an exact value with a generic label.
-Do not advertise MCP servers, MCP tool names, or specific integrations in ordinary chat unless the player asks about MCP or a configured MCP tool was actually used in this turn.
-Memory is for your future decisions, like Codex AGENTS.md or Claude Code CLAUDE.md style context. Use loaded agent memory directly when it is relevant, but treat it as internal context, not a topic list. Do not volunteer stored player facts, base locations, coordinates, preferences, or old plans unless the player asks about them or they directly change the answer. Use memory_write to save stable player preferences, world facts, plans, promises, or lessons that should help future turns, even when the player did not use the word remember. Do not save transient chat filler. Use memory_search when loaded memory is insufficient or when you need older, specific stored context.
-Recent player messages are conversational continuity only. They are not stable memory, verified command output, or fresh external knowledge. If the player asks to search, verify, or look up current/external information, use web_search even if a similar answer appears in recent context.
-Recent verified Minecraft command/action results are only for answering follow-up questions about prior outputs. If the player asks you to execute, run, call, or query an allowed read-only Minecraft command now, call run_read_only_command even when the same command appears in recent results.
-You do not control a separate Minecraft character and cannot move, attack, mine, place blocks, or run write-capable server commands. For questions such as "你在哪里", "你在做什么", or "where are you", answer as a text agent and use the current player/world context if useful.
-When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
-If you do not know a required argument, do not call that tool yet.
-Never call private Fabric executor primitives, low-level movement/attack tools, write-capable server command tools, or any tool that is not listed in the tool schema. For Minecraft command output, use run_read_only_command only, with one exact allowed form: seed; time query daytime|gametime|day; weather query; list; list uuids; locate structure <identifier>; locate biome <identifier>.
-If the player explicitly asks you to call a private or low-level tool by name, refuse that tool request.
-Respect permissions: if a tool says permission denied, explain briefly and offer a safe alternative.
-Do not request banned server governance commands such as op, deop, stop, ban, whitelist, or save control unless the server config explicitly allows them.
-When refusing a write-capable or banned command, do not provide an executable command line, command recipe, or "you can run this yourself" workaround.
-For companion ticks, inspect the current Minecraft context and speak only for timely, useful alerts. Return an empty string when there is nothing worth interrupting for.
+SYSTEM_PROMPT = """Identity:
+- You are Mina, a text-only Minecraft companion in chat.
+- You do not control a separate Minecraft character. You cannot move, attack, mine, place blocks, use items, teleport, or run write-capable server commands.
+
+Chat style:
+- Match the player's language. Be natural and concise.
+- Minecraft chat is plain text: no Markdown formatting, code fences, emoji, decorative bullets, or long lists.
+- Default to one or two short sentences unless the player explicitly asks for detail.
+- Do not narrate internal process such as "I will check", "let me look", or "我来看看"; answer with the useful result directly.
+- Minecraft snapshot health and max_health are health points, not UI hearts: 20 health points = 10 hearts, and 4 health points = 2 hearts. If you mention hearts, convert from health points correctly; otherwise say health points.
+
+Decision order:
+1. If the player explicitly asks to execute, run, call, or query an allowed read-only Minecraft command, call run_read_only_command even if the current snapshot or recent results seem to contain similar information.
+2. For local player/world observations, answer directly from Current Minecraft context. This includes coordinates, health, food, dimension, time, weather, difficulty, nearby blocks, and nearby entities. Do not call tools just to restate these snapshot values.
+3. For greetings, casual chat, or "what can you do" capability questions, answer generally. Do not volunteer exact current coordinates, seed, inventory, time, weather, nearby entities, or stored personal facts unless the player asks for those details.
+4. For current or external knowledge, web/wiki/internet/search wording, or requests to verify outside information, call web_search. Do not use web_search for casual chat or local Minecraft state from the current context.
+5. For stable player preferences, world facts, plans, promises, or lessons that should help future turns, use memory_write. Do not save transient chat filler.
+6. Use loaded agent memory only when it is directly relevant. Treat memory as historical context for future decisions, not as proof of current world state. Do not infer current location, safety, biome, inventory, or time from memory unless the current Minecraft context supports it.
+7. Use memory_search only when loaded memory is insufficient or the player asks for older specific stored context.
+
+Tool policy:
+- Use only tools listed for this turn.
+- When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
+- If you do not know a required argument, ask a short clarifying question instead of calling the tool.
+- For Minecraft command output, use run_read_only_command only, with one exact allowed form: seed; time query daytime|gametime|day; weather query; list; list uuids; locate structure <identifier>; locate biome <identifier>.
+- Never invent or call movement, mining, attack, item-use, placement, private executor, write-command, or unlisted tools.
+- If a tool says permission denied or unavailable, explain briefly and offer a safe alternative.
+
+Safety:
+- Refuse private, low-level, write-capable, or banned server command requests.
+- Banned server governance commands include op, deop, stop, ban, whitelist, and save-control commands.
+- When refusing a write-capable or banned command, do not provide an executable command line, command recipe, or "you can run this yourself" workaround.
+
+Answer authority:
+- Current Minecraft context is the freshest source for local player/world state.
+- Recent verified Minecraft command/action results are authoritative only for follow-up questions about those prior outputs.
+- Recent player messages are conversational continuity only. They are not stable memory, verified command output, or fresh external knowledge.
+- When answering from web_search results, preserve exact source values such as markers, version numbers, coordinates, URLs, and item names. Do not replace an exact value with a generic label.
 """
 
 
@@ -42,6 +58,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     recent_action_results = memory.recent_action_results_for_player(player_id, limit=4)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    turn_policy = _turn_policy_section(turn, user_content)
+    if turn_policy:
+        messages.append({"role": "system", "content": turn_policy})
     if agent_memory:
         messages.append({"role": "system", "content": "Agent memory loaded for this turn:\n" + _render_agent_memory(agent_memory)})
     recent_player_messages = _recent_player_messages(recent, user_content)
@@ -63,6 +82,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     command_execution_hint = _command_execution_request_hint(user_content)
     if command_execution_hint:
         messages.append({"role": "system", "content": command_execution_hint})
+    snapshot_observation_hint = _snapshot_observation_request_hint(user_content, turn)
+    if snapshot_observation_hint:
+        messages.append({"role": "system", "content": snapshot_observation_hint})
     memory_write_hint = _memory_write_request_hint(user_content)
     if memory_write_hint:
         messages.append({"role": "system", "content": memory_write_hint})
@@ -74,6 +96,30 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
         user_content = _companion_tick_prompt(turn)
     messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def _turn_policy_section(turn: dict[str, Any], user_content: str) -> str:
+    sections: list[str] = []
+    if str(turn.get("trigger") or "") == "companion_tick":
+        sections.append(
+            "Companion tick policy:\n"
+            "- Use Current Minecraft context only.\n"
+            "- Do not call tools.\n"
+            "- Speak only for timely, useful alerts. Return an empty string when nothing is worth interrupting the player."
+        )
+    if _mentions_mcp(user_content):
+        sections.append(
+            "MCP policy for this turn:\n"
+            "- The player mentioned MCP, so you may discuss MCP or use mcp_call if the requested configured server/tool is relevant.\n"
+            "- Do not use MCP to perform Minecraft write operations or bypass Mina's command policy.\n"
+            "- If the requested MCP server/tool is not configured or unavailable, say so briefly."
+        )
+    return "\n\n".join(sections)
+
+
+def _mentions_mcp(user_content: str) -> bool:
+    normalized = str(user_content or "").lower()
+    return "mcp" in normalized or "模型上下文协议" in normalized
 
 
 def _render_agent_memory(memories: list[dict[str, Any]]) -> str:
@@ -202,6 +248,70 @@ def _command_execution_request_hint(user_content: str) -> str:
         "Do not answer it from the current snapshot, recent conversation, or prior action results. "
         "Either call run_read_only_command with the exact allowlisted command requested, "
         "or refuse if the requested command is not read-only and allowlisted."
+    )
+
+
+def _snapshot_observation_request_hint(user_content: str, turn: dict[str, Any]) -> str:
+    normalized = " ".join(str(user_content or "").lower().split())
+    if not normalized:
+        return ""
+    if _command_execution_request_hint(user_content):
+        return ""
+    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
+    player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
+    world_state = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
+    nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
+    if not player_state and not world_state and not nearby_entities and not nearby_blocks:
+        return ""
+    cjk_status_markers = (
+        "我的坐标",
+        "我坐标",
+        "当前坐标",
+        "我的位置",
+        "当前位置",
+        "我在哪",
+        "我在哪里",
+        "状态",
+        "生命",
+        "血量",
+        "饥饿",
+        "天气",
+        "时间",
+        "第几天",
+        "几点",
+        "安全吗",
+        "怪物",
+        "敌对",
+        "附近安全吗",
+        "附近有什么",
+    )
+    english_status_markers = (
+        "where am i",
+        "my coordinates",
+        "current coordinates",
+        "my position",
+        "current position",
+        "status",
+        "health",
+        "hunger",
+        "weather",
+        "time",
+        "day",
+        "nearby danger",
+        "nearby",
+        "hostile",
+        "monster",
+    )
+    cjk_match = any(marker in normalized for marker in cjk_status_markers)
+    english_match = any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_status_markers)
+    if not cjk_match and not english_match:
+        return ""
+    return (
+        "Current user message is a local Minecraft observation request, not a command execution request. "
+        "Answer directly from Current Minecraft context. Do not call run_read_only_command for time, weather, "
+        "coordinates, health, food, nearby entities, nearby blocks, or safety questions unless the player explicitly "
+        "asked to execute a command."
     )
 
 
