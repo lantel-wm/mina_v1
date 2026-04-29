@@ -284,7 +284,7 @@ def test_explicit_read_only_command_never_runs_without_model_tool_call(tmp_path)
     assert memory.recent_tool_calls("req-time-no-tool") == []
 
 
-def test_snapshot_status_request_blocks_unrequested_command_tool_before_repair(tmp_path) -> None:
+def test_snapshot_status_request_does_not_use_local_classifier_to_block_model_tool_call(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
@@ -305,25 +305,18 @@ def test_snapshot_status_request_blocks_unrequested_command_tool_before_repair(t
                 finish_reason="tool_calls",
                 usage={},
                 raw={},
-            ),
-            DeepSeekResponse(
-                message={"role": "assistant", "content": "现在天气晴朗，时间是白天。"},
-                finish_reason="stop",
-                usage={},
-                raw={},
-            ),
+            )
         ]
     )
     harness, memory, _model, _search = _harness(tmp_path, model)
 
     response = harness.run_turn(_turn("现在天气和时间怎么样？", "req-world-status"))
 
-    assert response["messages"][0]["content"] == "现在天气晴朗，时间是白天。"
-    assert response.get("actions", []) == []
-    assert len(model.calls) == 2
-    repair_context = "\n".join(message["content"] for message in model.calls[1]["messages"])
-    assert "already available in this turn's Minecraft snapshot" in repair_context
-    assert memory.recent_tool_calls("req-world-status") == []
+    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["actions"][0]["name"] == "run_read_only_command"
+    assert response["actions"][0]["args"] == {"command": "weather query"}
+    assert len(model.calls) == 1
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-world-status")] == ["run_read_only_command"]
 
 
 def test_snapshot_status_guard_does_not_block_locate_requests(tmp_path) -> None:

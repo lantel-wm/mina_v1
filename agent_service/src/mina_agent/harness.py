@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from .config import Settings
@@ -47,7 +46,6 @@ class AgentHarness:
 
         requested_read_only_command = extract_requested_read_only_command(message)
         requested_memory_write = is_explicit_memory_write_request(message)
-        snapshot_observation_request = _is_snapshot_observation_request(message, turn)
         if not self.deepseek.configured():
             fallback = "Mina sidecar is running, but MINA_API_KEY is not configured."
             self._debug("turn fallback request_id=%s reason=missing_api_key", request_id)
@@ -219,27 +217,6 @@ class AgentHarness:
                         state.invalid_tool_results += 1
                         self._debug(
                             "tool blocked request_id=%s subturn=%s name=%s reason=memory_write_contract",
-                            request_id,
-                            subturn,
-                            name,
-                        )
-                        state.append_tool_observation(call.get("id"), result_content)
-                        continue
-                    if snapshot_observation_request and name == "run_read_only_command" and not requested_read_only_command:
-                        result_content = json.dumps(
-                            {
-                                "ok": False,
-                                "error": (
-                                    "The current player/world status is already available in this turn's Minecraft snapshot. "
-                                    "Do not run read-only commands for local status questions unless the player explicitly asks "
-                                    "to execute a specific command. Answer directly from the current Minecraft context summary."
-                                ),
-                            },
-                            ensure_ascii=False,
-                        )
-                        state.invalid_tool_results += 1
-                        self._debug(
-                            "tool blocked request_id=%s subturn=%s name=%s reason=snapshot_observation_contract",
                             request_id,
                             subturn,
                             name,
@@ -430,71 +407,6 @@ def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
         "tool_call_count": len(tool_calls),
         "tool_names": tool_names,
     }
-
-
-def _is_snapshot_observation_request(message: str, turn: dict[str, Any]) -> bool:
-    normalized = " ".join(str(message or "").lower().split())
-    if not normalized:
-        return False
-    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
-    player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
-    world_state = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
-    nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
-    if not player_state and not world_state and not nearby_entities:
-        return False
-    explicit_execution_markers = (
-        "执行",
-        "运行",
-        "调用",
-        "用命令",
-        "命令输出",
-        "execute",
-        "run ",
-        "call ",
-        "command output",
-    )
-    if any(marker in normalized for marker in explicit_execution_markers):
-        return False
-    cjk_status_markers = (
-        "我的坐标",
-        "我坐标",
-        "当前坐标",
-        "我的位置",
-        "当前位置",
-        "我在哪",
-        "我在哪里",
-        "状态",
-        "生命",
-        "血量",
-        "饥饿",
-        "天气",
-        "时间",
-        "第几天",
-        "几点",
-        "安全吗",
-        "怪物",
-        "敌对",
-        "附近安全吗",
-    )
-    if any(marker in normalized for marker in cjk_status_markers):
-        return True
-    english_status_markers = (
-        "where am i",
-        "my coordinates",
-        "current coordinates",
-        "my position",
-        "current position",
-        "status",
-        "health",
-        "hunger",
-        "weather",
-        "time",
-        "day",
-        "nearby danger",
-        "hostile",
-        "monster",
-    )
-    return any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_status_markers)
 
 
 def _read_only_command_repair_message(command: str) -> str:

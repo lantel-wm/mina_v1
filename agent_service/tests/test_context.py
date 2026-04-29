@@ -10,6 +10,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "memory_search" in SYSTEM_PROMPT
     assert "Agent memory" in SYSTEM_PROMPT or "agent memory" in SYSTEM_PROMPT
     assert "Treat memory as historical context" in SYSTEM_PROMPT
+    assert "answer only the relevant remembered fact" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "call run_read_only_command even if the current snapshot or recent results" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
@@ -199,8 +200,7 @@ def test_build_messages_does_not_mark_plain_observation_as_command_execution(tmp
     content = "\n".join(message["content"] for message in messages)
 
     assert "explicit Minecraft command execution request" not in content
-    assert "local Minecraft observation request" in content
-    assert "Do not call run_read_only_command" in content
+    assert "local Minecraft observation request" not in content
 
 
 def test_build_messages_ordinary_turn_omits_conditional_mcp_and_companion_policy(tmp_path) -> None:
@@ -221,7 +221,7 @@ def test_build_messages_ordinary_turn_omits_conditional_mcp_and_companion_policy
     assert "Companion tick policy" not in system_content
 
 
-def test_build_messages_marks_smalltalk_capability_requests(tmp_path) -> None:
+def test_build_messages_does_not_add_keyword_smalltalk_hint(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_agent_memory("player", "player-1", "base_location", "玩家基地在樱花林旁边", importance=4)
     turn = {
@@ -235,8 +235,7 @@ def test_build_messages_marks_smalltalk_capability_requests(tmp_path) -> None:
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "greeting or capability question" in content
-    assert "Do not mention stored memories" in content
+    assert "greeting or capability question" not in content
     assert "玩家基地在樱花林旁边" in content
 
 
@@ -312,8 +311,8 @@ def test_build_messages_does_not_mark_memory_recall_as_write_request(tmp_path) -
     content = "\n".join(message["content"] for message in messages)
 
     assert "explicitly asks you to save stable memory" not in content
-    assert "remembered or stored context" in content
-    assert "Do not add current coordinates" in content
+    assert "Current user message asks about remembered or stored context" not in content
+    assert "Do not add current coordinates" not in content
 
 
 def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) -> None:
@@ -334,7 +333,7 @@ def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) 
     assert "Recent player messages for continuity only" in content
     assert "我家在云杉林旁边" in content
     assert "我记得你的家" not in content
-    assert "remembered or stored context" in content
+    assert "Current user message asks about remembered or stored context" not in content
     assert "Recent conversation memory is intentionally omitted" not in content
 
 

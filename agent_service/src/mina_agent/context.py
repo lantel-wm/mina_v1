@@ -23,12 +23,14 @@ Chat style:
 
 Decision order:
 1. If the player explicitly asks to execute, run, call, or query an allowed read-only Minecraft command, call run_read_only_command even if the current snapshot or recent results seem to contain similar information.
-2. For local player/world observations, answer directly from Current Minecraft context. This includes coordinates, health, food, dimension, time, weather, difficulty, nearby blocks, and nearby entities. Do not call tools just to restate these snapshot values.
-3. For greetings, casual chat, or "what can you do" capability questions, answer generally. Do not volunteer exact current coordinates, seed, inventory, time, weather, nearby entities, or stored personal facts unless the player asks for those details.
-4. For current or external knowledge, web/wiki/internet/search wording, or requests to verify outside information, call web_search. Do not use web_search for casual chat or local Minecraft state from the current context.
-5. For stable player preferences, world facts, plans, promises, or lessons that should help future turns, use memory_write. Do not save transient chat filler.
-6. Use loaded agent memory only when it is directly relevant. Treat memory as historical context for future decisions, not as proof of current world state. Do not infer current location, safety, biome, inventory, or time from memory unless the current Minecraft context supports it.
-7. Use memory_search only when loaded memory is insufficient or the player asks for older specific stored context.
+2. Questions about the player's base, home, saved places, named projects, preferences, plans, promises, or earlier statements are memory questions. Answer from loaded agent memory or memory_search; do not mix in the player's current location unless explicitly asked.
+3. For local player/world observations, answer directly from Current Minecraft context. This includes coordinates, health, food, dimension, time, weather, difficulty, nearby blocks, and nearby entities. Do not call tools just to restate these snapshot values.
+4. For greetings, casual chat, or "what can you do" capability questions, answer generally. Do not volunteer exact current coordinates, seed, inventory, time, weather, nearby entities, or stored personal facts unless the player asks for those details.
+5. For current or external knowledge, web/wiki/internet/search wording, or requests to verify outside information, call web_search. Do not use web_search for casual chat or local Minecraft state from the current context.
+6. For stable player preferences, world facts, plans, promises, or lessons that should help future turns, use memory_write. Do not save transient chat filler.
+7. Use loaded agent memory only when it is directly relevant. Treat memory as historical context for future decisions, not as proof of current world state. Do not infer current location, safety, biome, inventory, or time from memory unless the current Minecraft context supports it.
+8. For questions about remembered or stored context, answer only the relevant remembered fact. Do not append current coordinates, safety, biome, weather, time, inventory, nearby entities, command offers, or search offers unless the player asks for those details.
+9. Use memory_search only when loaded memory is insufficient or the player asks for older specific stored context.
 
 Tool policy:
 - Use only tools listed for this turn.
@@ -64,6 +66,19 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
     turn_policy = _turn_policy_section(turn, user_content, mcp_available=mcp_available)
     if turn_policy:
         messages.append({"role": "system", "content": turn_policy})
+    command_execution_hint = _command_execution_request_hint(user_content)
+    if command_execution_hint:
+        messages.append({"role": "system", "content": command_execution_hint})
+    write_refusal_hint = _write_command_refusal_hint(user_content)
+    if write_refusal_hint:
+        messages.append({"role": "system", "content": write_refusal_hint})
+    memory_write_hint = _memory_write_request_hint(user_content)
+    if memory_write_hint:
+        messages.append({"role": "system", "content": memory_write_hint})
+    messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
+    target_summary = build_target_summary(snapshot)
+    if target_summary:
+        messages.append({"role": "system", "content": target_summary})
     if agent_memory:
         messages.append({"role": "system", "content": "Agent memory loaded for this turn:\n" + _render_agent_memory(agent_memory)})
     recent_player_messages = _recent_player_messages(recent, user_content)
@@ -82,28 +97,6 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
                 "content": "Recent verified Minecraft command/action results:\n" + action_result_context,
             }
         )
-    command_execution_hint = _command_execution_request_hint(user_content)
-    if command_execution_hint:
-        messages.append({"role": "system", "content": command_execution_hint})
-    write_refusal_hint = _write_command_refusal_hint(user_content)
-    if write_refusal_hint:
-        messages.append({"role": "system", "content": write_refusal_hint})
-    snapshot_observation_hint = _snapshot_observation_request_hint(user_content, turn)
-    if snapshot_observation_hint:
-        messages.append({"role": "system", "content": snapshot_observation_hint})
-    smalltalk_hint = _smalltalk_capability_request_hint(user_content)
-    if smalltalk_hint:
-        messages.append({"role": "system", "content": smalltalk_hint})
-    memory_recall_hint = _memory_recall_request_hint(user_content)
-    if memory_recall_hint:
-        messages.append({"role": "system", "content": memory_recall_hint})
-    memory_write_hint = _memory_write_request_hint(user_content)
-    if memory_write_hint:
-        messages.append({"role": "system", "content": memory_write_hint})
-    messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
-    target_summary = build_target_summary(snapshot)
-    if target_summary:
-        messages.append({"role": "system", "content": target_summary})
     if not user_content:
         user_content = _companion_tick_prompt(turn)
     messages.append({"role": "user", "content": user_content})
@@ -313,140 +306,6 @@ def _write_command_refusal_hint(user_content: str) -> str:
         "Refuse directly; do not call tools. Do not repeat the requested command name, coordinates, selector, "
         "syntax, command whitelist, or workaround. For Chinese, reply exactly: "
         f"{UNSAFE_WRITE_REFUSAL}"
-    )
-
-
-def _snapshot_observation_request_hint(user_content: str, turn: dict[str, Any]) -> str:
-    normalized = " ".join(str(user_content or "").lower().split())
-    if not normalized:
-        return ""
-    if _command_execution_request_hint(user_content):
-        return ""
-    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
-    player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
-    world_state = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
-    nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
-    nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
-    if not player_state and not world_state and not nearby_entities and not nearby_blocks:
-        return ""
-    cjk_status_markers = (
-        "我的坐标",
-        "我坐标",
-        "当前坐标",
-        "我的位置",
-        "当前位置",
-        "我在哪",
-        "我在哪里",
-        "状态",
-        "生命",
-        "血量",
-        "饥饿",
-        "天气",
-        "时间",
-        "第几天",
-        "几点",
-        "安全吗",
-        "怪物",
-        "敌对",
-        "附近安全吗",
-        "附近有什么",
-    )
-    english_status_markers = (
-        "where am i",
-        "my coordinates",
-        "current coordinates",
-        "my position",
-        "current position",
-        "status",
-        "health",
-        "hunger",
-        "weather",
-        "time",
-        "day",
-        "nearby danger",
-        "nearby",
-        "hostile",
-        "monster",
-    )
-    cjk_match = any(marker in normalized for marker in cjk_status_markers)
-    english_match = any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_status_markers)
-    if not cjk_match and not english_match:
-        return ""
-    return (
-        "Current user message is a local Minecraft observation request, not a command execution request. "
-        "Answer directly from Current Minecraft context. Do not call run_read_only_command for time, weather, "
-        "coordinates, health, food, nearby entities, nearby blocks, or safety questions unless the player explicitly "
-        "asked to execute a command."
-    )
-
-
-def _smalltalk_capability_request_hint(user_content: str) -> str:
-    normalized = " ".join(str(user_content or "").lower().split())
-    if not normalized:
-        return ""
-    cjk_markers = (
-        "你好",
-        "嗨",
-        "你能做什么",
-        "能帮我做什么",
-        "你可以做什么",
-        "介绍一下",
-    )
-    english_markers = (
-        "hello",
-        "hi",
-        "what can you do",
-        "what do you do",
-        "introduce yourself",
-    )
-    cjk_match = any(marker in normalized for marker in cjk_markers)
-    english_match = any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_markers)
-    if not cjk_match and not english_match:
-        return ""
-    return (
-        "Current user message is a greeting or capability question. Answer generally about Mina's capabilities only. "
-        "Do not mention stored memories, base/home locations, player preferences, current coordinates, biome, time, "
-        "weather, inventory, nearby entities, or command/search result details unless the player explicitly asks."
-    )
-
-
-def _memory_recall_request_hint(user_content: str) -> str:
-    if is_explicit_memory_write_request(user_content):
-        return ""
-    normalized = " ".join(str(user_content or "").lower().split())
-    if not normalized:
-        return ""
-    cjk_recall_markers = (
-        "还记得",
-        "记得",
-        "我之前",
-        "之前说",
-        "我的基地在哪里",
-        "我基地在哪里",
-        "基地在哪里",
-        "基地在哪",
-        "我的家在哪里",
-        "我家在哪里",
-        "家在哪里",
-        "家在哪",
-    )
-    english_recall_markers = (
-        "do you remember",
-        "remember where",
-        "where is my base",
-        "where's my base",
-        "where is my home",
-        "where's my home",
-        "recall",
-    )
-    cjk_match = any(marker in normalized for marker in cjk_recall_markers)
-    english_match = any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_recall_markers)
-    if not cjk_match and not english_match:
-        return ""
-    return (
-        "Current user message asks about remembered or stored context. Answer only the relevant remembered fact. "
-        "If no relevant memory is loaded, say you do not have it saved. Do not add current coordinates, safety, "
-        "biome, weather, time, inventory, nearby entities, or command/search offers unless the player explicitly asks."
     )
 
 
