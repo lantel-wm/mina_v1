@@ -494,6 +494,8 @@ SCENARIO_DATA = [
             "4颗心",
             "4 颗心",
             "4 hearts",
+            "格血",
+            "心生命值",
             "mina_tester",
             "companion tick",
             "Current Minecraft context",

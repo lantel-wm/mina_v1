@@ -738,6 +738,56 @@ def test_companion_low_health_corrects_heart_unit_misread(tmp_path) -> None:
     assert "4点生命值（约2颗心）" in content
 
 
+def test_companion_low_health_corrects_ambiguous_grid_unit(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "你生命值比较低，只有两格血，小心。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+    snapshot = _snapshot()
+    snapshot["player_state"]["health"] = 4
+    snapshot["player_state"]["max_health"] = 20
+    turn = _turn("", "req-companion-health-grid-units", snapshot)
+    turn["trigger"] = "companion_tick"
+
+    response = harness.run_turn(turn)
+
+    content = response["messages"][0]["content"]
+    assert "格血" not in content
+    assert "只有4点生命值（约2颗心）" in content
+
+
+def test_companion_low_health_corrects_ambiguous_heart_health_unit(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "你只有两心生命值了，小心别再受伤。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+    snapshot = _snapshot()
+    snapshot["player_state"]["health"] = 4
+    snapshot["player_state"]["max_health"] = 20
+    turn = _turn("", "req-companion-heart-health-units", snapshot)
+    turn["trigger"] = "companion_tick"
+
+    response = harness.run_turn(turn)
+
+    content = response["messages"][0]["content"]
+    assert "心生命值" not in content
+    assert "只有4点生命值（约2颗心）" in content
+
+
 def test_companion_output_strips_player_name_address(tmp_path) -> None:
     model = FakeDeepSeek(
         [

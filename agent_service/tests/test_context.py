@@ -520,4 +520,5 @@ def test_companion_low_health_prompt_marks_alert_reason(tmp_path) -> None:
     assert "生命值较低" in user_message
     assert "health points" in user_message
     assert "2.5/10 颗心" in user_message
+    assert "不要说“格血”或“心生命值”" in user_message
     assert "不要调用工具" in user_message

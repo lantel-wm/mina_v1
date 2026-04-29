@@ -110,7 +110,19 @@ def normalize_health_unit_claims(content: str, snapshot: dict[str, Any] | None) 
             return f"{_format_number(health_points)}点生命值（约{_format_number(hearts)}颗心）"
         return match.group(0)
 
-    return _HEALTH_POINTS_AS_HEARTS_RE.sub(replace, content)
+    normalized = _HEALTH_POINTS_AS_HEARTS_RE.sub(replace, content)
+    current_health = _float_value(player_state.get("health"))
+    if current_health is None:
+        return normalized
+
+    current_hearts = current_health / 2.0
+    canonical_health = f"{_format_number(current_health)}点生命值（约{_format_number(current_hearts)}颗心）"
+
+    def replace_ambiguous_grid(match: re.Match[str]) -> str:
+        return f"{match.group('prefix')}{canonical_health}"
+
+    normalized = _AMBIGUOUS_REMAINING_HEALTH_GRID_RE.sub(replace_ambiguous_grid, normalized)
+    return _AMBIGUOUS_REMAINING_HEART_HEALTH_RE.sub(replace_ambiguous_grid, normalized)
 
 
 def strip_player_name_address(content: str, player_name: str | None) -> str:
@@ -199,6 +211,14 @@ _PROCESS_PREAMBLE_RE = re.compile(
     r")+"
 )
 _HEALTH_POINTS_AS_HEARTS_RE = re.compile(r"(?<![\d.])(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>颗心|hearts|heart)")
+_AMBIGUOUS_REMAINING_HEALTH_GRID_RE = re.compile(
+    r"(?P<prefix>只剩|仅剩|剩下|剩|还有|只有)\s*"
+    r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)\s*格血"
+)
+_AMBIGUOUS_REMAINING_HEART_HEALTH_RE = re.compile(
+    r"(?P<prefix>只剩|仅剩|剩下|剩|还有|只有)\s*"
+    r"(?P<value>\d+(?:\.\d+)?|[一二两三四五六七八九十半]+)\s*颗?心生命值"
+)
 _WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(^|[^\w-])"
     r"(?:minecraft:)?"

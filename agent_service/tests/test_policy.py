@@ -102,6 +102,32 @@ def test_policy_normalizes_english_health_points_misread_as_hearts() -> None:
     assert "20 health points (about 10 hearts)" in content
 
 
+def test_policy_normalizes_ambiguous_chinese_health_grid_claim() -> None:
+    snapshot = {"player_state": {"health": 4, "max_health": 20}}
+
+    content = normalize_health_unit_claims("你生命值比较低，只有两格血。", snapshot)
+
+    assert "格血" not in content
+    assert "只有4点生命值（约2颗心）" in content
+
+
+def test_policy_does_not_rewrite_non_remaining_health_grid_claim() -> None:
+    snapshot = {"player_state": {"health": 16, "max_health": 20}}
+
+    content = normalize_health_unit_claims("我刚才掉了两格血。", snapshot)
+
+    assert content == "我刚才掉了两格血。"
+
+
+def test_policy_normalizes_ambiguous_chinese_heart_health_claim() -> None:
+    snapshot = {"player_state": {"health": 4, "max_health": 20}}
+
+    content = normalize_health_unit_claims("你只有两心生命值了。", snapshot)
+
+    assert "心生命值" not in content
+    assert "只有4点生命值（约2颗心）" in content
+
+
 def test_policy_strips_player_name_address_prefix() -> None:
     assert strip_player_name_address("mina_tester，你只有2颗心了。", "mina_tester") == "你只有2颗心了。"
     assert strip_player_name_address("你只有2颗心了。", "mina_tester") == "你只有2颗心了。"
