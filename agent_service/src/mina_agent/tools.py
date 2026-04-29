@@ -79,8 +79,9 @@ MINECRAFT_WRITE_COMMANDS = {
     "save-on",
 }
 
-WEB_SEARCH_CONTENT_LIMIT = 1200
-WEB_SEARCH_TITLE_LIMIT = 180
+WEB_SEARCH_CONTENT_LIMIT = 2400
+WEB_SEARCH_TOTAL_CONTENT_LIMIT = 8000
+WEB_SEARCH_TITLE_LIMIT = 220
 
 
 def tool_specs() -> list[dict[str, Any]]:
@@ -89,7 +90,10 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "Search the web through the local SearXNG instance and return concise results.",
+                "description": (
+                    "Search the web through the local SearXNG instance and return budgeted results. "
+                    "Each result includes content_truncated so you can avoid overstating incomplete snippets."
+                ),
                 "parameters": _schema(
                     {
                         "query": {"type": "string", "description": "Search query."},
@@ -217,7 +221,14 @@ class ToolRunner:
         LOGGER.info("web_search result_count=%s safe_result_count=%s filtered_results=%s", len(results), len(safe_results), filtered_results)
         return ToolResult(
             content=json.dumps(
-                {"ok": True, "results": safe_results, "filtered_results": filtered_results},
+                {
+                    "ok": True,
+                    "query": query,
+                    "result_count": len(results),
+                    "safe_result_count": len(safe_results),
+                    "filtered_results": filtered_results,
+                    "results": safe_results,
+                },
                 ensure_ascii=False,
             )
         )
@@ -363,25 +374,37 @@ def _bounded_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, parsed))
 
 
-def _safe_web_search_results(results: Any, *, max_results: int) -> tuple[list[dict[str, str]], int]:
+def _safe_web_search_results(results: Any, *, max_results: int) -> tuple[list[dict[str, Any]], int]:
     if not isinstance(results, list):
         return [], 0
-    safe_results: list[dict[str, str]] = []
+    safe_results: list[dict[str, Any]] = []
     filtered_results = 0
-    for item in results:
+    content_budget = WEB_SEARCH_TOTAL_CONTENT_LIMIT
+    for source_index, item in enumerate(results, start=1):
         if not isinstance(item, dict):
             filtered_results += 1
             continue
         title = _excerpt(str(item.get("title") or "result").strip(), WEB_SEARCH_TITLE_LIMIT)
         url = str(item.get("url") or "").strip()
-        content = _excerpt(str(item.get("content") or "").strip(), WEB_SEARCH_CONTENT_LIMIT)
+        raw_content = str(item.get("content") or "").strip()
         if not url:
             filtered_results += 1
             continue
-        if _unsafe_web_search_text(f"{title}\n{content}"):
+        if _unsafe_web_search_text(f"{title}\n{raw_content}"):
             filtered_results += 1
             continue
-        safe_results.append({"title": title, "url": url, "content": content})
+        per_result_limit = min(WEB_SEARCH_CONTENT_LIMIT, max(0, content_budget))
+        content, content_truncated = _excerpt_with_flag(raw_content, per_result_limit)
+        content_budget -= len(content)
+        safe_results.append(
+            {
+                "source_index": source_index,
+                "title": title,
+                "url": url,
+                "content": content,
+                "content_truncated": content_truncated,
+            }
+        )
         if len(safe_results) >= max_results:
             break
     return safe_results, filtered_results
@@ -413,9 +436,15 @@ def _unsafe_web_search_text(value: str) -> bool:
 
 
 def _excerpt(value: str, limit: int) -> str:
+    return _excerpt_with_flag(value, limit)[0]
+
+
+def _excerpt_with_flag(value: str, limit: int) -> tuple[str, bool]:
+    if limit <= 0:
+        return "", bool(value)
     if len(value) <= limit:
-        return value
-    return value[: max(0, limit - 3)].rstrip() + "..."
+        return value, False
+    return value[: max(0, limit - 3)].rstrip() + "...", True
 
 
 def is_read_only_command(command: str) -> bool:

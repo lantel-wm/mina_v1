@@ -40,7 +40,7 @@ class SearxngClient:
                 {
                     "title": str(item.get("title") or ""),
                     "url": link,
-                    "content": str(item.get("content") or "")[:800],
+                    "content": str(item.get("content") or ""),
                 }
             )
             if len(results) >= max_results:

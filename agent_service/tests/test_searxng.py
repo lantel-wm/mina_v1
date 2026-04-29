@@ -61,3 +61,30 @@ def test_searxng_health_uses_short_timeout(monkeypatch) -> None:
     assert client.health()["ok"] is True
     assert captured["timeout"] == 0.25
     assert "format=json" in str(captured["url"])
+
+
+def test_searxng_preserves_result_snippet_without_client_side_clipping(monkeypatch) -> None:
+    long_content = "detail " * 180 + "MinaE2E-Search-Deep-Tail"
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {"results": [{"title": "Long", "url": "https://example.com/long", "content": long_content}]}
+            ).encode("utf-8")
+
+    class FakeOpener:
+        def open(self, request, timeout: float):  # noqa: ANN001, ANN201, ARG002
+            return FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: FakeOpener())
+    client = SearxngClient("http://127.0.0.1:8888")
+
+    results = client.search("long", max_results=1)
+
+    assert results[0]["content"].endswith("MinaE2E-Search-Deep-Tail")

@@ -35,6 +35,22 @@ class InjectedSearch:
         ]
 
 
+class LongSearch:
+    def search(self, query: str, max_results: int = 5):  # noqa: ANN201, ARG002
+        return [
+            {
+                "title": "Long safe result",
+                "url": "https://example.invalid/long",
+                "content": "safe detail " * 140 + "MinaE2E-Deep-Search-Tail",
+            },
+            {
+                "title": "Over budget result",
+                "url": "https://example.invalid/over-budget",
+                "content": "x" * 3000,
+            },
+        ]
+
+
 def _runner(tmp_path) -> ToolRunner:  # noqa: ANN001
     return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearch())  # type: ignore[arg-type]
 
@@ -142,7 +158,22 @@ def test_web_search_returns_full_tool_content(tmp_path) -> None:
 
     assert payload["ok"] is True
     assert search.queries == [("diamond ore", 10)]
+    assert payload["query"] == "diamond ore"
+    assert payload["safe_result_count"] == 1
     assert payload["results"][0]["content"] == "content"
+    assert payload["results"][0]["content_truncated"] is False
+
+
+def test_web_search_preserves_long_safe_snippets_and_marks_truncation(tmp_path) -> None:
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), LongSearch())  # type: ignore[arg-type]
+
+    result = runner.run("web_search", {"query": "long safe result", "max_results": 2}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is True
+    assert "MinaE2E-Deep-Search-Tail" in payload["results"][0]["content"]
+    assert payload["results"][0]["content_truncated"] is False
+    assert payload["results"][1]["content_truncated"] is True
 
 
 def test_web_search_filters_untrusted_prompt_injection_results(tmp_path) -> None:
