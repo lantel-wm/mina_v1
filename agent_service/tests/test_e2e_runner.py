@@ -31,6 +31,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert PRIVATE_MODEL_TOOLS == ["send_player_message", "send_global_message", "run_safe_command"]
     assert all("plain_chat_response" in scenario.trace_invariants for scenario in SCENARIOS.values())
     assert all("no_mcp_tool_exposed" in scenario.trace_invariants for scenario in SCENARIOS.values())
+    assert all("no_internal_label_leak" in scenario.trace_invariants for scenario in SCENARIOS.values())
     assert "no_model_tools_exposed" in SCENARIOS["companion_low_health_live_model"].trace_invariants
 
 
@@ -47,6 +48,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
             "steps": [{"kind": "request", "request_id": "req-sample", "value": "hi"}],
             "trace_invariants": [
                 "no_action_monitor_timeout",
+                "no_internal_label_leak",
                 "no_mcp_tool_exposed",
                 "no_model_tools_exposed",
                 "no_model_requested_read_only_command",
@@ -404,6 +406,31 @@ def test_trace_invariant_rejects_mcp_tool_exposure(tmp_path, monkeypatch) -> Non
     )
 
     with pytest.raises(AssertionError, match="mcp_call was exposed"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_internal_prompt_label_leak(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="internal-label-leak",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["no_internal_label_leak"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-1",
+                "status": "ok",
+                "finish_reason": "stop",
+                "response_json": json.dumps({"content": "Current Minecraft context 里显示你满血。"}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="internal prompt labels"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 

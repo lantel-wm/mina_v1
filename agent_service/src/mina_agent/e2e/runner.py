@@ -40,6 +40,20 @@ RUNS_DIR = ROOT / "build" / "e2e" / "runs"
 PUPPET_VERSION_ID = "VccNE5wh"
 KOTLIN_VERSION = "1.13.11+kotlin.2.3.21"
 _CHAT_UNSAFE_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0e\ufe0f\u200d\u20e3\u301c\uff5e]")
+_INTERNAL_LABEL_LEAKS = (
+    "Current Minecraft context",
+    "Minecraft context",
+    "Observed Minecraft state",
+    "Remembered facts",
+    "Recent verified Minecraft command/action results",
+    "Tool selection reminder",
+    "companion tick",
+    "agent memory",
+    "Agent memory",
+    "memory_search",
+    "memory_write",
+    "run_read_only_command",
+)
 
 
 @dataclass
@@ -125,6 +139,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
     }
     allowed_trace_invariants = {
         "no_action_monitor_timeout",
+        "no_internal_label_leak",
         "no_mcp_tool_exposed",
         "no_model_tools_exposed",
         "no_model_requested_read_only_command",
@@ -647,6 +662,22 @@ class E2ERunner:
                 ]
                 if offenders:
                     raise AssertionError(f"{scenario.name}: mcp_call was exposed without configured MCP: {offenders!r}")
+            elif invariant == "no_internal_label_leak":
+                calls = self._combined("model_calls", scenario.request_ids())
+                offenders = []
+                for call in calls:
+                    content = _model_content_preview(call)
+                    leaked = [label for label in _INTERNAL_LABEL_LEAKS if label in content]
+                    if leaked:
+                        offenders.append(
+                            {
+                                "request_id": call.get("request_id"),
+                                "leaked": leaked,
+                                "content": content,
+                            }
+                        )
+                if offenders:
+                    raise AssertionError(f"{scenario.name}: model leaked internal prompt labels: {offenders!r}")
             elif invariant == "no_model_tools_exposed":
                 calls = self._combined("model_calls", scenario.request_ids())
                 offenders = [

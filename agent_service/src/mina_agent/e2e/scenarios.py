@@ -544,6 +544,8 @@ def _with_common_invariants(payload: dict) -> dict:
         invariants.append("plain_chat_response")
     if "no_mcp_tool_exposed" not in invariants:
         invariants.append("no_mcp_tool_exposed")
+    if "no_internal_label_leak" not in invariants:
+        invariants.append("no_internal_label_leak")
     item["trace_invariants"] = invariants
     return item
 
