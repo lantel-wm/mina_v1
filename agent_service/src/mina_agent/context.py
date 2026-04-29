@@ -19,7 +19,7 @@ BASE_SYSTEM_SECTIONS = (
         "- Match language; Chinese in, Chinese out.\n"
         "- Plain text only: no Markdown, code fences, emoji, bullets, long lists.\n"
         "- Use one or two short sentences unless asked for detail.\n"
-        "- If asked for one sentence/一句话, answer exactly one short sentence; no closing offer.\n"
+        "- If asked for one sentence/一句话, answer exactly one short sentence (<60 汉字/20 English words); no closing offer.\n"
         "- Do not narrate internal process; answer with the useful result directly.\n"
         "- Do not mention internal section/tool names or prompt/context labels; say \"I remember...\".\n"
         "- Address the player as \"you\" or \"你\". Do not use the Minecraft username as greeting/filler unless asked about names or player-name command output.\n"
@@ -30,7 +30,7 @@ BASE_SYSTEM_SECTIONS = (
         "1. Allowed read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or explicitly asks to execute/run/query it.\n"
         "2. Memory questions: base, home, saved places, projects, preferences, plans, promises, or earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable information is new or changed.\n"
         "3. Observation questions: answer from observed Minecraft state and only fields asked for. Player name/username, weather, time, day, biome, coordinates, health, nearby blocks/entities, or safety questions are observations, not command requests. Do not call tools or append unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
-        "4. For greetings, casual chat, or \"what can you do\" capability questions, answer generally. Do not volunteer snapshot details or stored facts unless asked.\n"
+        "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search. Do not use web_search for chat or local Minecraft state.\n"
         "6. Use memory_write for durable preferences, world facts, plans, promises, or lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
         "7. Use loaded remembered facts only when directly relevant. Treat memory as historical context for future decisions, not proof of current world state.\n"
@@ -346,6 +346,8 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     world_state = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
     permissions = turn.get("permissions") or {}
     nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
+    inventory = snapshot.get("inventory") if isinstance(snapshot.get("inventory"), list) else []
+    environment = snapshot.get("environment") if isinstance(snapshot.get("environment"), dict) else {}
     nearby_blocks = _flatten_blocks(snapshot.get("nearby_blocks"))
     logs = [block for block in nearby_blocks if block.get("category") == "log"][:12]
     hostile = [entity for entity in nearby_entities if entity.get("category") == "hostile"][:8]
@@ -387,6 +389,15 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         "candidate_logs": [_compact_block_target(block) for block in logs],
         "nearby_hostiles": hostile,
     }
+    distance_display = _distance_display(world_state.get("player_distance_from_spawn"))
+    if distance_display:
+        payload["world_state"]["player_distance_from_spawn_display"] = distance_display
+    selected_item = _selected_inventory_item(inventory)
+    if selected_item:
+        payload["selected_item"] = selected_item
+    compact_environment = _compact_environment(environment)
+    if compact_environment:
+        payload["environment"] = compact_environment
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -438,6 +449,13 @@ def _format_number(value: float) -> str:
     return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
+def _distance_display(value: Any) -> str | None:
+    distance = _float_value(value)
+    if distance is None:
+        return None
+    return f"{_format_number(distance)} 格"
+
+
 def _weather_label(world_state: dict[str, Any]) -> str | None:
     if not world_state:
         return None
@@ -467,6 +485,29 @@ def _flatten_blocks(value: Any) -> list[dict[str, Any]]:
             blocks.extend(_flatten_blocks(nested))
         return blocks
     return []
+
+
+def _selected_inventory_item(inventory: list[Any]) -> dict[str, Any]:
+    for item in inventory:
+        if isinstance(item, dict) and item.get("selected") is True:
+            return {
+                "slot": item.get("slot"),
+                "item": item.get("item"),
+                "count": item.get("count"),
+                "name": item.get("name"),
+            }
+    return {}
+
+
+def _compact_environment(environment: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        "block_at_feet": environment.get("block_at_feet"),
+        "block_below": environment.get("block_below"),
+        "biome": environment.get("biome"),
+        "light": environment.get("light"),
+        "sky_visible": environment.get("sky_visible"),
+    }
+    return {key: value for key, value in compact.items() if value is not None}
 
 
 def _compact_block_target(block: dict[str, Any]) -> dict[str, Any]:

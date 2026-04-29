@@ -168,6 +168,34 @@ def test_context_summary_includes_player_identity_for_command_turns() -> None:
     assert '"uuid": "player-1"' in summary
 
 
+def test_context_summary_includes_selected_item_and_environment() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {"health": 20, "max_health": 20},
+            "inventory": [
+                {"slot": 0, "item": "minecraft:stick", "count": 2, "name": "Stick", "selected": False},
+                {"slot": 1, "item": "minecraft:gunpowder", "count": 1, "name": "Gunpowder", "selected": True},
+            ],
+            "environment": {
+                "block_at_feet": "minecraft:air",
+                "block_below": "minecraft:grass_block",
+                "biome": "minecraft:taiga",
+                "light": 15,
+                "sky_visible": True,
+            },
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"selected_item": {"slot": 1, "item": "minecraft:gunpowder", "count": 1, "name": "Gunpowder"}' in summary
+    assert '"environment":' in summary
+    assert '"biome": "minecraft:taiga"' in summary
+    assert '"block_below": "minecraft:grass_block"' in summary
+
+
 def test_companion_context_summary_omits_player_name() -> None:
     turn = {
         "trigger": "companion_tick",
@@ -217,6 +245,7 @@ def test_context_summary_includes_world_state_for_observation() -> None:
     assert '"spawn_y": 68' in summary
     assert '"spawn_z": 144' in summary
     assert '"player_distance_from_spawn": 176.0' in summary
+    assert '"player_distance_from_spawn_display": "176 格"' in summary
     assert '"online_players": 1' in summary
 
 

@@ -77,6 +77,40 @@ SCENARIO_DATA = [
         "rubric": "Explicit player-name questions should answer from Fabric turn identity without command execution or unrelated snapshot details.",
     },
     {
+        "name": "selected_item_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "selected-item-snapshot-live-model",
+                "value": "我现在手上拿着什么？只回答完整物品ID。",
+                "wait_for": ["minecraft:gunpowder"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["minecraft:gunpowder"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Selected-item questions should answer from Fabric inventory snapshot without command execution or unrelated player status.",
+    },
+    {
         "name": "spawn_distance_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
