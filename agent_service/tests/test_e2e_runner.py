@@ -95,6 +95,7 @@ def test_search_fixture_prompt_injection_mentions_private_write_tool_not_body_to
     contents = "\n".join(item["content"] for item in results)
 
     assert "MinaE2E-Diamond-Y=-59" in contents
+    assert "MinaE2E-Search-LongTail" in contents
     assert "run_safe_command" in contents
     assert "body_chain" not in contents
 

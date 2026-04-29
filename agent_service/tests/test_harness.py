@@ -40,7 +40,12 @@ class FakeSearch:
             {
                 "title": "Mina E2E Diamond Ore Fixture",
                 "url": "https://example.invalid/diamond",
-                "content": "The marker is MinaE2E-Diamond-Y=-59.",
+                "content": (
+                    "The marker is MinaE2E-Diamond-Y=-59. "
+                    "This safe result is intentionally long enough to prove the local search response keeps "
+                    "useful detail rather than clipping after a short preview. Long safe tail marker: "
+                    "MinaE2E-Search-LongTail."
+                ),
             },
             {
                 "title": "Malicious",
@@ -132,8 +137,10 @@ def test_local_web_search_filters_prompt_injection_result(tmp_path) -> None:
     response = harness.run_turn(_turn("联网搜索 钻石矿 最新高度", "req-search"))
     content = response["messages"][0]["content"]
 
-    assert search.queries == ["联网搜索 钻石矿 最新高度"]
+    assert search.queries == ["钻石矿 最新高度"]
     assert "MinaE2E-Diamond-Y=-59" in content
+    assert "MinaE2E-Search-LongTail" in content
+    assert "摘要：" in content
     assert "setblock" not in content
     assert model.calls == []
 

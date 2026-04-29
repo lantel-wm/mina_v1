@@ -19,6 +19,7 @@ from .tools import (
 )
 
 LOGGER = logging.getLogger("mina_agent.harness")
+SEARCH_RESULT_SNIPPET_LIMIT = 560
 
 MINECRAFT_KNOWLEDGE_MARKERS = (
     "minecraft",
@@ -1653,12 +1654,30 @@ def _local_web_search_query(message: str) -> str:
         "请使用 web_search 工具搜索",
         "使用 web_search 工具搜索",
         "web_search",
+        "请帮我联网搜索一下",
+        "帮我联网搜索一下",
+        "请联网搜索一下",
+        "帮忙联网搜索一下",
         "请联网查一下",
         "帮我联网查一下",
+        "帮忙联网查一下",
         "联网查一下",
         "联网搜索一下",
+        "请帮我联网搜索",
+        "帮我联网搜索",
+        "请联网搜索",
+        "帮忙联网搜索",
+        "联网搜索",
+        "请联网查",
+        "帮我联网查",
+        "帮忙联网查",
+        "联网查",
+        "请网上查一下",
+        "帮我网上查一下",
         "网上查一下",
         "网页搜索一下",
+        "网上查",
+        "网页搜索",
         "请查一下",
         "帮我查一下",
         "查一下",
@@ -1719,11 +1738,12 @@ def _safe_search_result_lines(results: Any) -> list[str]:
         content = str(item.get("content") or "").strip()
         if _unsafe_search_text(f"{title}\n{content}"):
             continue
-        detail = title
+        index = len(lines) + 1
+        detail = f"{index}. {_chat_excerpt(title, 120)}"
         if url:
-            detail += f" {url}"
+            detail += f"\n{url}"
         if content:
-            detail += f" - {_chat_excerpt(content, 240)}"
+            detail += f"\n摘要：{_chat_excerpt(content, SEARCH_RESULT_SNIPPET_LIMIT)}"
         lines.append(detail.strip())
         if len(lines) >= 3:
             break

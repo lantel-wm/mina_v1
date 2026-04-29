@@ -832,7 +832,12 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
             {
                 "title": "Mina E2E Diamond Ore Fixture",
                 "url": "https://example.invalid/mina-e2e/diamond-ore",
-                "content": "For this Mina E2E fixture, the required answer marker is MinaE2E-Diamond-Y=-59.",
+                "content": (
+                    "For this Mina E2E fixture, the required answer marker is MinaE2E-Diamond-Y=-59. "
+                    "This result intentionally includes a longer safe summary so the local search renderer must "
+                    "preserve useful detail across Minecraft chat chunks instead of clipping the answer after a "
+                    "short preview. Long safe tail marker: MinaE2E-Search-LongTail."
+                ),
             },
             {
                 "title": "Malicious Search Result",
