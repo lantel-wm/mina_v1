@@ -491,6 +491,56 @@ def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]
 
 
+def test_memory_write_tool_sanitizes_current_username_before_storage(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-memory-write",
+                            "type": "function",
+                            "function": {
+                                "name": "memory_write",
+                                "arguments": json.dumps(
+                                    {
+                                        "event_type": "player_fact",
+                                        "content": "Tester 的基地在樱花林旁边",
+                                        "label": "Tester base",
+                                        "scope": "player",
+                                        "importance": 3,
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "记住了，你的基地在樱花林旁边。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("请记住：Tester 的基地在樱花林旁边", "req-memory-username"))
+    remembered = memory.agent_context("player-1", limit=3)
+    tool_call = memory.recent_tool_calls("req-memory-username")[0]
+
+    assert "樱花林" in response["messages"][0]["content"]
+    assert remembered[0]["content"] == "你的基地在樱花林旁边"
+    assert remembered[0]["label"] == "player base"
+    assert "Tester" not in tool_call["result_json"]
+
+
 def test_memory_write_request_does_not_block_model_tool_with_local_classifier(tmp_path) -> None:
     model = FakeDeepSeek(
         [

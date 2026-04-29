@@ -180,6 +180,47 @@ def test_memory_write_and_search_round_trip(tmp_path) -> None:
     assert any("spruce bases" in result["content"] for result in payload["results"])
 
 
+def test_memory_write_sanitizes_current_player_name_from_player_memory(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _turn()
+
+    written = runner.run(
+        "memory_write",
+        {
+            "event_type": "player_fact",
+            "content": "Tester 的基地在樱花林旁边",
+            "label": "Tester base",
+            "scope": "player",
+        },
+        turn,
+    )
+    written_payload = _payload(written.content)
+    searched = runner.run("memory_search", {"query": "樱花林", "limit": 3}, turn)
+    search_payload = _payload(searched.content)
+
+    assert written_payload["ok"] is True
+    assert written_payload["memory"]["content"] == "你的基地在樱花林旁边"
+    assert written_payload["memory"]["label"] == "player base"
+    assert "Tester" not in written.content
+    assert any("你的基地在樱花林旁边" in result["content"] for result in search_payload["results"])
+    assert "Tester" not in searched.content
+
+
+def test_memory_write_preserves_current_player_name_when_it_is_the_fact(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _turn()
+
+    written = runner.run(
+        "memory_write",
+        {"event_type": "player_fact", "content": "你的 Minecraft 用户名是 Tester", "scope": "player"},
+        turn,
+    )
+    written_payload = _payload(written.content)
+
+    assert written_payload["ok"] is True
+    assert written_payload["memory"]["content"] == "你的 Minecraft 用户名是 Tester"
+
+
 def test_web_search_returns_full_tool_content(tmp_path) -> None:
     search = FakeSearch()
     runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), search)  # type: ignore[arg-type]

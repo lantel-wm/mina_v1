@@ -417,7 +417,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "memory-write-live-model",
-                "value": "请记住：我的基地在樱花林旁边",
+                "value": "请记住：mina_tester 的基地在樱花林旁边",
                 "wait_for": ["记住"],
                 "timeout": 60,
             },

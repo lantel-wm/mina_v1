@@ -252,6 +252,41 @@ def test_build_messages_does_not_add_exact_command_keyword_hint(tmp_path) -> Non
     assert "Either call run_read_only_command" not in content
 
 
+def test_build_messages_adds_player_name_memory_policy_only_when_name_is_mentioned(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-memory",
+        "trigger": "command",
+        "message": "请记住：Tester 的基地在樱花林旁边",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Current player name handling" in content
+    assert "The current Minecraft username is Tester." in content
+    assert "convert '<username> 的 ...' to '你的 ...'" in content
+
+
+def test_build_messages_omits_player_name_memory_policy_when_name_is_not_mentioned(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-memory",
+        "trigger": "command",
+        "message": "请记住：我的基地在樱花林旁边",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Current player name handling" not in content
+    assert "The current Minecraft username is Tester." not in content
+
+
 def test_build_messages_does_not_mark_plain_observation_as_command_execution(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     turn = {

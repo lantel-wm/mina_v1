@@ -167,6 +167,15 @@ def test_policy_allows_historical_memory_recall_reference() -> None:
     assert review.content == "你的基地在樱花林旁边，我之前已经记下了。"
 
 
+def test_policy_allows_already_remembered_recall_reference() -> None:
+    policy = ResponsePolicyRuntime()
+
+    review = policy.review_final_content("你的基地在樱花林旁边，我已经记住了。", can_repair=True)
+
+    assert not review.needs_repair
+    assert review.content == "你的基地在樱花林旁边，我已经记住了。"
+
+
 def test_policy_normalizes_successful_memory_write_ack() -> None:
     policy = ResponsePolicyRuntime()
     policy.note_successful_tool_result("memory_write", json.dumps({"ok": True}))

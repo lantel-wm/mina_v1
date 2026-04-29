@@ -236,7 +236,9 @@ _CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")
 _HISTORICAL_MEMORY_REFERENCE_RE = re.compile(
     r"(?i)(?:"
     r"(?:之前|以前|先前|此前|上次|早些时候|刚才).{0,16}(?:记住|记下|记好|保存)|"
+    r"(?:我|咱们|我们).{0,4}(?:已经|早已).{0,6}(?:记住|记下|记好|保存)(?:了|过)|"
     r"(?:previously|earlier|before).{0,20}(?:remembered|remember|saved|noted)|"
+    r"(?:i|we)(?:'ve| have).{0,20}(?:already).{0,20}(?:remembered|saved|noted)|"
     r"(?:remembered|saved|noted).{0,20}(?:previously|earlier|before)"
     r")"
 )

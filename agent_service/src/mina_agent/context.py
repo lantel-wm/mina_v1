@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .memory import MemoryStore
@@ -133,6 +134,14 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
 
 def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_available: bool = False) -> str:
     sections: list[str] = []
+    player_name = _current_player_name(turn)
+    if player_name and _mentions_player_name(user_content, player_name):
+        sections.append(
+            "Current player name handling:\n"
+            f"- The current Minecraft username is {player_name}.\n"
+            "- Treat that username as referring to the requester unless the player explicitly says the name itself is the fact.\n"
+            "- For player-scoped memory_write, convert '<username> 的 ...' to '你的 ...' and omit the username from content and label."
+        )
     if str(turn.get("trigger") or "") == "companion_tick":
         sections.append(
             "Companion tick policy:\n"
@@ -156,6 +165,21 @@ def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_availab
                 "- Answer briefly that MCP is unavailable here; do not invent configured MCP servers or tools."
             )
     return "\n\n".join(sections)
+
+
+def _current_player_name(turn: dict[str, Any]) -> str:
+    player = turn.get("player")
+    if not isinstance(player, dict):
+        return ""
+    return str(player.get("name") or "").strip()
+
+
+def _mentions_player_name(user_content: str, player_name: str) -> bool:
+    content = str(user_content or "")
+    name = str(player_name or "").strip()
+    if not content or not name:
+        return False
+    return bool(re.search(rf"(?i)(?<![\w.-])@?{re.escape(name)}(?![\w.-])", content))
 
 
 def _mentions_mcp(user_content: str) -> bool:

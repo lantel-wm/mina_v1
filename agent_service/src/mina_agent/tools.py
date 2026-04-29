@@ -263,6 +263,10 @@ class ToolRunner:
             scope = "player"
         scope_id = _memory_scope_id(scope, player_id, turn)
         label = str(args.get("label") or event_type or "note")
+        if scope == "player":
+            player_name = _player_name(turn)
+            content = _sanitize_player_memory_content(content, player_name)
+            label = _sanitize_player_memory_label(label, player_name)
         if not content:
             return ToolResult(content=json.dumps({"ok": False, "error": "memory_write content is required"}, ensure_ascii=False))
         self.memory.add_agent_memory(scope, scope_id, label, content, importance=importance, source="memory_write")
@@ -331,6 +335,11 @@ def _player_id(turn: dict[str, Any]) -> str:
     return str(player.get("uuid") or player.get("id") or "unknown")
 
 
+def _player_name(turn: dict[str, Any]) -> str:
+    player = turn.get("player") or {}
+    return str(player.get("name") or "").strip()
+
+
 def _world_id(turn: dict[str, Any]) -> str | None:
     snapshot = turn.get("snapshot")
     if not isinstance(snapshot, dict):
@@ -367,6 +376,26 @@ def _memory_scope_id(scope: str, player_id: str, turn: dict[str, Any]) -> str:
     if scope == "world":
         return _world_id(turn) or "unknown"
     return player_id
+
+
+def _sanitize_player_memory_content(content: str, player_name: str) -> str:
+    text = " ".join(str(content or "").split())
+    name = str(player_name or "").strip()
+    if not text or not name:
+        return text
+    escaped = re.escape(name)
+    text = re.sub(rf"(?i)(?:玩家\s*)?@?{escaped}\s*的", "你的", text)
+    text = re.sub(rf"(?i)属于\s*(?:玩家\s*)?@?{escaped}", "属于你", text)
+    text = re.sub(rf"(?i)(?:player\s*)?@?{escaped}\s*'s\b", "your", text)
+    return text
+
+
+def _sanitize_player_memory_label(label: str, player_name: str) -> str:
+    text = " ".join(str(label or "").split())
+    name = str(player_name or "").strip()
+    if not text or not name:
+        return text
+    return re.sub(rf"(?i)@?{re.escape(name)}", "player", text).strip()
 
 
 def _looks_like_minecraft_write(tool: str, arguments: dict[str, Any]) -> bool:
