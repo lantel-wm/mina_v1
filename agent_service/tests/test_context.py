@@ -26,6 +26,8 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
     assert "Player name/username" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
+    assert "held item" in SYSTEM_PROMPT
+    assert "block at/below feet" in SYSTEM_PROMPT
     assert "do not mention safety, monsters, entities" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "one sentence/一句话" in SYSTEM_PROMPT

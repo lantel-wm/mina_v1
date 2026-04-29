@@ -111,6 +111,41 @@ SCENARIO_DATA = [
         "rubric": "Selected-item questions should answer from Fabric inventory snapshot without command execution or unrelated player status.",
     },
     {
+        "name": "block_below_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "block-below-snapshot-live-model",
+                "value": "我脚下垫着什么方块？只回答完整方块ID。",
+                "wait_for": ["minecraft:grass_block"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["minecraft:grass_block"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "minecraft:air",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Block-below questions should answer from Fabric environment snapshot without command execution or unrelated player status.",
+    },
+    {
         "name": "spawn_distance_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
