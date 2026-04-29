@@ -4,6 +4,8 @@ import json
 from typing import Any
 
 from mina_agent.config import Settings
+from mina_agent.body_agent import is_body_chop_tree_request
+from mina_agent.body_agent import is_body_task_status_request
 from mina_agent.deepseek import DeepSeekResponse
 from mina_agent.harness import AgentHarness
 from mina_agent.harness import _parse_args
@@ -26,6 +28,18 @@ def test_parse_args_rejects_non_object_json() -> None:
 
 def test_parse_args_rejects_invalid_json() -> None:
     assert _parse_args("{bad") == {}
+
+
+def test_body_completion_questions_are_status_not_new_chop() -> None:
+    for message in ("树砍了吗？", "这棵树砍了没", "木头拿到了吗？", "did you chop the tree?", "have you collected the wood?"):
+        normalized = message.lower()
+        assert is_body_task_status_request(normalized)
+        assert not is_body_chop_tree_request(normalized)
+
+    for message in ("帮我把这棵树砍了", "帮我拿点木头", "chop a tree", "collect wood"):
+        normalized = message.lower()
+        assert not is_body_task_status_request(normalized)
+        assert is_body_chop_tree_request(normalized)
 
 
 class FakeSearch(SearxngClient):

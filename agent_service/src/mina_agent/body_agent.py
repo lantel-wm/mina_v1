@@ -163,6 +163,8 @@ def is_body_task_status_request(message: str) -> bool:
     normalized = message.strip().lower()
     if normalized in {"状态", "进度", "status", "task status"}:
         return True
+    if _body_completion_status_question(normalized):
+        return True
     return any(
         token in normalized
         for token in (
@@ -195,6 +197,8 @@ def is_body_task_status_request(message: str) -> bool:
 
 def _recent_task_status_request(message: str) -> bool:
     normalized = message.strip().lower()
+    if _body_completion_status_question(normalized):
+        return True
     return any(
         token in normalized
         for token in (
@@ -309,7 +313,7 @@ def is_body_follow_request(message: str) -> bool:
 
 
 def is_body_chop_tree_request(message: str) -> bool:
-    if is_body_instructional_request(message):
+    if is_body_instructional_request(message) or _body_completion_status_question(message):
         return False
     return _contains_chinese_tree_action(message) or _contains_english_tree_action(message) or any(
         token in message
@@ -342,6 +346,31 @@ def _contains_english_tree_action(message: str) -> bool:
     tree_terms = ("tree", "trees", "log", "logs", "wood")
     action_terms = ("chop", "cut", "break", "harvest", "collect", "gather", "get")
     return any(tree in message for tree in tree_terms) and any(action in message for action in action_terms)
+
+
+def _body_completion_status_question(message: str) -> bool:
+    return _chinese_body_completion_status_question(message) or _english_body_completion_status_question(message)
+
+
+def _chinese_body_completion_status_question(message: str) -> bool:
+    tree_terms = r"(树|木头|木材|木料|原木|树干)"
+    action_terms = r"(砍|伐|采|收集|获取|获得|拿|挖|打|撸|弄|搞)"
+    completion_terms = r"(了|完|好|到)"
+    question_terms = r"(吗|么|没|没有|[?？])"
+    return bool(
+        re.search(tree_terms + r".{0,8}" + action_terms + r".{0,8}" + completion_terms + r".{0,4}" + question_terms, message)
+        or re.search(action_terms + r".{0,8}" + tree_terms + r".{0,8}" + completion_terms + r".{0,4}" + question_terms, message)
+        or re.search(tree_terms + r".{0,8}" + action_terms + r".{0,4}(没|没有)", message)
+        or re.search(action_terms + r".{0,8}" + tree_terms + r".{0,4}(没|没有)", message)
+    )
+
+
+def _english_body_completion_status_question(message: str) -> bool:
+    return bool(
+        re.search(r"\b(did|have|has)\b.{0,24}\b(chop|cut|break|harvest|collect|get|gather)\w*\b.{0,24}\b(tree|trees|log|logs|wood)\b", message)
+        or re.search(r"\b(tree|trees|log|logs|wood)\b.{0,24}\b(chopped|cut|broken|harvested|collected|done|finished|complete)\b", message)
+        or re.search(r"\b(done|finished|complete)\b.{0,24}\b(chopping|cutting|breaking|harvesting|collecting|getting|gathering)\w*\b.{0,24}\b(tree|trees|log|logs|wood)\b", message)
+    )
 
 
 def is_body_instructional_request(message: str) -> bool:

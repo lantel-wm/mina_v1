@@ -493,6 +493,18 @@ class SkillRuntime:
             cycle = int(task.get("collect_cycles") or 0) + 1
             task["collect_cycles"] = cycle
             task["collect_target"] = target
+            monitor = {
+                "type": "log_drop_collected",
+                "x": float(target["x"]),
+                "y": float(target["y"]),
+                "z": float(target["z"]),
+                "body_radius": 1.5,
+                "item_radius": 1.75,
+                "deadline_ticks": 160,
+            }
+            target_id = str(target.get("id") or "")
+            if target_id:
+                monitor["item_id"] = target_id
             action = _action(
                 task,
                 "body_move_to_position",
@@ -504,15 +516,7 @@ class SkillRuntime:
                     "jump": True,
                 },
                 step=f"collect:{cycle}",
-                monitor={
-                    "type": "log_drop_collected",
-                    "x": float(target["x"]),
-                    "y": float(target["y"]),
-                    "z": float(target["z"]),
-                    "body_radius": 1.5,
-                    "item_radius": 1.75,
-                    "deadline_ticks": 160,
-                },
+                monitor=monitor,
             )
             self._mark_action(task, action)
             task["stage"] = "collect_sent"
@@ -747,15 +751,17 @@ def _look_point_for_target(target: dict[str, Any]) -> dict[str, float]:
     target_y = _float_value(target.get("y"))
     target_z = _float_value(target.get("z"))
     approach_x = _float_value(target.get("approach_x"))
+    approach_y = _float_value(target.get("approach_y"))
     approach_z = _float_value(target.get("approach_z"))
-    if None in (target_x, target_y, target_z, approach_x, approach_z):
+    if None in (target_x, target_y, target_z, approach_x, approach_y, approach_z):
         return center
 
     # Aim at the exposed side face from the approach square. Center-aiming a
     # lower trunk block can raycast into the stacked log above it from body eye
     # height, which creates false progress for chop_tree.
     epsilon = 0.02
-    point = {"x": center["x"], "y": float(target_y) + 0.65, "z": center["z"]}
+    side_y = 0.25 if float(target_y) > float(approach_y) else 0.65
+    point = {"x": center["x"], "y": float(target_y) + side_y, "z": center["z"]}
     dx = center["x"] - float(approach_x)
     dz = center["z"] - float(approach_z)
     if abs(dz) >= abs(dx):

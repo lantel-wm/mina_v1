@@ -178,8 +178,13 @@ public final class MinaActionMonitor {
 				double itemRadius = doubleValue(monitor, "item_radius", 1.75D);
 				double distance = Math.sqrt(body.distanceToSqr(x, y, z));
 				if (distance <= bodyRadius) {
+					String itemId = string(monitor, "item_id");
+					if (!itemId.isBlank() && !logDropWithIdExists(body.level(), itemId, x, y, z, 16.0D)) {
+						success = result("success", "target log drop collected");
+						success.addProperty("distance", round(distance));
+					}
 					int drops = logDropCount(body.level(), x, y, z, itemRadius);
-					if (drops <= 0) {
+					if (success == null && drops <= 0) {
 						success = result("success", "log drop collected");
 						success.addProperty("distance", round(distance));
 					}
@@ -221,6 +226,20 @@ public final class MinaActionMonitor {
 			count += item.getItem().getCount();
 		}
 		return count;
+	}
+
+	private static boolean logDropWithIdExists(ServerLevel level, String itemId, double x, double y, double z, double radius) {
+		UUID uuid;
+		try {
+			uuid = UUID.fromString(itemId);
+		} catch (IllegalArgumentException ex) {
+			return true;
+		}
+		AABB box = new AABB(x, y, z, x, y, z).inflate(radius);
+		for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, box, entity -> entity.isAlive() && entity.getUUID().equals(uuid) && entity.getItem().is(ItemTags.LOGS))) {
+			return true;
+		}
+		return false;
 	}
 
 	private static JsonObject result(String status, String reason) {

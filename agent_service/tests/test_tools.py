@@ -588,7 +588,7 @@ def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) ->
     upper_look = continued.actions[1]
     assert upper_look["name"] == "body_look_at_position"
     assert upper_look["step_id"] == "look:1.0"
-    assert upper_look["args"] == {"x": 2.5, "y": 81.65, "z": 0.02}
+    assert upper_look["args"] == {"x": 2.5, "y": 81.25, "z": 0.02}
     assert upper_look["monitor"]["y"] == 81
     status = runner.run("task_status", {"task_id": task_id}, turn)
     assert '"target_ordinal": 1' in status.content
@@ -638,6 +638,82 @@ def test_chop_tree_continues_to_stacked_upper_log_after_first_block(tmp_path) ->
     assert '"status": "completed"' in latest_status
     assert f'"task_id": "{task_id}"' in latest_status
     assert '"status": "completed"' in runner.run("task_status", {"task_id": task_id}, turn).content
+
+
+def test_chop_tree_collect_monitor_tracks_target_drop_id(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _allowed_turn()
+    attack = _start_chop_until_attack(runner, turn)
+    first_drop = {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "type": "minecraft:item",
+        "item": "minecraft:spruce_log",
+        "item_category": "log",
+        "name": "Spruce Log",
+        "count": 1,
+        "x": 2.32,
+        "y": 80.52,
+        "z": 0.53,
+        "distance": 1.03,
+    }
+    after_attack = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": attack["id"],
+                    "task_id": attack["task_id"],
+                    "step_id": attack["step_id"],
+                    "name": attack["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "target block is absent"},
+                    "snapshot": {
+                        "body_state": {"online": True},
+                        "nearby_blocks": {"body": []},
+                        "body_nearby_entities": [first_drop],
+                    },
+                }
+            ]
+        }
+    )
+
+    assert len(after_attack.actions) >= 2
+    collect = after_attack.actions[1]
+    assert collect["step_id"] == "collect:1"
+    assert collect["monitor"]["type"] == "log_drop_collected"
+    assert collect["monitor"]["item_id"] == first_drop["id"]
+
+    remaining_drop = {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "type": "minecraft:item",
+        "item": "minecraft:spruce_log",
+        "item_category": "log",
+        "name": "Spruce Log",
+        "count": 1,
+        "x": 3.9,
+        "y": 80.0,
+        "z": -0.52,
+        "distance": 1.84,
+    }
+    continued = runner.skills.handle_action_results(
+        {
+            "action_results": [
+                {
+                    "action_id": collect["id"],
+                    "task_id": collect["task_id"],
+                    "step_id": collect["step_id"],
+                    "name": collect["name"],
+                    "status": "success",
+                    "command_success": True,
+                    "monitor_result": {"status": "success", "reason": "target log drop collected"},
+                    "snapshot": {"body_state": {"online": True}, "body_nearby_entities": [remaining_drop]},
+                }
+            ]
+        }
+    )
+
+    assert continued.actions[0]["step_id"] == "collect:2"
+    assert continued.actions[0]["monitor"]["item_id"] == remaining_drop["id"]
 
 
 def test_chop_tree_releases_attack_before_recovery_on_timeout(tmp_path) -> None:

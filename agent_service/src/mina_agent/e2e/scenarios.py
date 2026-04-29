@@ -466,6 +466,43 @@ SCENARIO_DATA = [
         "rubric": "Get-wood requests should route to chop_tree, and follow-up status questions after completion should report the recent completed task without model calls.",
     },
     {
+        "name": "body_chop_completion_question_status_router",
+        "fixture": "chop_tree",
+        "tags": ["live", "core", "body", "router"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "body-chop-question-start",
+                "value": "帮我砍树",
+                "wait_for": ["我开始砍树"],
+            },
+            {"kind": "assert", "value": "chop_tree", "timeout": 180},
+            {"kind": "assert", "value": "upper_log_absent", "timeout": 180},
+            {"kind": "assert", "value": "body_has_log", "timeout": 30},
+            {"kind": "assert", "value": "no_log_drops", "timeout": 30},
+            {
+                "kind": "request",
+                "request_id": "body-chop-question-status",
+                "value": "树砍了吗？",
+                "wait_for": ["最近任务：chop_tree", "状态：completed"],
+            },
+        ],
+        "expected_tools": [
+            {"name": "start_body_task", "status": "ok", "args_contains": '"task_type": "chop_tree"'},
+            {"name": "task_status", "status": "ok", "result_contains": "completed"},
+        ],
+        "expected_actions": [
+            {"name": "body_move_to_position"},
+            {"name": "body_look_at_position"},
+            {"name": "body_attack"},
+        ],
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["最近任务：chop_tree", "状态：completed"],
+        "trace_invariants": ["no_body_look_monitor_timeout", "no_action_monitor_timeout"],
+        "world_asserts": ["chop_tree", "upper_log_absent", "body_has_log", "no_log_drops"],
+        "rubric": "Completion questions such as '树砍了吗？' must report recent chop_tree status instead of starting another chop task.",
+    },
+    {
         "name": "body_chop_target_disappears_router",
         "fixture": "chop_tree",
         "tags": ["live", "core", "body", "router"],

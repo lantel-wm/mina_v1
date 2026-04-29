@@ -127,6 +127,7 @@ def test_live_suite_is_declarative_and_traceable() -> None:
         "body_colloquial_chop_tree_router",
         "body_collect_wood_chop_router",
         "body_get_wood_status_after_completion_router",
+        "body_chop_completion_question_status_router",
     }:
         assert "no_body_look_monitor_timeout" in SCENARIOS[scenario_name].trace_invariants
     leaf_crowded = SCENARIOS["body_leaf_crowded_chop_tree_router"]
@@ -151,6 +152,12 @@ def test_live_suite_is_declarative_and_traceable() -> None:
     assert "最近任务：chop_tree" in get_wood.expected_response_contains
     assert get_wood.expected_model is not None
     assert get_wood.expected_model.count == 0
+    completion_question = SCENARIOS["body_chop_completion_question_status_router"]
+    assert any(step.value == "树砍了吗？" for step in completion_question.steps)
+    assert any(expected.name == "task_status" and expected.status == "ok" for expected in completion_question.expected_tools)
+    assert "状态：completed" in completion_question.expected_response_contains
+    assert completion_question.expected_model is not None
+    assert completion_question.expected_model.count == 0
     plain_lookup = SCENARIOS["knowledge_plain_lookup_search_router"]
     assert any(expected.name == "web_search" and expected.status == "ok" for expected in plain_lookup.expected_tools)
     assert any(step.value.startswith("帮我查一下 Minecraft") for step in plain_lookup.steps)
