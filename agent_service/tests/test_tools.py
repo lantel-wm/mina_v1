@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from mina_agent.memory import MemoryStore
-from mina_agent.tools import ToolRunner, is_read_only_command, tool_specs
+from mina_agent.tools import ToolRunner, is_read_only_command, normalize_read_only_command, tool_specs
 
 
 class FakeSearch:
@@ -88,6 +88,7 @@ def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:
     assert not is_read_only_command("execute as @a run seed")
     assert not is_read_only_command("time set day")
     assert not is_read_only_command("locate structure minecraft:village; stop")
+    assert normalize_read_only_command("/TIME   QUERY   DAY") == "time query day"
 
 
 def test_run_read_only_command_schedules_fabric_action(tmp_path) -> None:

@@ -20,6 +20,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
 
     assert "player_status_snapshot_live_model" in names
     assert "read_only_time_command_live_model" in names
+    assert "literal_read_only_command_local_route" in names
     assert "read_only_command_result_recall_live_model" in names
     assert "web_search_fixture_filters_injection_live_model" in names
     assert "write_command_refused_live_model" in names

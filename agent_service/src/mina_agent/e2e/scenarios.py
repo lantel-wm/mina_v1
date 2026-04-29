@@ -79,7 +79,28 @@ SCENARIO_DATA = [
         "expected_actions": [{"name": "run_read_only_command"}],
         "expected_model": {"mode": "at_least", "min_count": 1},
         "trace_invariants": ["no_action_monitor_timeout"],
-        "rubric": "Literal allowed read-only commands should be selected by the live model and executed through the Fabric read-only action.",
+        "rubric": "Natural-language read-only command requests should be selected by the live model and executed through the Fabric read-only action.",
+    },
+    {
+        "name": "literal_read_only_command_local_route",
+        "fixture": "default_world",
+        "tags": ["live", "core", "command"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "literal-read-only-command-local-route",
+                "value": "time query day",
+                "wait_for": ["我会执行这个只读查询"],
+                "timeout": 60,
+            }
+        ],
+        "expected_tools": [
+            {"name": "run_read_only_command", "status": "ok", "args_contains": "time query day"},
+        ],
+        "expected_actions": [{"name": "run_read_only_command"}],
+        "expected_model": {"mode": "exact", "count": 0},
+        "trace_invariants": ["no_action_monitor_timeout"],
+        "rubric": "Exact allowlisted read-only command forms should bypass the live model while still going through Fabric's read-only action policy.",
     },
     {
         "name": "read_only_seed_command_live_model",

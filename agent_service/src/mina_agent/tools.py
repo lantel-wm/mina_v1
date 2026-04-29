@@ -271,8 +271,8 @@ class ToolRunner:
         )
 
     def _run_read_only_command(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
-        command = _strip_slash(str(args.get("command") or ""))
-        if not is_read_only_command(command):
+        command = normalize_read_only_command(str(args.get("command") or ""))
+        if command is None:
             return ToolResult(
                 content=json.dumps(
                     {
@@ -448,8 +448,19 @@ def _excerpt_with_flag(value: str, limit: int) -> tuple[str, bool]:
 
 
 def is_read_only_command(command: str) -> bool:
+    normalized = normalize_read_only_command(command)
+    return normalized is not None
+
+
+def normalize_read_only_command(command: str) -> str | None:
     normalized = _strip_slash(command).lower()
     parts = normalized.split()
+    if _is_read_only_command_parts(parts):
+        return " ".join(parts)
+    return None
+
+
+def _is_read_only_command_parts(parts: list[str]) -> bool:
     if not parts:
         return False
     if parts == ["seed"]:

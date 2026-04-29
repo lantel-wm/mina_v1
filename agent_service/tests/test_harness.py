@@ -174,6 +174,32 @@ def test_read_only_command_is_scheduled_after_model_tool_call(tmp_path) -> None:
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
+def test_literal_read_only_command_bypasses_model(tmp_path) -> None:
+    model = FakeDeepSeek()
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("/TIME   QUERY   DAY", "req-literal-time"))
+
+    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["actions"][0]["name"] == "run_read_only_command"
+    assert response["actions"][0]["args"] == {"command": "time query day"}
+    assert response["debug"]["literal_read_only_command"] is True
+    assert len(model.calls) == 0
+    calls = memory.recent_tool_calls("req-literal-time")
+    assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+
+
+def test_literal_read_only_command_works_without_api_key(tmp_path) -> None:
+    model = FakeDeepSeek(configured=False)
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("seed", "req-literal-seed-no-key"))
+
+    assert response["actions"][0]["args"] == {"command": "seed"}
+    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert len(model.calls) == 0
+
+
 def test_web_search_uses_model_tool_loop_and_filters_prompt_injection_result(tmp_path) -> None:
     model = FakeDeepSeek(
         [
