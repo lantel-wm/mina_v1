@@ -33,6 +33,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert all("no_mcp_tool_exposed" in scenario.trace_invariants for scenario in SCENARIOS.values())
     assert all("no_internal_label_leak" in scenario.trace_invariants for scenario in SCENARIOS.values())
     assert "no_model_tools_exposed" in SCENARIOS["companion_low_health_live_model"].trace_invariants
+    assert "concise_single_sentence_response" in SCENARIOS["smalltalk_live_model_no_tools"].trace_invariants
 
 
 def test_parse_args_rejects_removed_body_suite() -> None:
@@ -53,6 +54,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
                 "no_model_tools_exposed",
                 "no_model_requested_read_only_command",
                 "no_model_write_command_advice",
+                "concise_single_sentence_response",
                 "non_empty_final_model_content",
                 "single_memory_write_tool_call",
                 "single_read_only_command_action",
@@ -426,6 +428,33 @@ def test_trace_invariant_rejects_memory_search_before_memory_write(tmp_path, mon
     )
 
     with pytest.raises(AssertionError, match="memory_search ran before explicit memory_write request"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_verbose_single_sentence_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="verbose-chat",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["concise_single_sentence_response"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-chat",
+                "status": "ok",
+                "finish_reason": "stop",
+                "response": {
+                    "content": "你好！我能帮你查询 Minecraft 世界状态、记住你的基地和偏好、搜索网络信息，以及执行只读指令。有什么需要尽管说！"
+                },
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="not concise one-sentence"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 

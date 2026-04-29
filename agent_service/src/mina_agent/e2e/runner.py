@@ -146,6 +146,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "no_model_write_command_advice",
         "no_memory_search_before_memory_write",
         "no_test_username_in_memory_write",
+        "concise_single_sentence_response",
         "non_empty_final_model_content",
         "plain_chat_response",
         "single_memory_write_tool_call",
@@ -748,6 +749,27 @@ class E2ERunner:
                     raise AssertionError(f"{scenario.name}: no final non-tool model call found")
                 if not any(_model_content_preview(call).strip() for call in final_calls):
                     raise AssertionError(f"{scenario.name}: final model call content was empty: {final_calls!r}")
+            elif invariant == "concise_single_sentence_response":
+                calls = self._combined("model_calls", scenario.request_ids())
+                offenders: list[dict[str, Any]] = []
+                for call in calls:
+                    if call.get("status") != "ok" or call.get("finish_reason") == "tool_calls":
+                        continue
+                    content = _model_content_preview(call).strip()
+                    if not content:
+                        continue
+                    sentence_count = _sentence_terminal_count(content)
+                    if len(content) > 80 or sentence_count > 1:
+                        offenders.append(
+                            {
+                                "request_id": call.get("request_id"),
+                                "content_length": len(content),
+                                "sentence_count": sentence_count,
+                                "content": content,
+                            }
+                        )
+                if offenders:
+                    raise AssertionError(f"{scenario.name}: final response was not concise one-sentence chat: {offenders!r}")
             elif invariant == "plain_chat_response":
                 haystack = self._response_haystack(scenario)
                 match = _CHAT_UNSAFE_RE.search(haystack)
@@ -1420,6 +1442,11 @@ def _model_content_preview(call: dict[str, Any]) -> str:
     if not isinstance(response, dict):
         return ""
     return str(response.get("content") or response.get("content_preview") or "")
+
+
+def _sentence_terminal_count(content: str) -> int:
+    count = len(re.findall(r"[。！？!?]+", content))
+    return count if count > 0 else (1 if content.strip() else 0)
 
 
 def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:

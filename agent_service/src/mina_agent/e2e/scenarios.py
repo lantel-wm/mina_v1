@@ -507,8 +507,11 @@ SCENARIO_DATA = [
             "mcp",
             "小鸟",
             "mina_tester",
+            "有什么需要",
+            "尽管说",
         ],
-        "expected_model": {"mode": "at_least", "min_count": 1},
+        "expected_model": {"mode": "exact", "count": 1},
+        "trace_invariants": ["concise_single_sentence_response"],
         "rubric": "Ordinary smalltalk should go through the live model without exposing private Fabric executor primitives or unrelated stored memory.",
     },
     {

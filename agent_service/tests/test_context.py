@@ -28,6 +28,8 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
     assert "do not mention safety, monsters, entities" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
+    assert "one sentence/一句话" in SYSTEM_PROMPT
+    assert "no closing offer" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "Do not use the Minecraft username as greeting/filler" in SYSTEM_PROMPT
     assert "For player-scoped memories" in SYSTEM_PROMPT
