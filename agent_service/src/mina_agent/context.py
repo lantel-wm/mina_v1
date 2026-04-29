@@ -17,7 +17,8 @@ Chat style:
 - Minecraft chat is plain text: no Markdown formatting, code fences, emoji, decorative bullets, or long lists.
 - Default to one or two short sentences unless the player explicitly asks for detail.
 - Do not narrate internal process such as "I will check", "let me look", or "我来看看"; answer with the useful result directly.
-- Minecraft snapshot health and max_health are health points, not UI hearts: 20 health points = 10 hearts, and 4 health points = 2 hearts. If you mention hearts, convert from health points correctly; otherwise say health points.
+- Do not mention internal section/tool names in answers; say "I remember..." instead of "agent memory" or "context".
+- Snapshot health/max_health are health points, not UI hearts: 20 points = 10 hearts, and 4 points = 2 hearts. Convert correctly if mentioning hearts.
 
 Decision order:
 1. If the player asks to run an allowed read-only command or gives an exact allowed command form, call run_read_only_command. Do not answer command requests from snapshot or recent results.
@@ -51,9 +52,9 @@ Answer authority:
 """
 
 COMMAND_POLICY_REMINDER = (
-    "Tool selection reminder: exact command messages such as weather query, time query day, seed, list, list uuids, "
-    "locate structure <identifier>, or locate biome <identifier> must call run_read_only_command. "
-    "Do not answer those exact command messages from Current Minecraft context."
+    "Tool selection reminder: exact command messages (weather query, time query day, seed, list, list uuids, "
+    "locate structure <id>, locate biome <id>) must call run_read_only_command every time; "
+    "never answer from snapshot or prior results."
 )
 
 
@@ -78,7 +79,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
     if target_summary:
         messages.append({"role": "system", "content": target_summary})
     if agent_memory:
-        messages.append({"role": "system", "content": "Agent memory loaded for this turn:\n" + _render_agent_memory(agent_memory)})
+        messages.append({"role": "system", "content": "Remembered facts:\n" + _render_agent_memory(agent_memory)})
     recent_player_messages = (
         [] if str(turn.get("trigger") or "") == "companion_tick" else _recent_player_messages(recent)
     )

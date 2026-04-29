@@ -479,7 +479,7 @@ def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
     assert "樱花林" in recalled["messages"][0]["content"]
     assert len(model.calls) == 4
     recall_context = "\n".join(message["content"] for message in model.calls[2]["messages"])
-    assert "Agent memory loaded for this turn" in recall_context
+    assert "Remembered facts" in recall_context
     assert "我的基地在樱花林旁边" in recall_context
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-write")] == ["memory_write"]
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]

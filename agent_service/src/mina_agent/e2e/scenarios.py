@@ -120,6 +120,13 @@ SCENARIO_DATA = [
         "steps": [
             {
                 "kind": "request",
+                "request_id": "exact-read-only-time-command-prior-live-model",
+                "value": "执行 time query day",
+                "wait_for": ["我会执行这个只读查询"],
+                "timeout": 60,
+            },
+            {
+                "kind": "request",
                 "request_id": "exact-read-only-time-command-live-model",
                 "value": "time query day",
                 "wait_for": ["我会执行这个只读查询"],
@@ -133,9 +140,9 @@ SCENARIO_DATA = [
             {"name": "run_read_only_command"},
             {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "The time is 0"},
         ],
-        "expected_model": {"mode": "exact", "count": 1},
+        "expected_model": {"mode": "exact", "count": 2},
         "trace_invariants": ["no_action_monitor_timeout"],
-        "rubric": "Exact allowlisted read-only command forms should still go through the live model tool loop, with Fabric enforcing read-only action policy.",
+        "rubric": "Exact allowlisted read-only command forms should go through the live model tool loop even when the same command has a recent prior result.",
     },
     {
         "name": "weather_query_command_live_model",
@@ -376,6 +383,12 @@ SCENARIO_DATA = [
             "查一下",
             "(0.5",
             "X=0.5",
+            "agent memory",
+            "Agent memory",
+            "memory_search",
+            "memory_write",
+            "Relevant remembered facts",
+            "Remembered facts",
         ],
         "rubric": "Memory should serve the agent: the live model writes stable context, then answers natural recall from loaded agent memory or a model-selected memory_search.",
     },

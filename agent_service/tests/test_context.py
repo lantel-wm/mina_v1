@@ -11,6 +11,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "Agent memory" in SYSTEM_PROMPT or "agent memory" in SYSTEM_PROMPT
     assert "Treat memory as historical context" in SYSTEM_PROMPT
     assert "answer only the relevant remembered fact" in SYSTEM_PROMPT
+    assert "Do not mention internal section/tool names" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "Do not answer command requests from snapshot or recent results" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
@@ -84,7 +85,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "nearby_hostiles" in context
     assert '"world_state"' in context
     assert '"weather": "clear"' in context
-    assert "Agent memory loaded for this turn" in context
+    assert "Remembered facts" in context
     assert "玩家基地在樱花林旁边" in context
     assert "Recent verified Minecraft command/action results" in context
     assert "Seed: [98765]" in context
