@@ -211,6 +211,7 @@ public final class MinaTestCommands {
 			}
 			case "low_health" -> lowHealth(source);
 			case "low_hunger" -> lowHunger(source);
+			case "on_fire" -> onFire(source);
 			case "nearby_hostile" -> nearbyHostile(source);
 			default -> {
 				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
@@ -271,6 +272,17 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
+	private int onFire(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		requester.setRemainingFireTicks(200);
+		source.sendSuccess(() -> Component.literal("Mina test world mutate on_fire complete."), false);
+		return 1;
+	}
+
 	private int nearbyHostile(CommandSourceStack source) {
 		run(source.getServer(), "difficulty normal");
 		run(source.getServer(), "summon minecraft:creeper 1.5 " + TREE_Y + " -2.5 {NoAI:1b,Silent:1b,PersistenceRequired:1b}");
@@ -282,6 +294,7 @@ public final class MinaTestCommands {
 		player.setHealth(player.getMaxHealth());
 		player.getFoodData().setFoodLevel(20);
 		player.getFoodData().setSaturation(5.0F);
+		player.clearFire();
 	}
 
 	private void resetRequesterInventory(ServerPlayer player) {

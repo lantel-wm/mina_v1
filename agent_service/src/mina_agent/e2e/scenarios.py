@@ -146,6 +146,42 @@ SCENARIO_DATA = [
         "rubric": "Survival HUD stat questions should answer food/armor/experience from Fabric player_state without command execution or unrelated player status.",
     },
     {
+        "name": "hazard_state_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation", "safety"],
+        "steps": [
+            {"kind": "world_mutate", "value": "on_fire", "wait_for": ["Mina test world mutate on_fire complete"]},
+            {
+                "kind": "request",
+                "request_id": "hazard-state-snapshot-live-model",
+                "value": "我现在着火了吗？只回答小写 true。",
+                "wait_for": ["mina turn response requestId=hazard-state-snapshot-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["true"],
+        "forbidden_response_contains": [
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+            "minecraft:",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Hazard-state questions should answer player_state.on_fire from Fabric snapshot without command execution or unrelated player status.",
+    },
+    {
         "name": "block_below_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],

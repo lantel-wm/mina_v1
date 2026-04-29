@@ -31,6 +31,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "world spawn" in SYSTEM_PROMPT
     assert "health/food/armor/XP" in SYSTEM_PROMPT
     assert "light/sky" in SYSTEM_PROMPT
+    assert "hazards (fire/lava/water/ground)" in SYSTEM_PROMPT
     assert "held item" in SYSTEM_PROMPT
     assert "dimension" in SYSTEM_PROMPT
     assert "block at/below feet" in SYSTEM_PROMPT
@@ -124,6 +125,10 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
                 "armor": 0,
                 "experience_level": 0,
                 "total_experience": 0,
+                "on_ground": True,
+                "in_lava": False,
+                "underwater": False,
+                "on_fire": False,
                 "game_mode": "survival",
             },
             "world_state": {"day_time": 1000, "day_count": 0, "raining": False, "thundering": False},
@@ -141,6 +146,8 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert '"armor": 0' in context
     assert '"experience_level": 0' in context
     assert '"total_experience": 0' in context
+    assert '"on_ground": true' in context
+    assert '"on_fire": false' in context
     assert '"game_mode": "survival"' in context
     assert '"weather": "clear"' in context
     assert "Remembered facts" in context
@@ -202,6 +209,31 @@ def test_context_summary_includes_survival_hud_stats() -> None:
     assert '"armor": 7' in summary
     assert '"experience_level": 3' in summary
     assert '"total_experience": 42' in summary
+
+
+def test_context_summary_includes_hazard_state() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "on_ground": False,
+                "in_lava": True,
+                "underwater": True,
+                "on_fire": True,
+            },
+            "nearby_entities": [],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"on_ground": false' in summary
+    assert '"in_lava": true' in summary
+    assert '"underwater": true' in summary
+    assert '"on_fire": true' in summary
 
 
 def test_context_summary_includes_player_identity_for_command_turns() -> None:
