@@ -251,6 +251,12 @@ SCENARIO_DATA = [
         "forbidden_model_tools": PRIVATE_MODEL_TOOLS,
         "expected_model": {"mode": "exact", "count": 2},
         "expected_response_contains": ["The time is 0"],
+        "forbidden_response_contains": [
+            "命令的输出是",
+            "输出是：",
+            "根据最近",
+            "command output is",
+        ],
         "trace_invariants": ["no_action_monitor_timeout", "single_read_only_command_action"],
         "rubric": "Follow-up questions about a prior read-only command should use the verified Fabric action result already in context, without rerunning the command.",
     },
