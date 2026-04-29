@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 
 UNSAFE_WRITE_REFUSAL = "抱歉，我不能执行或提供写入世界的命令。我可以帮你查询只读信息，或说明当前方块和世界状态。"
+MEMORY_NOT_SAVED = "我还没有把这条信息保存进记忆。请再说一次要保存的内容。"
 
 
 @dataclass(frozen=True)
@@ -42,17 +43,18 @@ class ResponsePolicyRuntime:
 
         if not self.memory_write_seen and claims_memory_saved(cleaned):
             self.memory_claim_repairs += 1
-            if self.memory_claim_repairs <= 1 and can_repair:
+            if can_repair:
                 return FinalContentReview(
                     content=cleaned,
                     repair_reason="memory_claim_without_write",
                     repair_message=(
                         "The previous assistant draft claimed that information was remembered or saved, "
                         "but no memory_write tool succeeded in this turn. If the information is stable "
-                        "and useful for future Mina turns, call memory_write now; otherwise rewrite "
-                        "without claiming it was saved."
+                        "and useful for future Mina turns, you must call memory_write now. Otherwise "
+                        f"rewrite without claiming it was saved and say exactly: {MEMORY_NOT_SAVED}"
                     ),
                 )
+            return FinalContentReview(content=MEMORY_NOT_SAVED)
 
         if self.memory_write_seen:
             return FinalContentReview(content=normalize_memory_write_ack(cleaned))
@@ -117,9 +119,10 @@ def is_tool_error(content: str) -> bool:
     return isinstance(payload, dict) and payload.get("ok") is False
 
 
-_EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
+_EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0e\ufe0f\u200d\u20e3]")
 _WRITE_COMMAND_ADVICE_RE = re.compile(
-    r"(?im)(^|[\s:：/])"
+    r"(?im)(^|[^\w-])"
+    r"(?:minecraft:)?"
     r"(setblock|fill|fillbiome|tp|teleport|gamemode|give|clear|summon|kill|execute|gamerule|op|deop|ban|stop)\b"
 )
 _CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")

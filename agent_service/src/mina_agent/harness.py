@@ -12,6 +12,7 @@ from .policy import ResponsePolicyRuntime, is_tool_error
 from .schemas import TurnResponse
 from .tools import (
     ToolRunner,
+    extract_requested_read_only_command,
     normalize_read_only_command,
     tool_specs,
 )
@@ -76,6 +77,7 @@ class AgentHarness:
                 debug={"literal_read_only_command": True, "literal_read_only_error": True},
             ).to_dict()
 
+        requested_read_only_command = extract_requested_read_only_command(message)
         if not self.deepseek.configured():
             fallback = "Mina sidecar is running, but MINA_API_KEY is not configured."
             self._debug("turn fallback request_id=%s reason=missing_api_key", request_id)
@@ -126,6 +128,51 @@ class AgentHarness:
                     state.usage,
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
+                    if requested_read_only_command and not state.actions:
+                        if subturn < self.settings.max_tool_turns:
+                            state.messages.append(
+                                {
+                                    "role": "system",
+                                    "content": _read_only_command_repair_message(requested_read_only_command),
+                                }
+                            )
+                            self._debug(
+                                "turn repair request_id=%s reason=missing_read_only_command_tool command=%s",
+                                request_id,
+                                requested_read_only_command,
+                            )
+                            continue
+                        result = self.tools.run(
+                            "run_read_only_command",
+                            {"command": requested_read_only_command},
+                            turn,
+                        )
+                        result_actions = state.collect_result_actions(result)
+                        self.memory.record_tool_call(
+                            request_id,
+                            "run_read_only_command",
+                            {"command": requested_read_only_command},
+                            {"content": result.content, "actions": result_actions},
+                            "ok" if result_actions or not is_tool_error(result.content) else "error",
+                        )
+                        if result_actions:
+                            content = _action_ack("run_read_only_command")
+                            self.memory.add_conversation(request_id, player_id, "assistant", content)
+                            self._debug(
+                                "turn command_contract_fallback request_id=%s command=%s actions=%s",
+                                request_id,
+                                requested_read_only_command,
+                                len(result_actions),
+                            )
+                            return TurnResponse(
+                                messages=[{"target": "requester", "content": content}],
+                                actions=state.actions,
+                                debug={
+                                    "usage": state.usage,
+                                    "tool_subturns": subturn,
+                                    "read_only_command_contract_fallback": True,
+                                },
+                            ).to_dict()
                     review = policy.review_final_content(
                         str(assistant_message.get("content") or ""),
                         can_repair=subturn < self.settings.max_tool_turns,
@@ -367,6 +414,14 @@ def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
         "tool_call_count": len(tool_calls),
         "tool_names": tool_names,
     }
+
+
+def _read_only_command_repair_message(command: str) -> str:
+    return (
+        "The current user message explicitly asks Mina to execute this allowlisted read-only Minecraft command now: "
+        f"{command}. Do not answer from snapshot context, recent messages, or prior command results. "
+        "Call run_read_only_command with exactly this command."
+    )
 
 
 def _action_ack(tool_name: str) -> str:

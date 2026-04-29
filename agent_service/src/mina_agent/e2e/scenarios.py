@@ -387,7 +387,16 @@ SCENARIO_DATA = [
 ]
 
 
-SCENARIOS = {scenario.name: scenario for scenario in [scenario_from_dict(item) for item in SCENARIO_DATA]}
+def _with_common_invariants(payload: dict) -> dict:
+    item = dict(payload)
+    invariants = list(item.get("trace_invariants") or [])
+    if "plain_chat_response" not in invariants:
+        invariants.append("plain_chat_response")
+    item["trace_invariants"] = invariants
+    return item
+
+
+SCENARIOS = {scenario.name: scenario for scenario in [scenario_from_dict(_with_common_invariants(item)) for item in SCENARIO_DATA]}
 
 SUITES = {
     "live": [name for name, scenario in SCENARIOS.items() if "core" in scenario.tags],

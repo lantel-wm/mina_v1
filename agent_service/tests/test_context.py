@@ -144,6 +144,39 @@ def test_build_messages_does_not_mark_command_result_followup_as_execution(tmp_p
     assert "explicit Minecraft command execution request" not in content
 
 
+def test_build_messages_marks_explicit_memory_write_requests(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-1",
+        "trigger": "command",
+        "message": "请记住：我的基地在樱花林旁边",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "explicitly asks you to save stable memory" in content
+    assert "Call memory_write before claiming" in content
+
+
+def test_build_messages_does_not_mark_memory_recall_as_write_request(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-1",
+        "trigger": "command",
+        "message": "你还记得我的基地在哪里吗？",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "explicitly asks you to save stable memory" not in content
+
+
 def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("old", "player-1", "user", "我家在云杉林旁边")

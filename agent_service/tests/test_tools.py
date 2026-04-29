@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 
 from mina_agent.memory import MemoryStore
-from mina_agent.tools import ToolRunner, is_read_only_command, normalize_read_only_command, tool_specs
+from mina_agent.tools import (
+    ToolRunner,
+    extract_requested_read_only_command,
+    is_read_only_command,
+    normalize_read_only_command,
+    tool_specs,
+)
 
 
 class FakeSearch:
@@ -89,6 +95,14 @@ def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:
     assert not is_read_only_command("time set day")
     assert not is_read_only_command("locate structure minecraft:village; stop")
     assert normalize_read_only_command("/TIME   QUERY   DAY") == "time query day"
+
+
+def test_extract_requested_read_only_command_requires_execution_intent() -> None:
+    assert extract_requested_read_only_command("执行 time query day") == "time query day"
+    assert extract_requested_read_only_command("请执行 seed，只用只读命令查询当前世界种子。") == "seed"
+    assert extract_requested_read_only_command("run locate biome minecraft:plains") == "locate biome minecraft:plains"
+    assert extract_requested_read_only_command("time query day 的结果是什么？") is None
+    assert extract_requested_read_only_command("请执行 setblock 0 80 0 minecraft:air") is None
 
 
 def test_run_read_only_command_schedules_fabric_action(tmp_path) -> None:

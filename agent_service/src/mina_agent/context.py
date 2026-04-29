@@ -59,6 +59,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     command_execution_hint = _command_execution_request_hint(user_content)
     if command_execution_hint:
         messages.append({"role": "system", "content": command_execution_hint})
+    memory_write_hint = _memory_write_request_hint(user_content)
+    if memory_write_hint:
+        messages.append({"role": "system", "content": memory_write_hint})
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
     target_summary = build_target_summary(snapshot)
     if target_summary:
@@ -157,6 +160,33 @@ def _command_execution_request_hint(user_content: str) -> str:
         "Do not answer it from the current snapshot, recent conversation, or prior action results. "
         "Either call run_read_only_command with the exact allowlisted command requested, "
         "or refuse if the requested command is not read-only and allowlisted."
+    )
+
+
+def _memory_write_request_hint(user_content: str) -> str:
+    normalized = " ".join(user_content.lower().split())
+    if not normalized:
+        return ""
+    write_markers = (
+        "请记住",
+        "帮我记住",
+        "记住：",
+        "记住:",
+        "记下",
+        "保存一下",
+        "remember that",
+        "remember:",
+        "save this",
+    )
+    recall_markers = ("记得", "还记得", "remember where", "do you remember", "recall")
+    if any(marker in normalized for marker in recall_markers):
+        return ""
+    if not any(marker in normalized for marker in write_markers):
+        return ""
+    return (
+        "Current user message explicitly asks you to save stable memory for future Mina turns. "
+        "Call memory_write before claiming the information was remembered or saved. "
+        "If the information should not be saved, answer without saying it was remembered."
     )
 
 

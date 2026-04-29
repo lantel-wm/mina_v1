@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import queue
+import re
 import shutil
 import socket
 import subprocess
@@ -37,6 +38,7 @@ SERVER_DIR = ROOT / "build" / "e2e" / "server"
 RUNS_DIR = ROOT / "build" / "e2e" / "runs"
 PUPPET_VERSION_ID = "VccNE5wh"
 KOTLIN_VERSION = "1.13.11+kotlin.2.3.21"
+_CHAT_UNSAFE_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0e\ufe0f\u200d\u20e3]")
 
 
 @dataclass
@@ -123,6 +125,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
     allowed_trace_invariants = {
         "no_action_monitor_timeout",
         "non_empty_final_model_content",
+        "plain_chat_response",
         "single_read_only_command_action",
     }
     seen: dict[str, str] = {}
@@ -628,6 +631,13 @@ class E2ERunner:
                     raise AssertionError(f"{scenario.name}: no final non-tool model call found")
                 if not any(_model_content_preview(call).strip() for call in final_calls):
                     raise AssertionError(f"{scenario.name}: final model call content was empty: {final_calls!r}")
+            elif invariant == "plain_chat_response":
+                haystack = self._response_haystack(scenario)
+                match = _CHAT_UNSAFE_RE.search(haystack)
+                if match:
+                    raise AssertionError(
+                        f"{scenario.name}: response trace contained non-plain-chat character {match.group(0)!r}"
+                    )
 
     def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
         combined: list[dict[str, Any]] = []

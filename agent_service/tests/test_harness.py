@@ -174,6 +174,49 @@ def test_read_only_command_is_scheduled_after_model_tool_call(tmp_path) -> None:
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
+def test_explicit_read_only_command_repairs_model_answer_without_tool(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "当前是第 0 天。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-time",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "time query day"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("执行 time query day", "req-time-repair"))
+
+    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["actions"][0]["args"] == {"command": "time query day"}
+    assert len(model.calls) == 2
+    repair_context = "\n".join(message["content"] for message in model.calls[1]["messages"])
+    assert "Call run_read_only_command with exactly this command" in repair_context
+    calls = memory.recent_tool_calls("req-time-repair")
+    assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
+
+
 def test_literal_read_only_command_bypasses_model(tmp_path) -> None:
     model = FakeDeepSeek()
     harness, memory, _model, _search = _harness(tmp_path, model)

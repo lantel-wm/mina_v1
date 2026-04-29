@@ -27,6 +27,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "web_search_fixture_filters_injection_live_model" in names
     assert "write_command_refused_live_model" in names
     assert PRIVATE_MODEL_TOOLS == ["send_player_message", "send_global_message", "run_safe_command"]
+    assert all("plain_chat_response" in scenario.trace_invariants for scenario in SCENARIOS.values())
 
 
 def test_parse_args_rejects_removed_body_suite() -> None:
@@ -324,4 +325,23 @@ def test_trace_invariant_rejects_empty_final_model_content(tmp_path, monkeypatch
     )
 
     with pytest.raises(AssertionError, match="final model call content was empty"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_non_plain_chat_response(tmp_path) -> None:
+    scenario = Scenario(
+        name="emoji-response",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["plain_chat_response"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    runner.harness_events[scenario.name] = [
+        {
+            "event_type": "server_output_line",
+            "payload": {"line": "mina send message target=requester content=生命值: 20 ️"},
+        }
+    ]
+
+    with pytest.raises(AssertionError, match="non-plain-chat character"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
