@@ -338,11 +338,11 @@ def _companion_tick_prompt(turn: dict[str, Any]) -> str:
     reason = _companion_tick_alert_reason(turn)
     if reason:
         return (
-            "这是一次 companion tick。当前 Minecraft context 已显示及时提醒理由："
+            "这是一次被动提醒检查。当前观察状态显示及时提醒理由："
             + reason
             + "。请用玩家最近使用的语言简短提醒玩家，不要调用工具。"
         )
-    return "这是一次 companion tick。如果没有重要、及时的理由要提醒玩家，请回复空字符串；如果需要提醒，请使用玩家最近使用的语言。"
+    return "这是一次被动提醒检查。如果没有重要、及时的理由要提醒玩家，请回复空字符串；如果需要提醒，请使用玩家最近使用的语言。"
 
 
 def _companion_tick_alert_reason(turn: dict[str, Any]) -> str:
