@@ -39,11 +39,11 @@ Generated outputs and caches are intentionally ignored:
 Mina uses a sidecar architecture.
 
 - The Fabric mod registers `/mina <content>` and `/mina-admin ...`, samples Minecraft player/world state, and executes approved read-only Minecraft actions on the server thread.
-- The Python sidecar handles DeepSeek API calls, agent tool loops, SQLite memory, SearXNG search, MCP integration points, and deterministic high-confidence local routes.
+- The Python sidecar handles DeepSeek API calls, agent tool loops, SQLite memory, SearXNG search, and MCP integration points. Runtime turns are LLM-first when `MINA_API_KEY` is configured; deterministic code should stay at safety/tool boundaries, not as player-facing intent routes.
 - The current product scope is text conversation, knowledge/search, memory, tightly constrained read-only Minecraft commands, and player/world state observation.
 - There is no separate controllable Mina character in the runtime. Movement, mining, attacking, item use, and world mutation tools are not model-facing and should not be reintroduced.
 - Model-facing tools are limited to `web_search`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.
-- If `MINA_API_KEY` is not configured, the sidecar still has a narrow deterministic fallback for safe high-confidence requests: player/world observation, read-only queries, memory recall/write, and simple search-result listing.
+- If `MINA_API_KEY` is not configured, the sidecar returns a configuration error instead of attempting local chat, memory, search, command, or observation fallbacks.
 - `/v1/action-results` remains for Fabric command callbacks. `/v1/observations` and `/v1/tasks` are not part of the runtime API.
 
 Fabric config is generated at runtime in:
@@ -110,10 +110,10 @@ Useful E2E commands:
 ```sh
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --list-scenarios
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety --require-live-model
-UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario local_read_only_time_command --require-live-model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario read_only_time_command_live_model --require-live-model
 ```
 
-The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar, starts a deterministic SearXNG-compatible search fixture unless `--searxng-url` is provided, and starts a dedicated Fabric server in `build/e2e/server`. Built-in scenarios cover local player/world observation, read-only command routing, deterministic web-search routing and filtering, companion tick alerts, smalltalk through the live model, and write-command refusal.
+The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar, starts a deterministic SearXNG-compatible search fixture unless `--searxng-url` is provided, and starts a dedicated Fabric server in `build/e2e/server`. Built-in scenarios cover LLM-mediated player/world observation, read-only command tool selection, web-search tool use and filtering, memory tool use, companion tick alerts, smalltalk, and write-command refusal.
 
 Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `run_manifest.json`, root `summary.json`, `trace-summary.json`, root `trace.jsonl`, `scenario_summaries.jsonl`, `server.log`, `sidecar.log`, `sidecar-stdout.log`, per-scenario `manifest.json`, per-scenario `summary.json`, `final_snapshot.json`, `trace.json`, `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, and `/v1/traces/{request_id}` for focused debugging.
 
@@ -128,9 +128,9 @@ Declarative scenario schema highlights:
 
 ## Iteration Workflow
 
-The working target is a usable Minecraft text agent that can answer knowledge questions through sidecar tools, maintain useful memory, run tightly constrained read-only Minecraft commands, route literal allowed read-only command forms without a model call, and answer player/world state questions from Fabric snapshots.
+The working target is a usable LLM-first Minecraft text agent that can answer knowledge questions through sidecar tools, maintain useful memory, run tightly constrained read-only Minecraft commands, and answer player/world state questions from Fabric snapshots. The model should choose when to answer from context versus when to call a safe tool.
 
-Allowed read-only Minecraft command forms are intentionally narrow: `seed`, `time query daytime|gametime|day`, `weather query`, `list`, `list uuids`, `locate structure <identifier>`, and `locate biome <identifier>`. Natural high-confidence locate, seed, weather, time, and player-list requests may route directly to these forms; write commands must remain rejected before Fabric execution.
+Allowed read-only Minecraft command forms are intentionally narrow: `seed`, `time query daytime|gametime|day`, `weather query`, `list`, `list uuids`, `locate structure <identifier>`, and `locate biome <identifier>`. These are selected through the model-facing `run_read_only_command` tool and then validated by sidecar/Fabric policy; write commands must remain rejected before Fabric execution.
 
 For every behavior change:
 

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
-from mina_agent.app import create_app
+import mina_agent.app as app_module
 from mina_agent.config import Settings
+from mina_agent.deepseek import DeepSeekResponse
 
 
-def test_app_records_action_events_for_read_only_command(tmp_path) -> None:
-    app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+def test_app_records_action_events_for_read_only_command(tmp_path, monkeypatch) -> None:
+    app = _app_with_read_only_model(tmp_path, monkeypatch)
     turn = _route(app, "/v1/turn")
     action_results = _route(app, "/v1/action-results")
     action_events = _route(app, "/v1/action-events")
@@ -39,8 +41,8 @@ def test_app_records_action_events_for_read_only_command(tmp_path) -> None:
     assert "The time is 1200" in events[1]["payload_json"]
 
 
-def test_app_exposes_tool_and_model_call_journals(tmp_path) -> None:
-    app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+def test_app_exposes_tool_and_model_call_journals(tmp_path, monkeypatch) -> None:
+    app = _app_with_read_only_model(tmp_path, monkeypatch, "time query daytime")
     turn = _route(app, "/v1/turn")
     tool_calls = _route(app, "/v1/tool-calls")
     model_calls = _route(app, "/v1/model-calls")
@@ -52,11 +54,13 @@ def test_app_exposes_tool_and_model_call_journals(tmp_path) -> None:
     assert calls[0]["tool_name"] == "run_read_only_command"
     assert calls[0]["status"] == "ok"
     assert "time query daytime" in calls[0]["args_json"]
-    assert model_calls(request_id="req-time")["model_calls"] == []
+    recorded_model_calls = model_calls(request_id="req-time")["model_calls"]
+    assert len(recorded_model_calls) == 1
+    assert "run_read_only_command" in recorded_model_calls[0]["tools_json"]
 
 
-def test_app_trace_contains_model_tool_and_action_sections_without_tasks(tmp_path) -> None:
-    app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+def test_app_trace_contains_model_tool_and_action_sections_without_tasks(tmp_path, monkeypatch) -> None:
+    app = _app_with_read_only_model(tmp_path, monkeypatch)
     turn = _route(app, "/v1/turn")
     traces = _route(app, "/v1/traces/{trace_id}")
 
@@ -65,7 +69,7 @@ def test_app_trace_contains_model_tool_and_action_sections_without_tasks(tmp_pat
 
     assert trace["ok"] is True
     assert trace["trace_id"] == "req-trace"
-    assert trace["model_calls"] == []
+    assert len(trace["model_calls"]) == 1
     assert len(trace["tool_calls"]) == 1
     assert len(trace["action_events"]) == 1
     assert "task_events" not in trace
@@ -73,12 +77,53 @@ def test_app_trace_contains_model_tool_and_action_sections_without_tasks(tmp_pat
 
 
 def test_removed_body_endpoints_are_not_registered(tmp_path) -> None:
-    app = create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+    app = app_module.create_app(Settings(api_key="", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
     paths = {route.path for route in app.routes}
 
     assert "/v1/observations" not in paths
     assert "/v1/tasks" not in paths
     assert "/v1/tasks/{task_id}" not in paths
+
+
+def _app_with_read_only_model(tmp_path, monkeypatch, command: str = "time query day"):  # noqa: ANN001, ANN202
+    fake = _FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-read-only",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": command}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    monkeypatch.setattr(app_module, "DeepSeekClient", lambda settings: fake)
+    return app_module.create_app(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3", log_path=tmp_path / "mina.log"))
+
+
+class _FakeDeepSeek:
+    def __init__(self, responses: list[DeepSeekResponse]) -> None:
+        self.responses = responses
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None):  # noqa: ANN001, ANN201
+        if not self.responses:
+            raise AssertionError("unexpected extra model call")
+        return self.responses.pop(0)
 
 
 def _turn(message: str, request_id: str) -> dict:

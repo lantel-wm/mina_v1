@@ -99,40 +99,112 @@ def _snapshot() -> dict:
     }
 
 
-def test_local_player_status_uses_snapshot_without_model_or_tools(tmp_path) -> None:
-    harness, memory, model, _search = _harness(tmp_path)
+def test_player_status_is_answered_by_model_from_snapshot_context(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "你现在在坐标 x=0.5, y=80.0, z=-2.5，生命值 20，饱食度 20。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
 
     response = harness.run_turn(_turn("我的坐标和状态怎么样？", "req-status"))
 
-    assert "你的位置" in response["messages"][0]["content"]
-    assert model.calls == []
+    assert "x=0.5" in response["messages"][0]["content"]
+    assert len(model.calls) == 1
+    assert any("Current Minecraft context summary" in message["content"] for message in model.calls[0]["messages"])
     assert memory.recent_tool_calls("req-status") == []
 
 
-def test_local_nearby_danger_uses_snapshot_without_model(tmp_path) -> None:
-    harness, _memory, model, _search = _harness(tmp_path)
+def test_nearby_danger_is_answered_by_model_from_snapshot_context(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "附近不安全，有一只 creeper 距离你约 3.2 格。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
 
     response = harness.run_turn(_turn("附近安全吗？有没有怪物？", "req-danger"))
 
-    assert "附近危险" in response["messages"][0]["content"]
     assert "creeper" in response["messages"][0]["content"]
-    assert model.calls == []
+    assert len(model.calls) == 1
 
 
-def test_local_read_only_command_schedules_action_without_model(tmp_path) -> None:
-    harness, memory, model, _search = _harness(tmp_path)
+def test_read_only_command_is_scheduled_after_model_tool_call(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-time",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "time query day"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
 
     response = harness.run_turn(_turn("执行 time query day", "req-time"))
 
     assert response["actions"][0]["name"] == "run_read_only_command"
     assert response["actions"][0]["args"] == {"command": "time query day"}
-    assert model.calls == []
+    assert len(model.calls) == 1
     calls = memory.recent_tool_calls("req-time")
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
-def test_local_web_search_filters_prompt_injection_result(tmp_path) -> None:
-    harness, _memory, model, search = _harness(tmp_path)
+def test_web_search_uses_model_tool_loop_and_filters_prompt_injection_result(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-search",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": json.dumps({"query": "钻石矿 最新高度", "max_results": 5}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "搜索结果标记是 MinaE2E-Diamond-Y=-59，长尾标记是 MinaE2E-Search-LongTail。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, _memory, _model, search = _harness(tmp_path, model)
 
     response = harness.run_turn(_turn("联网搜索 钻石矿 最新高度", "req-search"))
     content = response["messages"][0]["content"]
@@ -140,25 +212,80 @@ def test_local_web_search_filters_prompt_injection_result(tmp_path) -> None:
     assert search.queries == ["钻石矿 最新高度"]
     assert "MinaE2E-Diamond-Y=-59" in content
     assert "MinaE2E-Search-LongTail" in content
-    assert "摘要：" in content
     assert "setblock" not in content
-    assert model.calls == []
+    assert len(model.calls) == 2
 
 
-def test_local_memory_write_and_recall_without_model(tmp_path) -> None:
-    harness, memory, model, _search = _harness(tmp_path)
+def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-memory-write",
+                            "type": "function",
+                            "function": {
+                                "name": "memory_write",
+                                "arguments": json.dumps(
+                                    {"event_type": "player_fact", "content": "我的基地在樱花林旁边", "importance": 3}
+                                ),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "我记住了。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-memory-search",
+                            "type": "function",
+                            "function": {
+                                "name": "memory_search",
+                                "arguments": json.dumps({"query": "基地", "limit": 8}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "我记得你的基地在樱花林旁边。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
 
     written = harness.run_turn(_turn("请记住：我的基地在樱花林旁边", "req-memory-write"))
     recalled = harness.run_turn(_turn("你还记得我的基地在哪里吗？", "req-memory-recall"))
 
     assert written["messages"][0]["content"] == "我记住了。"
     assert "樱花林" in recalled["messages"][0]["content"]
-    assert model.calls == []
+    assert len(model.calls) == 4
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-write")] == ["memory_write"]
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]
 
 
-def test_body_like_request_is_no_longer_intercepted_by_local_paused_branch(tmp_path) -> None:
+def test_body_like_request_goes_to_model_and_is_refused(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
@@ -215,8 +342,18 @@ def test_model_private_tool_call_is_recorded_as_tool_error_not_action(tmp_path) 
     assert calls[0]["status"] == "error"
 
 
-def test_companion_low_health_is_deterministic_without_model(tmp_path) -> None:
-    harness, _memory, model, _search = _harness(tmp_path)
+def test_companion_low_health_goes_through_model(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "你血量很低，先撤退并补充食物。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
     snapshot = _snapshot()
     snapshot["player_state"]["health"] = 4
     turn = _turn("", "req-companion", snapshot)
@@ -225,4 +362,4 @@ def test_companion_low_health_is_deterministic_without_model(tmp_path) -> None:
     response = harness.run_turn(turn)
 
     assert "血量很低" in response["messages"][0]["content"]
-    assert model.calls == []
+    assert len(model.calls) == 1

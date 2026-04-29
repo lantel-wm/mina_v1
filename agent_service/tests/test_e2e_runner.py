@@ -18,9 +18,9 @@ def test_builtin_suites_no_longer_include_body_suite() -> None:
 def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     names = set(SCENARIOS)
 
-    assert "local_player_status_snapshot" in names
-    assert "local_read_only_time_command" in names
-    assert "local_web_search_fixture_filters_injection" in names
+    assert "player_status_snapshot_live_model" in names
+    assert "read_only_time_command_live_model" in names
+    assert "web_search_fixture_filters_injection_live_model" in names
     assert "write_command_refused_live_model" in names
     assert PRIVATE_MODEL_TOOLS == ["send_player_message", "send_global_message", "run_safe_command"]
 
@@ -117,7 +117,7 @@ def test_prepare_runtime_writes_config_without_body_fields(tmp_path, monkeypatch
 
 def test_write_run_manifest_has_no_body_runner_flags(tmp_path) -> None:
     args = e2e_runner.parse_args(["--suite", "live", "--port", "19000", "--server-port", "25577", "--skip-build"])
-    selected = [SCENARIOS["local_player_status_snapshot"]]
+    selected = [SCENARIOS["player_status_snapshot_live_model"]]
 
     e2e_runner.write_run_manifest(tmp_path, args, selected, {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"})
     payload = json.loads((tmp_path / "run_manifest.json").read_text(encoding="utf-8"))
