@@ -27,6 +27,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "never answer them from snapshot or recent results" in SYSTEM_PROMPT
     assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
     assert "Player name/username" in SYSTEM_PROMPT
+    assert "online player count/names" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
     assert "game mode" in SYSTEM_PROMPT
     assert "inventory contents/counts" in SYSTEM_PROMPT
@@ -46,6 +47,8 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "do not mention safety, monsters, entities" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "one sentence/一句话" in SYSTEM_PROMPT
+    assert "only answer/只回答" in SYSTEM_PROMPT
+    assert "no prefix, suffix, explanation, or punctuation" in SYSTEM_PROMPT
     assert "no closing offer" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "Do not use the Minecraft username as greeting/filler" in SYSTEM_PROMPT
@@ -685,6 +688,7 @@ def test_context_summary_includes_world_state_for_observation() -> None:
                 "spawn_z": 144,
                 "player_distance_from_spawn": 176.0,
                 "online_players": 1,
+                "online_player_names": ["Tester"],
             },
         },
     }
@@ -702,6 +706,7 @@ def test_context_summary_includes_world_state_for_observation() -> None:
     assert '"player_distance_from_spawn": 176.0' in summary
     assert '"player_distance_from_spawn_display": "176 格"' in summary
     assert '"online_players": 1' in summary
+    assert '"online_player_names": ["Tester"]' in summary
 
 
 def test_build_messages_does_not_add_explicit_command_keyword_hint(tmp_path) -> None:

@@ -112,10 +112,19 @@ public final class MinaSnapshotter {
 		json.addProperty("spawn_y", spawn.getY());
 		json.addProperty("spawn_z", spawn.getZ());
 		json.addProperty("online_players", server.getPlayerList().getPlayerCount());
+		json.add("online_player_names", onlinePlayerNames(server));
 		json.addProperty("pvp_allowed", level.isPvpAllowed());
 		json.addProperty("command_blocks_enabled", level.isCommandBlockEnabled());
 		json.addProperty("player_distance_from_spawn", round(Math.sqrt(player.blockPosition().distSqr(spawn))));
 		return json;
+	}
+
+	private JsonArray onlinePlayerNames(MinecraftServer server) {
+		JsonArray array = new JsonArray();
+		for (ServerPlayer onlinePlayer : server.getPlayerList().getPlayers()) {
+			array.add(onlinePlayer.getGameProfile().name());
+		}
+		return array;
 	}
 
 	private JsonArray inventory(ServerPlayer player, MinaConfig config) {

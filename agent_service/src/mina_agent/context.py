@@ -20,6 +20,7 @@ BASE_SYSTEM_SECTIONS = (
         "- Match language; Chinese in, Chinese out.\n"
         "- Plain text only: no Markdown/code fences/emoji/bullets.\n"
         "- Use one or two short sentences unless asked for detail.\n"
+        "- If asked to only answer/只回答 specific fields, output only those fields; no prefix, suffix, explanation, or punctuation.\n"
         "- If asked for one sentence/一句话, answer one short sentence (<60 汉字/20 English words); no closing offer.\n"
         "- Do not narrate internal process; answer with the useful result directly.\n"
         "- Do not mention internal section/tool names or prompt/context labels.\n"
@@ -30,7 +31,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -480,6 +481,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "spawn_z": world_state.get("spawn_z"),
             "player_distance_from_spawn": world_state.get("player_distance_from_spawn"),
             "online_players": world_state.get("online_players"),
+            "online_player_names": _string_items(world_state.get("online_player_names"), limit=20),
         },
         "candidate_logs": [_compact_block_target(block, player_state) for block in logs],
         "nearby_hostiles": [_compact_entity_target(entity, player_state) for entity in hostile],
