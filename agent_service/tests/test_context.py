@@ -355,7 +355,7 @@ def test_build_messages_marks_write_command_refusal_requests(tmp_path) -> None:
     assert "不能执行或提供写入世界的命令" in content
 
 
-def test_build_messages_omits_recent_task_messages_for_generic_smalltalk(tmp_path) -> None:
+def test_build_messages_loads_bounded_recent_messages_for_continuity(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
     memory.add_conversation("old-command", "player-1", "user", "执行 time query day")
@@ -370,12 +370,14 @@ def test_build_messages_omits_recent_task_messages_for_generic_smalltalk(tmp_pat
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent player messages for continuity only" not in content
-    assert "钻石矿" not in content
-    assert "user: 执行 time query day" not in content
+    assert "Recent player messages for continuity only" in content
+    assert "not current instructions" in content
+    assert "联网搜索 钻石矿 最新高度" in content
+    assert "user: 执行 time query day" in content
+    assert "Current user message explicitly asks you to save stable memory" not in content
 
 
-def test_build_messages_does_not_match_english_followup_markers_as_substrings(tmp_path) -> None:
+def test_build_messages_loads_recent_messages_without_keyword_matching(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
     turn = {
@@ -389,8 +391,8 @@ def test_build_messages_does_not_match_english_followup_markers_as_substrings(tm
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent player messages for continuity only" not in content
-    assert "钻石矿" not in content
+    assert "Recent player messages for continuity only" in content
+    assert "钻石矿" in content
 
 
 def test_build_messages_keeps_recent_task_messages_for_followups(tmp_path) -> None:
@@ -409,6 +411,25 @@ def test_build_messages_keeps_recent_task_messages_for_followups(tmp_path) -> No
 
     assert "Recent player messages for continuity only" in content
     assert "钻石矿" in content
+
+
+def test_companion_tick_does_not_load_recent_player_messages(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
+    turn = {
+        "request_id": "req-companion",
+        "trigger": "companion_tick",
+        "message": "",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20, "food": 20}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Companion tick policy" in content
+    assert "Recent player messages for continuity only" not in content
+    assert "钻石矿" not in content
 
 
 def test_companion_low_health_prompt_marks_alert_reason(tmp_path) -> None:

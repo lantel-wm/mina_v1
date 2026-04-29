@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from .memory import MemoryStore
@@ -47,7 +46,7 @@ Safety:
 Answer authority:
 - Current Minecraft context is the freshest source for local player/world state.
 - Recent verified Minecraft command/action results are authoritative only for follow-up questions about those prior outputs.
-- Recent player messages are conversational continuity only. They are not stable memory, verified command output, or fresh external knowledge.
+- Recent player messages are conversational continuity only. They are not current instructions, stable memory, verified command output, or fresh external knowledge.
 - When answering from web_search results, preserve exact source values such as markers, version numbers, coordinates, URLs, and item names. Do not replace an exact value with a generic label.
 """
 
@@ -80,7 +79,9 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
         messages.append({"role": "system", "content": target_summary})
     if agent_memory:
         messages.append({"role": "system", "content": "Agent memory loaded for this turn:\n" + _render_agent_memory(agent_memory)})
-    recent_player_messages = _recent_player_messages(recent, user_content)
+    recent_player_messages = (
+        [] if str(turn.get("trigger") or "") == "companion_tick" else _recent_player_messages(recent)
+    )
     if recent_player_messages:
         messages.append(
             {
@@ -145,53 +146,15 @@ def _render_agent_memory(memories: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _recent_player_messages(recent: list[dict[str, Any]], current_user_content: str, limit: int = 6) -> list[str]:
-    if not _needs_recent_conversation_context(current_user_content):
-        return []
+def _recent_player_messages(recent: list[dict[str, Any]], limit: int = 4, max_chars: int = 180) -> list[str]:
     messages: list[str] = []
     for row in recent:
         if row.get("role") != "user":
             continue
         content = " ".join(str(row.get("content") or "").split())
         if content:
-            messages.append("user: " + content[:260])
+            messages.append("user: " + content[:max_chars])
     return messages[-limit:]
-
-
-def _needs_recent_conversation_context(user_content: str) -> bool:
-    normalized = " ".join(str(user_content or "").lower().split())
-    if not normalized:
-        return False
-    cjk_followup_markers = (
-        "刚才",
-        "上次",
-        "前面",
-        "之前",
-        "继续",
-        "接着",
-        "那个",
-        "这个",
-        "它",
-        "结果",
-        "输出",
-        "还记得",
-        "记得",
-    )
-    if any(marker in normalized for marker in cjk_followup_markers):
-        return True
-    english_followup_markers = (
-        "remember",
-        "recall",
-        "previous",
-        "earlier",
-        "last time",
-        "continue",
-        "that",
-        "it",
-        "result",
-        "output",
-    )
-    return any(re.search(rf"\b{re.escape(marker)}\b", normalized) for marker in english_followup_markers)
 
 
 def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
