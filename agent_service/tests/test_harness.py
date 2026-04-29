@@ -281,6 +281,9 @@ def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
     assert written["messages"][0]["content"] == "我记住了。"
     assert "樱花林" in recalled["messages"][0]["content"]
     assert len(model.calls) == 4
+    recall_context = "\n".join(message["content"] for message in model.calls[2]["messages"])
+    assert "Agent memory loaded for this turn" in recall_context
+    assert "我的基地在樱花林旁边" in recall_context
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-write")] == ["memory_write"]
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]
 
@@ -303,6 +306,53 @@ def test_memory_recall_is_not_repaired_by_local_intent_classifier(tmp_path) -> N
     assert "樱花林" in response["messages"][0]["content"]
     assert len(model.calls) == 1
     assert memory.recent_tool_calls("req-memory-direct") == []
+
+
+def test_memory_save_claim_is_repaired_until_memory_write_runs(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "记住了，你的基地在樱花林旁边。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-memory-write",
+                            "type": "function",
+                            "function": {
+                                "name": "memory_write",
+                                "arguments": json.dumps(
+                                    {"event_type": "player_fact", "content": "基地在樱花林旁边", "importance": 3}
+                                ),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "已记住，你的基地在樱花林旁边。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("请记住：我的基地在樱花林旁边", "req-memory-claim-repair"))
+
+    assert "樱花林" in response["messages"][0]["content"]
+    assert len(model.calls) == 3
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-claim-repair")] == ["memory_write"]
 
 
 def test_body_like_request_goes_to_model_and_is_refused(tmp_path) -> None:
@@ -360,6 +410,32 @@ def test_model_private_tool_call_is_recorded_as_tool_error_not_action(tmp_path) 
     calls = memory.recent_tool_calls("req-private")
     assert calls[0]["tool_name"] == "run_safe_command"
     assert calls[0]["status"] == "error"
+
+
+def test_write_command_advice_is_repaired_before_chat_response(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "我不能执行，但你可以自己运行 /setblock 2 80 0 minecraft:air。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "抱歉，我不能执行或提供写入世界的命令；我可以帮你查询附近方块状态。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("请执行 setblock 2 80 0 minecraft:air", "req-write-repair"))
+
+    assert "/setblock" not in response["messages"][0]["content"]
+    assert "不能执行" in response["messages"][0]["content"]
+    assert len(model.calls) == 2
 
 
 def test_companion_low_health_goes_through_model(tmp_path) -> None:

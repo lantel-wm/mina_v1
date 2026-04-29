@@ -52,6 +52,9 @@ class AgentHarness:
         actions: list[dict[str, Any]] = []
         usage: dict[str, Any] = {}
         invalid_tool_results = 0
+        unsafe_response_repairs = 0
+        memory_claim_repairs = 0
+        memory_write_seen = False
         try:
             for subturn in range(1, self.settings.max_tool_turns + 1):
                 self._debug("model call request_id=%s subturn=%s messages=%s", request_id, subturn, len(messages))
@@ -95,6 +98,39 @@ class AgentHarness:
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
                     content = _minecraft_chat_text(str(assistant_message.get("content") or ""))
+                    if content and _contains_write_command_advice(content):
+                        unsafe_response_repairs += 1
+                        if unsafe_response_repairs <= 1 and subturn < self.settings.max_tool_turns:
+                            messages.append(
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "The previous assistant draft contained an executable write-capable Minecraft "
+                                        "command or workaround. Rewrite the refusal without any slash command, command "
+                                        "recipe, coordinates, or suggestion that the player run it themselves. Keep it "
+                                        "brief and offer only safe read-only alternatives."
+                                    ),
+                                }
+                            )
+                            self._debug("turn repair request_id=%s reason=unsafe_write_command_advice", request_id)
+                            continue
+                        content = "抱歉，我不能执行或提供写入世界的命令。我可以帮你查询只读信息，或说明当前方块和世界状态。"
+                    if content and not memory_write_seen and _claims_memory_saved(content):
+                        memory_claim_repairs += 1
+                        if memory_claim_repairs <= 1 and subturn < self.settings.max_tool_turns:
+                            messages.append(
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "The previous assistant draft claimed that information was remembered or saved, "
+                                        "but no memory_write tool succeeded in this turn. If the information is stable "
+                                        "and useful for future Mina turns, call memory_write now; otherwise rewrite "
+                                        "without claiming it was saved."
+                                    ),
+                                }
+                            )
+                            self._debug("turn repair request_id=%s reason=memory_claim_without_write", request_id)
+                            continue
                     if content:
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
                         self._debug("turn final request_id=%s messages=1 actions=%s", request_id, len(actions))
@@ -144,6 +180,8 @@ class AgentHarness:
                         invalid_tool_results += 1
                     else:
                         invalid_tool_results = 0
+                        if name == "memory_write":
+                            memory_write_seen = True
                     self._debug(
                         "tool result request_id=%s subturn=%s name=%s action=%s content_length=%s content_preview=%s",
                         request_id,
@@ -243,6 +281,36 @@ def _minecraft_chat_text(content: str) -> str:
 
 
 _EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
+_WRITE_COMMAND_ADVICE_RE = re.compile(
+    r"(?im)(^|[\s:：])/"
+    r"(setblock|fill|fillbiome|tp|teleport|gamemode|give|clear|summon|kill|execute|gamerule|op|deop|ban|stop)\b"
+)
+
+
+def _contains_write_command_advice(content: str) -> bool:
+    return bool(_WRITE_COMMAND_ADVICE_RE.search(content))
+
+
+def _claims_memory_saved(content: str) -> bool:
+    normalized = content.lower()
+    return any(
+        token in normalized
+        for token in (
+            "记住了",
+            "已记住",
+            "已经记住",
+            "我会记住",
+            "记下了",
+            "已记下",
+            "保存好了",
+            "我保存了",
+            "i'll remember",
+            "i will remember",
+            "i've saved",
+            "i saved",
+            "saved this",
+        )
+    )
 
 
 def _is_tool_error(content: str) -> bool:

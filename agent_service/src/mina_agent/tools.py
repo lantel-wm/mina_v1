@@ -103,7 +103,7 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "memory_search",
-                "description": "Search the current player's memories and stable world facts.",
+                "description": "Search Mina's agent memory for stable player, world, and global context that may help this turn.",
                 "parameters": _schema(
                     {
                         "query": {"type": "string"},
@@ -117,12 +117,17 @@ def tool_specs() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "memory_write",
-                "description": "Persist a useful player preference, plan, promise, base location, or important event.",
+                "description": (
+                    "Persist an agent memory that should help future Mina turns, such as a stable player preference, "
+                    "world fact, plan, promise, or lesson. Do not store transient filler."
+                ),
                 "parameters": _schema(
                     {
                         "event_type": {"type": "string"},
                         "content": {"type": "string"},
                         "importance": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "scope": {"type": "string", "enum": ["player", "world", "global"]},
+                        "label": {"type": "string"},
                     },
                     ["event_type", "content"],
                 ),
@@ -223,7 +228,7 @@ class ToolRunner:
         limit = _bounded_int(args.get("limit"), fallback=8, minimum=1, maximum=12)
         if not query:
             return ToolResult(content=json.dumps({"ok": False, "error": "memory_search query is required"}, ensure_ascii=False))
-        results = self.memory.search(player_id, query, limit=limit)
+        results = self.memory.search(player_id, query, limit=limit, world_id=_world_id(turn))
         LOGGER.info("memory_search player=%s query=%s result_count=%s", player_id, query, len(results))
         return ToolResult(content=json.dumps({"ok": True, "results": results}, ensure_ascii=False))
 
@@ -232,11 +237,27 @@ class ToolRunner:
         event_type = str(args.get("event_type") or "note")
         content = str(args.get("content") or "").strip()
         importance = _bounded_int(args.get("importance"), fallback=1, minimum=1, maximum=5)
+        scope = str(args.get("scope") or "player").strip().lower()
+        if scope not in {"player", "world", "global"}:
+            scope = "player"
+        scope_id = _memory_scope_id(scope, player_id, turn)
+        label = str(args.get("label") or event_type or "note")
         if not content:
             return ToolResult(content=json.dumps({"ok": False, "error": "memory_write content is required"}, ensure_ascii=False))
+        self.memory.add_agent_memory(scope, scope_id, label, content, importance=importance, source="memory_write")
         self.memory.add_event(player_id, event_type, {"content": content}, importance=importance)
-        LOGGER.info("memory_write player=%s event_type=%s importance=%s content=%s", player_id, event_type, importance, content[:500])
-        return ToolResult(content=json.dumps({"ok": True}, ensure_ascii=False))
+        LOGGER.info(
+            "memory_write player=%s scope=%s scope_id=%s label=%s importance=%s content=%s",
+            player_id,
+            scope,
+            scope_id,
+            label,
+            importance,
+            content[:500],
+        )
+        return ToolResult(
+            content=json.dumps({"ok": True, "memory": {"scope": scope, "label": label, "content": content}}, ensure_ascii=False)
+        )
 
     def _run_read_only_command(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         command = _strip_slash(str(args.get("command") or ""))
@@ -287,6 +308,27 @@ class ToolRunner:
 def _player_id(turn: dict[str, Any]) -> str:
     player = turn.get("player") or {}
     return str(player.get("uuid") or player.get("id") or "unknown")
+
+
+def _world_id(turn: dict[str, Any]) -> str | None:
+    snapshot = turn.get("snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+    value = snapshot.get("world_id") or snapshot.get("world")
+    if value:
+        return str(value)
+    player_state = snapshot.get("player_state")
+    if isinstance(player_state, dict) and player_state.get("dimension"):
+        return str(player_state.get("dimension"))
+    return None
+
+
+def _memory_scope_id(scope: str, player_id: str, turn: dict[str, Any]) -> str:
+    if scope == "global":
+        return "*"
+    if scope == "world":
+        return _world_id(turn) or "unknown"
+    return player_id
 
 
 def _looks_like_minecraft_write(tool: str, arguments: dict[str, Any]) -> bool:

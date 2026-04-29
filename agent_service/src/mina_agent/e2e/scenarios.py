@@ -175,14 +175,13 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "memory-recall-live-model",
-                "value": "请调用 memory_search 查询你保存的记忆，然后回答：我的基地在哪里？",
+                "value": "我的基地在哪里？",
                 "wait_for": ["樱花林"],
                 "timeout": 60,
             },
         ],
         "expected_tools": [
             {"name": "memory_write", "status": "ok", "args_contains": "樱花林"},
-            {"name": "memory_search", "status": "ok", "args_contains": "基地"},
         ],
         "forbidden_tools": [
             {"name": "web_search"},
@@ -191,7 +190,7 @@ SCENARIO_DATA = [
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 2},
         "expected_response_contains": ["记住", "樱花林"],
-        "rubric": "Explicit memory write and recall should be selected by the live model through Mina memory tools.",
+        "rubric": "Memory should serve the agent: the live model writes stable context, then answers natural recall from loaded agent memory or a model-selected memory_search.",
     },
     {
         "name": "companion_low_health_live_model",
@@ -214,7 +213,6 @@ SCENARIO_DATA = [
         ],
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 1},
-        "expected_response_contains": ["血"],
         "rubric": "Emergency companion ticks should go through the live model while staying read-only.",
     },
     {

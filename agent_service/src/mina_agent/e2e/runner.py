@@ -570,8 +570,7 @@ class E2ERunner:
                 raise AssertionError(f"{scenario.name}: response trace contained forbidden text {forbidden!r}")
 
     def _response_haystack(self, scenario: Scenario) -> str:
-        calls = self._combined("model_calls", scenario.request_ids())
-        parts = [str(call.get("response_json") or call.get("response") or "") for call in calls]
+        parts: list[str] = []
         for event in self.harness_events.get(scenario.name, []):
             if event.get("event_type") not in {"server_output_line", "server_output_match"}:
                 continue

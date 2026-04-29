@@ -8,11 +8,30 @@ def test_memory_search_returns_conversations_and_events(tmp_path) -> None:
 
     memory.add_conversation("req-1", "player-1", "user", "我喜欢云杉木基地")
     memory.add_event("player-1", "world_fact", {"content": "基地入口在河边"}, importance=3)
+    memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=4)
 
     results = memory.search("player-1", "基地", limit=5)
 
+    assert any(result.get("kind") == "agent_memory" for result in results)
     assert any(result.get("kind") == "conversation" for result in results)
     assert any(result.get("kind") == "event" for result in results)
+
+
+def test_agent_context_loads_scoped_memory_by_importance(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("global", "*", "style", "回答要简洁", importance=2)
+    memory.add_agent_memory("world", "minecraft:overworld", "world", "村庄在出生点东侧", importance=3)
+    memory.add_agent_memory("player", "player-1", "base", "玩家基地在樱花林旁边", importance=5)
+    memory.add_agent_memory("player", "other-player", "base", "其他玩家基地在沙漠", importance=5)
+
+    loaded = memory.agent_context("player-1", world_id="minecraft:overworld", limit=10)
+    rendered = "\n".join(item["content"] for item in loaded)
+
+    assert "玩家基地在樱花林旁边" in rendered
+    assert "村庄在出生点东侧" in rendered
+    assert "回答要简洁" in rendered
+    assert "其他玩家基地" not in rendered
+    assert loaded[0]["label"] == "base"
 
 
 def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:

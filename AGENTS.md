@@ -43,7 +43,7 @@ Mina uses a sidecar architecture.
 - The current product scope is text conversation, knowledge/search, memory, tightly constrained read-only Minecraft commands, and player/world state observation.
 - There is no separate controllable Mina character in the runtime. Movement, mining, attacking, item use, and world mutation tools are not model-facing and should not be reintroduced.
 - Model-facing tools are limited to `web_search`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.
-- Do not add hardcoded player-intent routes or local keyword classifiers for observation, search, memory, or commands. Long-term memory recall should happen through the model-facing `memory_search` tool, not hidden context prefetch.
+- Do not add hardcoded player-intent routes or local keyword classifiers for observation, search, memory, or commands. Memory is an agent service, not a player-facing command router: stable agent memory is budget-loaded into prompt context, and `memory_search` is an optional model-facing retrieval tool for older or specific stored context.
 - If `MINA_API_KEY` is not configured, the sidecar returns a configuration error instead of attempting local chat, memory, search, command, or observation fallbacks.
 - `/v1/action-results` remains for Fabric command callbacks. `/v1/observations` and `/v1/tasks` are not part of the runtime API.
 
@@ -129,7 +129,9 @@ Declarative scenario schema highlights:
 
 ## Iteration Workflow
 
-The working target is a usable LLM-first Minecraft text agent that can answer knowledge questions through sidecar tools, maintain useful memory, run tightly constrained read-only Minecraft commands, and answer player/world state questions from Fabric snapshots. The model should choose when to answer from context versus when to call a safe tool.
+The working target is a usable LLM-first Minecraft text agent that can answer knowledge questions through sidecar tools, maintain useful agent memory, run tightly constrained read-only Minecraft commands, and answer player/world state questions from Fabric snapshots. The model should choose when to answer from context versus when to call a safe tool.
+
+Mina memory should follow the same design spirit as Codex `AGENTS.md` and Claude Code `CLAUDE.md`: it serves the agent by preserving stable instructions, player preferences, world facts, plans, promises, and lessons that should influence future turns. Do not require player prompts to mention tool names just to recall normal memory. Do not build hidden keyword classifiers for recall; load a small scoped memory context each turn and let the model decide whether to use `memory_search`.
 
 Allowed read-only Minecraft command forms are intentionally narrow: `seed`, `time query daytime|gametime|day`, `weather query`, `list`, `list uuids`, `locate structure <identifier>`, and `locate biome <identifier>`. These are selected through the model-facing `run_read_only_command` tool and then validated by sidecar/Fabric policy; write commands must remain rejected before Fabric execution.
 

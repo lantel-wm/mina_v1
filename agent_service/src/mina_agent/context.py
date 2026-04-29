@@ -13,7 +13,8 @@ You are the decision maker for each player-facing turn. Use the provided Minecra
 You can use tools to search the web, remember important player context, and run constrained read-only Minecraft commands.
 Use web_search for requests to search, look up, verify current or external knowledge, or use wiki/web/internet/联网/搜索/查一下 wording. Do not use web_search for casual chat or local Minecraft state from the current context.
 When answering from web_search results, preserve exact source values such as markers, version numbers, coordinates, URLs, and item names. Do not replace an exact value with a generic label.
-Use memory_write when the player asks you to remember, save, or record a preference, plan, promise, base location, or important fact. For any request asking what you remember or whether you still remember something, you must call memory_search in this turn before answering; do not answer from recent conversation context alone.
+Memory is for your future decisions, like Codex AGENTS.md or Claude Code CLAUDE.md style context. Use loaded agent memory directly when it is relevant. Use memory_write to save stable player preferences, world facts, plans, promises, or lessons that should help future turns, even when the player did not use the word remember. Do not save transient chat filler. Use memory_search when loaded memory is insufficient or when you need older, specific stored context.
+Recent player messages are conversational continuity only. They are not stable memory, verified command output, or fresh external knowledge. If the player asks to search, verify, or look up current/external information, use web_search even if a similar answer appears in recent context.
 You do not control a separate Minecraft character and cannot move, attack, mine, place blocks, or run write-capable server commands. For questions such as "你在哪里", "你在做什么", or "where are you", answer as a text agent and use the current player/world context if useful.
 When calling a tool, put every required argument in the tool JSON arguments. Do not put coordinates, selectors, commands, or modes only in prose.
 If you do not know a required argument, do not call that tool yet.
@@ -32,14 +33,17 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     snapshot = turn.get("snapshot") or {}
     user_content = str(turn.get("message") or "").strip()
     recent = memory.recent_conversation(player_id, limit=12)
+    agent_memory = memory.agent_context(player_id, world_id=_world_id(snapshot), limit=10, max_chars=1600)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if recent:
+    if agent_memory:
+        messages.append({"role": "system", "content": "Agent memory loaded for this turn:\n" + _render_agent_memory(agent_memory)})
+    recent_player_messages = _recent_player_messages(recent)
+    if recent_player_messages:
         messages.append(
             {
                 "role": "system",
-                "content": "Recent player conversation context:\n"
-                + "\n".join(f"{row['role']}: {row['content']}" for row in recent),
+                "content": "Recent player messages for continuity only:\n" + "\n".join(recent_player_messages),
             }
         )
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
@@ -50,6 +54,38 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
         user_content = "这是一次 companion tick。如果没有重要、及时的理由要提醒玩家，请回复空字符串；如果需要提醒，请使用玩家最近使用的语言。"
     messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def _render_agent_memory(memories: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for item in memories:
+        scope = item.get("scope")
+        label = item.get("label")
+        content = " ".join(str(item.get("content") or "").split())
+        if content:
+            lines.append(f"- {scope}/{label}: {content}")
+    return "\n".join(lines)
+
+
+def _recent_player_messages(recent: list[dict[str, Any]], limit: int = 6) -> list[str]:
+    messages: list[str] = []
+    for row in recent:
+        if row.get("role") != "user":
+            continue
+        content = " ".join(str(row.get("content") or "").split())
+        if content:
+            messages.append("user: " + content[:260])
+    return messages[-limit:]
+
+
+def _world_id(snapshot: dict[str, Any]) -> str | None:
+    value = snapshot.get("world_id") or snapshot.get("world")
+    if value:
+        return str(value)
+    player_state = snapshot.get("player_state")
+    if isinstance(player_state, dict) and player_state.get("dimension"):
+        return str(player_state.get("dimension"))
+    return None
 
 
 def build_target_summary(snapshot: dict[str, Any]) -> str:

@@ -116,13 +116,20 @@ def test_memory_write_and_search_round_trip(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _turn()
 
-    written = runner.run("memory_write", {"event_type": "preference", "content": "Tester likes spruce bases."}, turn)
-    assert _payload(written.content)["ok"] is True
+    written = runner.run(
+        "memory_write",
+        {"event_type": "preference", "content": "Tester likes spruce bases.", "label": "base_preference"},
+        turn,
+    )
+    written_payload = _payload(written.content)
+    assert written_payload["ok"] is True
+    assert written_payload["memory"]["label"] == "base_preference"
 
     searched = runner.run("memory_search", {"query": "spruce bases", "limit": 3}, turn)
     payload = _payload(searched.content)
 
     assert payload["ok"] is True
+    assert any(result["kind"] == "agent_memory" for result in payload["results"])
     assert any("spruce bases" in result["content"] for result in payload["results"])
 
 

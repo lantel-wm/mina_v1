@@ -60,6 +60,17 @@ class MemoryStore:
                     confidence real not null default 1.0,
                     updated_at real not null
                 );
+                create table if not exists agent_memories (
+                    id integer primary key autoincrement,
+                    scope text not null,
+                    scope_id text not null,
+                    label text not null,
+                    content text not null,
+                    importance integer not null default 1,
+                    source text not null default 'tool',
+                    created_at real not null,
+                    updated_at real not null
+                );
                 create table if not exists tool_calls (
                     id integer primary key autoincrement,
                     request_id text not null,
@@ -128,6 +139,10 @@ class MemoryStore:
             insert into memory_fts_v2(kind, scope_id, label, content)
             select 'action_event', request_id, event_type, payload_json
             from action_events;
+
+            insert into memory_fts_v2(kind, scope_id, label, content)
+            select 'agent_memory', scope || ':' || scope_id, label, content
+            from agent_memories;
             """
         )
 
@@ -165,6 +180,49 @@ class MemoryStore:
             conn.execute(
                 "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
                 ("event", player_id, event_type, json.dumps(payload, ensure_ascii=False)),
+            )
+
+    def add_agent_memory(
+        self,
+        scope: str,
+        scope_id: str,
+        label: str,
+        content: str,
+        *,
+        importance: int = 1,
+        source: str = "tool",
+    ) -> None:
+        normalized_scope = _normalize_scope(scope)
+        normalized_scope_id = str(scope_id or "*")
+        normalized_label = _normalize_label(label)
+        normalized_content = " ".join(str(content or "").split())
+        normalized_importance = max(1, min(5, int(importance)))
+        now = time.time()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                insert into agent_memories(scope, scope_id, label, content, importance, source, created_at, updated_at)
+                values(?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized_scope,
+                    normalized_scope_id,
+                    normalized_label,
+                    normalized_content,
+                    normalized_importance,
+                    str(source or "tool"),
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
+                (
+                    "agent_memory",
+                    _agent_scope_key(normalized_scope, normalized_scope_id),
+                    normalized_label,
+                    normalized_content,
+                ),
             )
 
     def record_tool_call(
@@ -334,25 +392,77 @@ class MemoryStore:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
-    def search(self, player_id: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
+    def agent_context(
+        self,
+        player_id: str,
+        *,
+        world_id: str | None = None,
+        limit: int = 10,
+        max_chars: int = 1600,
+    ) -> list[dict[str, Any]]:
+        scope_filters = _agent_scope_filters(player_id, world_id)
+        if not scope_filters:
+            return []
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                select scope, scope_id, label, content, importance, updated_at
+                from agent_memories
+                where {_scope_where_clause(scope_filters)}
+                order by importance desc, updated_at desc, id desc
+                limit ?
+                """,
+                (*_scope_where_args(scope_filters), limit),
+            ).fetchall()
+        memories: list[dict[str, Any]] = []
+        used_chars = 0
+        for row in rows:
+            item = dict(row)
+            content = str(item.get("content") or "")
+            used_chars += len(content)
+            if used_chars > max_chars and memories:
+                break
+            memories.append(item)
+        return memories
+
+    def search(self, player_id: str, query: str, limit: int = 8, *, world_id: str | None = None) -> list[dict[str, Any]]:
         pattern = f"%{query[:80]}%"
+        agent_scope_keys = [_agent_scope_key(scope, scope_id) for scope, scope_id in _agent_scope_filters(player_id, world_id)]
         with self._connect() as conn:
             try:
+                scope_placeholders = ",".join("?" for _ in agent_scope_keys)
+                agent_scope_predicate = ""
+                agent_scope_args: tuple[str, ...] = ()
+                if agent_scope_keys:
+                    agent_scope_predicate = f"or (kind = 'agent_memory' and scope_id in ({scope_placeholders}))"
+                    agent_scope_args = tuple(agent_scope_keys)
                 fts_rows = conn.execute(
-                    """
+                    f"""
                     select kind, label, content, bm25(memory_fts_v2) as score
                     from memory_fts_v2
                     where memory_fts_v2 match ?
                       and (
                         (kind in ('conversation', 'event') and scope_id = ?)
+                        {agent_scope_predicate}
                       )
                     order by score
                     limit ?
                     """,
-                    (_fts_query(query), player_id, limit),
+                    (_fts_query(query), player_id, *agent_scope_args, limit),
                 ).fetchall()
             except sqlite3.OperationalError:
                 fts_rows = []
+            agent_memories = conn.execute(
+                f"""
+                select 'agent_memory' as kind, label, content, updated_at as created_at
+                from agent_memories
+                where {_scope_where_clause(_agent_scope_filters(player_id, world_id))}
+                  and content like ?
+                order by importance desc, updated_at desc, id desc
+                limit ?
+                """,
+                (*_scope_where_args(_agent_scope_filters(player_id, world_id)), pattern, limit),
+            ).fetchall()
             conversations = conn.execute(
                 """
                 select 'conversation' as kind, role as label, content, created_at
@@ -373,8 +483,45 @@ class MemoryStore:
                 """,
                 (player_id, pattern, limit),
             ).fetchall()
-        merged = [dict(row) for row in fts_rows + conversations + events]
+        merged = [dict(row) for row in fts_rows + agent_memories + conversations + events]
         return merged[:limit]
+
+
+def _normalize_scope(scope: str) -> str:
+    value = str(scope or "player").strip().lower()
+    if value in {"global", "world", "player"}:
+        return value
+    return "player"
+
+
+def _normalize_label(label: str) -> str:
+    value = str(label or "note").strip().lower()
+    return value[:80] if value else "note"
+
+
+def _agent_scope_key(scope: str, scope_id: str) -> str:
+    return f"{scope}:{scope_id}"
+
+
+def _agent_scope_filters(player_id: str, world_id: str | None = None) -> list[tuple[str, str]]:
+    filters = [("global", "*")]
+    if world_id:
+        filters.append(("world", str(world_id)))
+    filters.append(("player", str(player_id or "unknown")))
+    return filters
+
+
+def _scope_where_clause(filters: list[tuple[str, str]]) -> str:
+    if not filters:
+        return "0"
+    return " or ".join("(scope = ? and scope_id = ?)" for _ in filters)
+
+
+def _scope_where_args(filters: list[tuple[str, str]]) -> tuple[str, ...]:
+    args: list[str] = []
+    for scope, scope_id in filters:
+        args.extend([scope, scope_id])
+    return tuple(args)
 
 
 def _fts_query(query: str) -> str:

@@ -8,6 +8,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "web_search" in SYSTEM_PROMPT
     assert "preserve exact source values" in SYSTEM_PROMPT
     assert "memory_search" in SYSTEM_PROMPT
+    assert "Agent memory" in SYSTEM_PROMPT or "agent memory" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "separate Minecraft character" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
@@ -42,6 +43,7 @@ def test_target_summary_is_observation_only(tmp_path) -> None:
 
 def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("player", "player-1", "base", "玩家基地在樱花林旁边", importance=4)
     turn = {
         "request_id": "req-1",
         "trigger": "command",
@@ -60,6 +62,8 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
 
     assert "candidate_logs" in context
     assert "nearby_hostiles" in context
+    assert "Agent memory loaded for this turn" in context
+    assert "玩家基地在樱花林旁边" in context
     assert "body_state" not in context
     assert len(context) < 6000
 
@@ -67,6 +71,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
 def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("old", "player-1", "user", "我家在云杉林旁边")
+    memory.add_conversation("old", "player-1", "assistant", "我记得你的家在云杉林旁边")
     turn = {
         "request_id": "req-1",
         "trigger": "command",
@@ -78,6 +83,8 @@ def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) 
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent player conversation context" in content
+    assert "Recent player messages for continuity only" in content
+    assert "我家在云杉林旁边" in content
+    assert "我记得你的家" not in content
     assert "This user message is a memory recall request" not in content
     assert "Recent conversation memory is intentionally omitted" not in content
