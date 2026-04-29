@@ -26,6 +26,7 @@ public final class MinaActionExecutor {
 	private static final Pattern SELECTOR = Pattern.compile("[A-Za-z0-9_:@\\[\\]=,.!\\-]+");
 	private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9_:.\\-/#]+");
 	private static final double BODY_EYE_HEIGHT = 1.62D;
+	private static final int CHAT_CHUNK_LIMIT = 240;
 	private static final Set<String> READ_ONLY_TIME_QUERIES = Set.of("daytime", "gametime", "day");
 	private final ThreadLocal<List<CommandExecution>> commandLog = ThreadLocal.withInitial(ArrayList::new);
 
@@ -69,7 +70,7 @@ public final class MinaActionExecutor {
 			String target = string(message, "target", "requester");
 			MinaMod.LOGGER.info("mina send message target={} content={}", target, content);
 			if ("all".equalsIgnoreCase(target)) {
-				server.getPlayerList().broadcastSystemMessage(Component.literal("[Mina] " + content), false);
+				broadcast(server, content);
 			} else if (requester != null) {
 				message(requester, content);
 			}
@@ -134,7 +135,7 @@ public final class MinaActionExecutor {
 	private void executeAction(MinecraftServer server, ServerPlayer requester, MinaConfig config, String name, JsonObject args) {
 		switch (name) {
 			case "send_player_message" -> message(requester, string(args, "content", ""));
-			case "send_global_message" -> server.getPlayerList().broadcastSystemMessage(Component.literal("[Mina] " + string(args, "content", "")), false);
+			case "send_global_message" -> broadcast(server, string(args, "content", ""));
 			case "run_safe_command", "run_read_only_command" -> runReadOnlyCommand(server, requester, string(args, "command", ""));
 			case "locate_structure" -> locateStructure(server, requester, string(args, "structure", ""));
 			case "body_spawn" -> bodySpawn(server, requester, config);
@@ -438,8 +439,48 @@ public final class MinaActionExecutor {
 
 	private static void message(ServerPlayer player, String content) {
 		if (player != null && content != null && !content.isBlank()) {
-			player.sendSystemMessage(Component.literal("[Mina] " + content));
+			for (String chunk : chatChunks(content)) {
+				player.sendSystemMessage(Component.literal("[Mina] " + chunk));
+			}
 		}
+	}
+
+	private static void broadcast(MinecraftServer server, String content) {
+		if (server != null && content != null && !content.isBlank()) {
+			for (String chunk : chatChunks(content)) {
+				server.getPlayerList().broadcastSystemMessage(Component.literal("[Mina] " + chunk), false);
+			}
+		}
+	}
+
+	private static List<String> chatChunks(String content) {
+		List<String> chunks = new ArrayList<>();
+		for (String rawLine : content.split("\\R", -1)) {
+			String line = rawLine.strip();
+			if (line.isBlank()) {
+				continue;
+			}
+			while (line.length() > CHAT_CHUNK_LIMIT) {
+				int split = bestSplit(line, CHAT_CHUNK_LIMIT);
+				chunks.add(line.substring(0, split).strip());
+				line = line.substring(split).strip();
+			}
+			if (!line.isBlank()) {
+				chunks.add(line);
+			}
+		}
+		return chunks;
+	}
+
+	private static int bestSplit(String line, int limit) {
+		int split = Math.min(limit, line.length());
+		for (int index = split; index > Math.max(0, split - 40); index--) {
+			char current = line.charAt(index - 1);
+			if (Character.isWhitespace(current) || current == '，' || current == ',' || current == '。' || current == '.') {
+				return index;
+			}
+		}
+		return split;
 	}
 
 	private static String mode(JsonObject args) {

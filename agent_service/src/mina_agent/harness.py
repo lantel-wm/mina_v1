@@ -62,7 +62,7 @@ class AgentHarness:
             request_id,
             turn.get("trigger"),
             player.get("name") or player_id,
-            _truncate(str(turn.get("message") or ""), 300),
+            _log_preview(str(turn.get("message") or ""), 300),
         )
         self.memory.upsert_player(player)
 
@@ -177,7 +177,7 @@ class AgentHarness:
                         messages_count=len(messages),
                         tools=_tool_spec_names(specs),
                         status="error",
-                        error=f"HTTP {exc.status}: {_truncate(exc.message, 1200)}",
+                        error=f"HTTP {exc.status}: {_log_preview(exc.message, 1200)}",
                     )
                     raise
                 usage = response.usage
@@ -190,7 +190,7 @@ class AgentHarness:
                     subturn,
                     response.finish_reason,
                     len(tool_calls),
-                    _truncate(str(assistant_message.get("content") or ""), 500),
+                    _log_preview(str(assistant_message.get("content") or ""), 500),
                     usage,
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
@@ -244,7 +244,7 @@ class AgentHarness:
                         subturn,
                         call.get("id"),
                         name,
-                        _truncate(json.dumps(args, ensure_ascii=False), 1200),
+                        _log_preview(json.dumps(args, ensure_ascii=False), 1200),
                     )
                     result = self.tools.run(name, args, turn)
                     result_actions = []
@@ -259,12 +259,13 @@ class AgentHarness:
                     else:
                         invalid_tool_results = 0
                     self._debug(
-                        "tool result request_id=%s subturn=%s name=%s action=%s content=%s",
+                        "tool result request_id=%s subturn=%s name=%s action=%s content_length=%s content_preview=%s",
                         request_id,
                         subturn,
                         name,
                         result_actions,
-                        _truncate(result.content, 1200),
+                        len(result.content),
+                        _log_preview(result.content, 1200),
                     )
                     self.memory.record_tool_call(
                         request_id,
@@ -309,7 +310,7 @@ class AgentHarness:
                         return TurnResponse(messages=[{"target": "requester", "content": content}], actions=actions).to_dict()
         except DeepSeekError as exc:
             content = _deepseek_error_message(exc)
-            self._debug("turn deepseek_error request_id=%s status=%s message=%s", request_id, exc.status, _truncate(exc.message, 1200))
+            self._debug("turn deepseek_error request_id=%s status=%s message=%s", request_id, exc.status, _log_preview(exc.message, 1200))
             return TurnResponse(messages=[{"target": "requester", "content": content}], actions=actions).to_dict()
 
         content = "工具调用轮次达到上限，我先停下，避免误操作。"
@@ -453,7 +454,7 @@ class AgentHarness:
                         continue
                     content = str(item.get("content") or "").strip()
                     if content:
-                        lines.append(_truncate(content, 160))
+                        lines.append(_chat_excerpt(content, 160))
             if lines:
                 return TurnResponse(
                     messages=[{"target": "requester", "content": "我找到了这些相关记忆：\n" + "\n".join(lines)}],
@@ -615,10 +616,17 @@ def _parse_args(raw: Any) -> dict[str, Any]:
         return {}
 
 
-def _truncate(value: str, limit: int) -> str:
+def _log_preview(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
-    return value[:limit] + "...<truncated>"
+    return value[:limit] + "...[log preview only; full tool content preserved]"
+
+
+def _chat_excerpt(value: str, limit: int) -> str:
+    cleaned = re.sub(r"\s+", " ", value).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(0, limit - 3)].rstrip(" ,，.;；:：") + "..."
 
 
 def _minecraft_chat_text(content: str) -> str:
@@ -684,7 +692,7 @@ def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
                 tool_names.append(name)
     content = str(message.get("content") or "")
     return {
-        "content_preview": _truncate(content, 500),
+        "content_preview": _log_preview(content, 500),
         "tool_call_count": len(tool_calls),
         "tool_names": tool_names,
     }
@@ -1872,7 +1880,7 @@ def _safe_search_result_lines(results: Any) -> list[str]:
         if url:
             detail += f" {url}"
         if content:
-            detail += f" - {_truncate(content, 160)}"
+            detail += f" - {_chat_excerpt(content, 240)}"
         lines.append(detail.strip())
         if len(lines) >= 3:
             break
@@ -2095,7 +2103,7 @@ def _local_memory_result_lines(results: list[Any]) -> list[str]:
         if content in seen:
             continue
         seen.add(content)
-        line = _truncate(content, 160)
+        line = _chat_excerpt(content, 160)
         if kind == "event" and label in {"player_fact", "note", "preference", "world_fact"}:
             preferred.append(line)
         elif kind == "event":

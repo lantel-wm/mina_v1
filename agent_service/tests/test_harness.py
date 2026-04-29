@@ -69,6 +69,20 @@ class UnsafeSearch(SearxngClient):
         ]
 
 
+class LongSearch(SearxngClient):
+    def __init__(self) -> None:
+        pass
+
+    def search(self, query: str, max_results: int = 5):
+        return [
+            {
+                "title": "Long Minecraft Result",
+                "url": "https://example.invalid/long",
+                "content": "Long search content " + ("detail " * 260) + "MinaE2E-Full-Search-Tail",
+            }
+        ]
+
+
 class ToolCallingDeepSeek:
     def __init__(self) -> None:
         self.calls = 0
@@ -104,6 +118,49 @@ class ToolCallingDeepSeek:
         assert "Minecraft Wiki" in self.tool_messages[-1]["content"]
         return DeepSeekResponse(
             message={"role": "assistant", "content": "我查到了 Minecraft Wiki 的相关结果。"},
+            finish_reason="stop",
+            usage={"completion_tokens": 1},
+            raw={},
+        )
+
+
+class FullSearchToolCallingDeepSeek:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.tool_messages: list[dict[str, Any]] = []
+
+    def configured(self) -> bool:
+        return True
+
+    def chat(self, messages, tools=None, response_format=None, max_tokens=2048):  # noqa: ANN001, ANN201
+        self.calls += 1
+        self.tool_messages = [message for message in messages if message.get("role") == "tool"]
+        if self.calls == 1:
+            return DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-search-full",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query": "long minecraft result", "max_results": 1}',
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 1},
+                raw={},
+            )
+        assert self.tool_messages
+        tool_content = self.tool_messages[-1]["content"]
+        assert "MinaE2E-Full-Search-Tail" in tool_content
+        assert "[log preview only" not in tool_content
+        return DeepSeekResponse(
+            message={"role": "assistant", "content": "完整搜索结果已进入模型工具上下文。"},
             finish_reason="stop",
             usage={"completion_tokens": 1},
             raw={},
@@ -809,6 +866,27 @@ def test_harness_completes_web_search_tool_loop(tmp_path) -> None:
     assert calls[0]["status"] == "ok"
 
 
+def test_harness_passes_full_web_search_tool_result_to_model(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, LongSearch())
+    deepseek = FullSearchToolCallingDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-full-search-tool-context",
+            "trigger": "command",
+            "message": "请回答一个需要联网工具的问题",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    assert response["messages"][0]["content"] == "完整搜索结果已进入模型工具上下文。"
+    assert deepseek.calls == 2
+
+
 def test_harness_routes_explicit_web_search_without_model_and_filters_injection(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     tools = ToolRunner(memory, UnsafeSearch())
@@ -837,6 +915,31 @@ def test_harness_routes_explicit_web_search_without_model_and_filters_injection(
     calls = memory.recent_tool_calls(request_id="req-local-web-search", limit=10)
     assert [call["tool_name"] for call in calls] == ["web_search"]
     assert calls[0]["status"] == "ok"
+
+
+def test_harness_local_web_search_excerpt_avoids_internal_truncation_marker(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    tools = ToolRunner(memory, LongSearch())
+    deepseek = FailIfCalledDeepSeek()
+    harness = AgentHarness(Settings(api_key="test", db_path=tmp_path / "mina.sqlite3"), memory, deepseek, tools)  # type: ignore[arg-type]
+
+    response = harness.run_turn(
+        {
+            "request_id": "req-local-web-search-long",
+            "trigger": "command",
+            "message": "帮我联网查一下 very long Minecraft result",
+            "player": {"uuid": "player-1", "name": "Tester"},
+            "permissions": {"can_use_actions": True},
+            "snapshot": {},
+        }
+    )
+
+    content = response["messages"][0]["content"]
+    assert "Long Minecraft Result" in content
+    assert "<truncated>" not in content
+    assert "[log preview only" not in content
+    assert response["debug"]["local_web_search"] is True
+    assert deepseek.calls == 0
 
 
 def test_harness_routes_plain_external_lookup_to_web_search_without_model(tmp_path) -> None:
