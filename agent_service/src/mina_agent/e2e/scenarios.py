@@ -44,6 +44,39 @@ SCENARIO_DATA = [
         "rubric": "Player status questions should go through the live model, using the Fabric snapshot context without unnecessary tools.",
     },
     {
+        "name": "player_name_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "player-name-snapshot-live-model",
+                "value": "我的 Minecraft 玩家名是什么？只回答玩家名。",
+                "wait_for": ["mina_tester"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["mina_tester"],
+        "forbidden_response_contains": [
+            "uuid",
+            "UUID",
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Explicit player-name questions should answer from Fabric turn identity without command execution or unrelated snapshot details.",
+    },
+    {
         "name": "spawn_distance_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],

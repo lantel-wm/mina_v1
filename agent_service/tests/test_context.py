@@ -24,7 +24,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "never answer them from snapshot or recent results" in SYSTEM_PROMPT
     assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
-    assert "Natural-language questions about current weather, time, day" in SYSTEM_PROMPT
+    assert "Player name/username" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
     assert "do not mention safety, monsters, entities" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
@@ -153,6 +153,19 @@ def test_context_summary_labels_health_points_and_hearts() -> None:
     assert '"max_health_points": 20' in summary
     assert '"health_hearts": 2' in summary
     assert '"max_health_hearts": 10' in summary
+
+
+def test_context_summary_includes_player_identity_for_command_turns() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"name": "Tester"' in summary
+    assert '"uuid": "player-1"' in summary
 
 
 def test_companion_context_summary_omits_player_name() -> None:
