@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import re
 from typing import Any
@@ -90,7 +91,13 @@ MEMORY_WRITE_POLICY_REMINDER = (
 )
 
 
-def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: bool = False) -> list[dict[str, Any]]:
+def build_messages(
+    turn: dict[str, Any],
+    memory: MemoryStore,
+    *,
+    mcp_available: bool = False,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
     player = turn.get("player") or {}
     player_id = str(player.get("uuid") or "unknown")
     snapshot = turn.get("snapshot") or {}
@@ -100,6 +107,7 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
     recent_action_results = memory.recent_action_results_for_player(player_id, limit=4)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.append({"role": "system", "content": build_runtime_context(now)})
     turn_policy = _turn_policy_section(turn, user_content, mcp_available=mcp_available)
     if turn_policy:
         messages.append({"role": "system", "content": turn_policy})
@@ -144,6 +152,26 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore, *, mcp_available: 
         user_content = _companion_tick_prompt(turn)
     messages.append({"role": "user", "content": user_content})
     return messages
+
+
+def build_runtime_context(now: datetime | None = None) -> str:
+    if now is None:
+        current = datetime.now().astimezone()
+    elif now.tzinfo is None:
+        current = now.astimezone()
+    else:
+        current = now
+    offset = current.strftime("%z")
+    offset_display = f"{offset[:3]}:{offset[3:]}" if offset else "local"
+    return "\n".join(
+        [
+            "Runtime:",
+            f"- current_date: {current.date().isoformat()}",
+            f"- current_time: {current.strftime('%H:%M:%S')}",
+            f"- utc_offset: {offset_display}",
+            "- Use current_date for today, tomorrow, yesterday, 今天, 明天, and 昨天.",
+        ]
+    )
 
 
 def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_available: bool = False) -> str:

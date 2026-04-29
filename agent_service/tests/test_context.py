@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 
 from mina_agent.context import (
@@ -8,6 +9,7 @@ from mina_agent.context import (
     build_base_system_prompt,
     build_context_summary,
     build_messages,
+    build_runtime_context,
     build_target_summary,
 )
 from mina_agent.memory import MemoryStore
@@ -80,6 +82,29 @@ def test_system_prompt_is_built_from_named_base_sections() -> None:
     assert all(section.strip() == section for section in BASE_SYSTEM_SECTIONS)
     assert "MCP policy for this turn" not in SYSTEM_PROMPT
     assert "Companion tick policy" not in SYSTEM_PROMPT
+
+
+def test_runtime_context_is_dynamic_and_separate_from_base_prompt(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    now = datetime(2026, 4, 30, 8, 9, 10, tzinfo=timezone.utc)
+    turn = {
+        "request_id": "req-runtime",
+        "trigger": "command",
+        "message": "今天是哪一天？",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"player_state": {"health": 20, "max_health": 20}},
+    }
+
+    runtime = build_runtime_context(now)
+    messages = build_messages(turn, memory, now=now)
+    context = "\n".join(str(message["content"]) for message in messages)
+
+    assert "Runtime:" not in SYSTEM_PROMPT
+    assert "current_date: 2026-04-30" in runtime
+    assert "current_time: 08:09:10" in runtime
+    assert "utc_offset: +00:00" in runtime
+    assert "current_date: 2026-04-30" in context
+    assert "Use current_date for today" in context
 
 
 def test_target_summary_is_observation_only(tmp_path) -> None:
@@ -197,7 +222,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 7000
+    assert len(context) < 7300
 
 
 def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:

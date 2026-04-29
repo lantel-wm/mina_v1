@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
@@ -150,6 +151,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "concise_single_sentence_response",
         "non_empty_final_model_content",
         "plain_chat_response",
+        "response_contains_current_date",
         "single_memory_write_tool_call",
         "single_read_only_command_action",
         "spawn_coordinates_response_matches_snapshot",
@@ -783,6 +785,20 @@ class E2ERunner:
                 if match:
                     raise AssertionError(
                         f"{scenario.name}: response trace contained non-plain-chat character {match.group(0)!r}"
+                    )
+            elif invariant == "response_contains_current_date":
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_content = "\n".join(
+                    _model_content_preview(call).strip()
+                    for call in calls
+                    if call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and _model_content_preview(call).strip()
+                )
+                expected = _current_local_date()
+                if expected not in final_content:
+                    raise AssertionError(
+                        f"{scenario.name}: final response did not include current date {expected}: {final_content!r}"
                     )
             elif invariant == "spawn_distance_response_matches_snapshot":
                 calls = self._combined("model_calls", scenario.request_ids())
@@ -1513,6 +1529,10 @@ def _model_content_preview(call: dict[str, Any]) -> str:
     if not isinstance(response, dict):
         return ""
     return str(response.get("content") or response.get("content_preview") or "")
+
+
+def _current_local_date() -> str:
+    return datetime.now().astimezone().date().isoformat()
 
 
 def _sentence_terminal_count(content: str) -> int:
