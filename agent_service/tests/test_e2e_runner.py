@@ -351,7 +351,7 @@ def test_trace_invariant_rejects_model_write_command_advice(tmp_path, monkeypatc
                 "request_id": "req-1",
                 "status": "ok",
                 "finish_reason": "stop",
-                "response_json": json.dumps({"content_preview": "你可以运行 setblock 2 80 0 minecraft:air"}),
+                "response_json": json.dumps({"content": "你可以运行 setblock 2 80 0 minecraft:air"}),
             }
         ] if key == "model_calls" else [],
     )

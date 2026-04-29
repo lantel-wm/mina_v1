@@ -1362,7 +1362,7 @@ def _model_content_preview(call: dict[str, Any]) -> str:
             return ""
     if not isinstance(response, dict):
         return ""
-    return str(response.get("content_preview") or "")
+    return str(response.get("content") or response.get("content_preview") or "")
 
 
 def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: list[Scenario], live_model: dict[str, str]) -> None:

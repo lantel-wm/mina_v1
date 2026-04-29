@@ -346,7 +346,9 @@ def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
                 tool_names.append(name)
     content = str(message.get("content") or "")
     return {
+        "content": content,
         "content_preview": _log_preview(content, 500),
+        "content_length": len(content),
         "tool_call_count": len(tool_calls),
         "tool_names": tool_names,
     }
