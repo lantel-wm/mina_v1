@@ -11,6 +11,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionSet;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -211,6 +213,7 @@ public final class MinaTestCommands {
 			}
 			case "low_health" -> lowHealth(source);
 			case "low_hunger" -> lowHunger(source);
+			case "poisoned" -> poisoned(source);
 			case "on_fire" -> onFire(source);
 			case "nearby_hostile" -> nearbyHostile(source);
 			default -> {
@@ -272,6 +275,17 @@ public final class MinaTestCommands {
 		return 1;
 	}
 
+	private int poisoned(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		requester.addEffect(new MobEffectInstance(MobEffects.POISON, 200, 0));
+		source.sendSuccess(() -> Component.literal("Mina test world mutate poisoned complete."), false);
+		return 1;
+	}
+
 	private int onFire(CommandSourceStack source) {
 		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
 		if (requester == null) {
@@ -294,6 +308,7 @@ public final class MinaTestCommands {
 		player.setHealth(player.getMaxHealth());
 		player.getFoodData().setFoodLevel(20);
 		player.getFoodData().setSaturation(5.0F);
+		player.removeAllEffects();
 		player.clearFire();
 	}
 

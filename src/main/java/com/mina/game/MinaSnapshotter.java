@@ -279,6 +279,7 @@ public final class MinaSnapshotter {
 		JsonArray array = new JsonArray();
 		for (MobEffectInstance effect : entity.getActiveEffects()) {
 			JsonObject json = new JsonObject();
+			json.addProperty("id", BuiltInRegistries.MOB_EFFECT.getKey(effect.getEffect().value()).toString());
 			json.addProperty("effect", effect.getDescriptionId());
 			json.addProperty("duration", effect.getDuration());
 			json.addProperty("amplifier", effect.getAmplifier());

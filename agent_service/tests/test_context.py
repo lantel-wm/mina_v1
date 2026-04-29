@@ -30,12 +30,13 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "world difficulty" in SYSTEM_PROMPT
     assert "world spawn" in SYSTEM_PROMPT
     assert "health/food/armor/XP" in SYSTEM_PROMPT
+    assert "active effects/status effects" in SYSTEM_PROMPT
     assert "light/sky" in SYSTEM_PROMPT
     assert "hazards (fire/lava/water/ground)" in SYSTEM_PROMPT
     assert "held item" in SYSTEM_PROMPT
     assert "dimension" in SYSTEM_PROMPT
     assert "block at/below feet" in SYSTEM_PROMPT
-    assert "preserve the exact namespace" in SYSTEM_PROMPT
+    assert "item/block/effect/biome/dimension ID" in SYSTEM_PROMPT
     assert "do not mention safety, monsters, entities" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "one sentence/一句话" in SYSTEM_PROMPT
@@ -125,6 +126,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
                 "armor": 0,
                 "experience_level": 0,
                 "total_experience": 0,
+                "effects": [],
                 "on_ground": True,
                 "in_lava": False,
                 "underwater": False,
@@ -146,6 +148,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert '"armor": 0' in context
     assert '"experience_level": 0' in context
     assert '"total_experience": 0' in context
+    assert '"effects": []' in context
     assert '"on_ground": true' in context
     assert '"on_fire": false' in context
     assert '"game_mode": "survival"' in context
@@ -157,14 +160,18 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Seed: [98765]" in context
     assert "Tool selection reminder" in context
     assert "never answer from snapshot" in context
+    assert "final user message itself is an allowed command text" in context
+    assert "Do not answer exact command text with recent output" in context
     assert "Exact command strings are commands, not observations" in context
     assert "The exact command `list` must call run_read_only_command" in context
     assert "must not be answered from online_players" in context
     assert "Natural-language weather/time/status questions" in context
     assert "memory_write args: no current Minecraft username" in context
+    assert "memory_write must be the first tool call" in context
+    assert "do not call memory_search first" in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 6500
+    assert len(context) < 6800
 
 
 def test_context_summary_labels_health_points_and_hearts() -> None:
@@ -209,6 +216,35 @@ def test_context_summary_includes_survival_hud_stats() -> None:
     assert '"armor": 7' in summary
     assert '"experience_level": 3' in summary
     assert '"total_experience": 42' in summary
+
+
+def test_context_summary_includes_active_effects() -> None:
+    turn = {
+        "trigger": "command",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {
+            "player_state": {
+                "health": 20,
+                "max_health": 20,
+                "effects": [
+                    {
+                        "id": "minecraft:poison",
+                        "effect": "effect.minecraft.poison",
+                        "duration": 200,
+                        "amplifier": 0,
+                    }
+                ],
+            },
+            "nearby_entities": [],
+        },
+    }
+
+    summary = build_context_summary(turn)
+
+    assert '"effects": [{"id": "minecraft:poison"' in summary
+    assert '"effect": "effect.minecraft.poison"' in summary
+    assert '"duration": 200' in summary
+    assert '"amplifier": 0' in summary
 
 
 def test_context_summary_includes_hazard_state() -> None:

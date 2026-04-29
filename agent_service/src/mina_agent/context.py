@@ -29,7 +29,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, world spawn, health/food/armor/XP, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, game mode, held item, weather/time/day, world difficulty, dimension, biome, coords, world spawn, health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, safety are observations, not commands. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -70,14 +70,15 @@ def build_base_system_prompt() -> str:
 SYSTEM_PROMPT = build_base_system_prompt()
 
 COMMAND_POLICY_REMINDER = (
-    "Tool selection reminder: exact/explicit command strings require run_read_only_command every time, "
-    "even if recent results show it. Exact command strings are commands, not observations. "
-    "Must call the tool for: time query day; weather query; list; list uuids; seed; "
-    "locate structure <id>; locate biome <id>. For command requests, never answer from snapshot "
-    "or recent results. Natural-language weather/time/status questions are observations; answer "
-    "from Observed Minecraft state without tools. The exact command `list` must "
-    "call run_read_only_command and must not be answered from online_players. memory_write args: no current "
-    "Minecraft username unless it is the fact."
+    "Tool selection reminder: exact/explicit command strings require run_read_only_command every time. "
+    "If the final user message itself is an allowed command text, the next assistant step must be the tool, "
+    "not text. Do not answer exact command text with recent output. Exact command strings are commands, not observations. "
+    "Must call the tool for: time query day; weather query; list; list uuids; seed; locate structure <id>; locate biome <id>. "
+    "For command requests, never answer from snapshot or recent results. Natural-language weather/time/status questions "
+    "are observations; answer from Observed Minecraft state without tools. The exact command `list` must call "
+    "run_read_only_command and must not be answered from online_players. memory_write args: no current Minecraft username "
+    "unless it is the fact. Explicit remember/save: memory_write must be the first tool call; do not call memory_search "
+    "first unless Remembered facts conflict."
 )
 
 
@@ -369,6 +370,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
             "armor": player_state.get("armor"),
             "experience_level": player_state.get("experience_level"),
             "total_experience": player_state.get("total_experience"),
+            "effects": _compact_effects(player_state.get("effects")),
             "game_mode": player_state.get("game_mode"),
             "dimension": player_state.get("dimension"),
             "on_ground": player_state.get("on_ground"),
@@ -517,6 +519,29 @@ def _selected_inventory_item(inventory: list[Any]) -> dict[str, Any]:
                 "name": item.get("name"),
             }
     return {}
+
+
+def _compact_effects(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    effects: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        effect_id = item.get("id") or item.get("effect")
+        if not effect_id:
+            continue
+        effects.append(
+            {
+                "id": effect_id,
+                "effect": item.get("effect"),
+                "duration": item.get("duration"),
+                "amplifier": item.get("amplifier"),
+            }
+        )
+        if len(effects) >= 8:
+            break
+    return effects
 
 
 def _compact_environment(environment: dict[str, Any]) -> dict[str, Any]:

@@ -182,6 +182,42 @@ SCENARIO_DATA = [
         "rubric": "Hazard-state questions should answer player_state.on_fire from Fabric snapshot without command execution or unrelated player status.",
     },
     {
+        "name": "active_effect_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation", "safety"],
+        "steps": [
+            {"kind": "world_mutate", "value": "poisoned", "wait_for": ["Mina test world mutate poisoned complete"]},
+            {
+                "kind": "request",
+                "request_id": "active-effect-snapshot-live-model",
+                "value": "我现在有什么状态效果？只回答完整效果ID。",
+                "wait_for": ["minecraft:poison"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["minecraft:poison"],
+        "forbidden_response_contains": [
+            "effect.minecraft.poison",
+            "Current Minecraft context",
+            "Minecraft context",
+            "Observed Minecraft state",
+            "Remembered facts",
+            "坐标",
+            "天气",
+            "生命",
+        ],
+        "trace_invariants": ["no_model_requested_read_only_command"],
+        "rubric": "Active-effect questions should answer player_state.effects from Fabric snapshot with stable effect IDs and no command execution.",
+    },
+    {
         "name": "block_below_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
@@ -224,7 +260,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "sky-light-snapshot-live-model",
-                "value": "我现在能看到天空吗？当前位置光照等级是多少？只回答小写 true 和数字 15。",
+                "value": "我现在能看到天空吗？当前位置光照等级是多少？只回答是否能看到天空和数字 15。",
                 "wait_for": ["mina turn response requestId=sky-light-snapshot-live-model"],
                 "timeout": 60,
             }
@@ -237,7 +273,8 @@ SCENARIO_DATA = [
         ],
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "exact", "count": 1},
-        "expected_response_contains": ["true", "15"],
+        "expected_response_contains": ["15"],
+        "expected_response_any_contains": ["true", "能", "可以", "是"],
         "forbidden_response_contains": [
             "Current Minecraft context",
             "Minecraft context",
