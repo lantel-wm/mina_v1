@@ -6,6 +6,7 @@ from mina_agent.memory import MemoryStore
 
 def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "web_search" in SYSTEM_PROMPT
+    assert "preserve exact source values" in SYSTEM_PROMPT
     assert "memory_search" in SYSTEM_PROMPT
     assert "run_read_only_command" in SYSTEM_PROMPT
     assert "separate Minecraft character" in SYSTEM_PROMPT

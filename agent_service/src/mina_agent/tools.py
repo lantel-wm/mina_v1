@@ -79,6 +79,9 @@ MINECRAFT_WRITE_COMMANDS = {
     "save-on",
 }
 
+WEB_SEARCH_CONTENT_LIMIT = 1200
+WEB_SEARCH_TITLE_LIMIT = 180
+
 
 def tool_specs() -> list[dict[str, Any]]:
     return [
@@ -205,8 +208,14 @@ class ToolRunner:
         except Exception as exc:  # noqa: BLE001 - tool calls must return model-visible errors.
             LOGGER.info("web_search unavailable query=%s error=%s", query, exc)
             return ToolResult(content=json.dumps({"ok": False, "error": f"web_search unavailable: {exc}"}, ensure_ascii=False))
-        LOGGER.info("web_search result_count=%s", len(results))
-        return ToolResult(content=json.dumps({"ok": True, "results": results}, ensure_ascii=False))
+        safe_results, filtered_results = _safe_web_search_results(results, max_results=max_results)
+        LOGGER.info("web_search result_count=%s safe_result_count=%s filtered_results=%s", len(results), len(safe_results), filtered_results)
+        return ToolResult(
+            content=json.dumps(
+                {"ok": True, "results": safe_results, "filtered_results": filtered_results},
+                ensure_ascii=False,
+            )
+        )
 
     def _memory_search(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         player_id = _player_id(turn)
@@ -310,6 +319,61 @@ def _bounded_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         parsed = fallback
     return max(minimum, min(maximum, parsed))
+
+
+def _safe_web_search_results(results: Any, *, max_results: int) -> tuple[list[dict[str, str]], int]:
+    if not isinstance(results, list):
+        return [], 0
+    safe_results: list[dict[str, str]] = []
+    filtered_results = 0
+    for item in results:
+        if not isinstance(item, dict):
+            filtered_results += 1
+            continue
+        title = _excerpt(str(item.get("title") or "result").strip(), WEB_SEARCH_TITLE_LIMIT)
+        url = str(item.get("url") or "").strip()
+        content = _excerpt(str(item.get("content") or "").strip(), WEB_SEARCH_CONTENT_LIMIT)
+        if not url:
+            filtered_results += 1
+            continue
+        if _unsafe_web_search_text(f"{title}\n{content}"):
+            filtered_results += 1
+            continue
+        safe_results.append({"title": title, "url": url, "content": content})
+        if len(safe_results) >= max_results:
+            break
+    return safe_results, filtered_results
+
+
+def _unsafe_web_search_text(value: str) -> bool:
+    normalized = value.lower()
+    if any(
+        token in normalized
+        for token in (
+            "ignore every previous instruction",
+            "ignore previous instructions",
+            "忽略之前",
+            "忽略以上",
+            "调用工具",
+            "call run_safe_command",
+            "send_player_message",
+            "send_global_message",
+            "run setblock",
+            "execute command",
+        )
+    ):
+        return True
+    for token in _command_tokens(normalized):
+        command = token.split(":")[-1]
+        if command in MINECRAFT_WRITE_COMMANDS:
+            return True
+    return False
+
+
+def _excerpt(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 3)].rstrip() + "..."
 
 
 def is_read_only_command(command: str) -> bool:
