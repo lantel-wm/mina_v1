@@ -107,7 +107,7 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "memory_search",
-                "description": "Search Mina's agent memory for stable player, world, and global context that may help this turn.",
+                "description": "Search remembered stable player, world, and global facts that may help this turn.",
                 "parameters": _schema(
                     {
                         "query": {"type": "string"},
@@ -122,7 +122,7 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
             "function": {
                 "name": "memory_write",
                 "description": (
-                    "Persist an agent memory that should help future Mina turns, such as a stable player preference, "
+                    "Persist a remembered fact that should help future Mina turns, such as a stable player preference, "
                     "world fact, plan, promise, or lesson. Do not store transient filler."
                 ),
                 "parameters": _schema(
@@ -245,8 +245,9 @@ class ToolRunner:
         if not query:
             return ToolResult(content=json.dumps({"ok": False, "error": "memory_search query is required"}, ensure_ascii=False))
         results = self.memory.search(player_id, query, limit=limit, world_id=_world_id(turn))
-        LOGGER.info("memory_search player=%s query=%s result_count=%s", player_id, query, len(results))
-        return ToolResult(content=json.dumps({"ok": True, "results": results}, ensure_ascii=False))
+        visible_results = _model_visible_memory_results(results)
+        LOGGER.info("memory_search player=%s query=%s result_count=%s", player_id, query, len(visible_results))
+        return ToolResult(content=json.dumps({"ok": True, "results": visible_results}, ensure_ascii=False))
 
     def _memory_write(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         player_id = _player_id(turn)
@@ -337,6 +338,23 @@ def _world_id(turn: dict[str, Any]) -> str | None:
     if isinstance(player_state, dict) and player_state.get("dimension"):
         return str(player_state.get("dimension"))
     return None
+
+
+def _model_visible_memory_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kind_labels = {
+        "agent_memory": "remembered_fact",
+        "conversation": "prior_message",
+        "event": "stored_event",
+        "action_event": "verified_command_result",
+    }
+    visible: list[dict[str, Any]] = []
+    for result in results:
+        item = dict(result)
+        kind = str(item.get("kind") or "")
+        if kind in kind_labels:
+            item["kind"] = kind_labels[kind]
+        visible.append(item)
+    return visible
 
 
 def _memory_scope_id(scope: str, player_id: str, turn: dict[str, Any]) -> str:

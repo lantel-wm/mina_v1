@@ -88,10 +88,12 @@ def _payload(content: str) -> dict:
 
 def test_model_facing_tool_specs_are_text_query_and_read_only_only() -> None:
     names = [spec["function"]["name"] for spec in tool_specs()]
+    descriptions = "\n".join(spec["function"].get("description", "") for spec in tool_specs())
 
     assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command"]
     assert all("body" not in name for name in names)
     assert "run_safe_command" not in names
+    assert "agent memory" not in descriptions
     command_spec = next(spec for spec in tool_specs() if spec["function"]["name"] == "run_read_only_command")
     assert "exactly or mainly an allowed command form" in command_spec["function"]["description"]
 
@@ -172,7 +174,8 @@ def test_memory_write_and_search_round_trip(tmp_path) -> None:
     payload = _payload(searched.content)
 
     assert payload["ok"] is True
-    assert any(result["kind"] == "agent_memory" for result in payload["results"])
+    assert any(result["kind"] == "remembered_fact" for result in payload["results"])
+    assert "agent_memory" not in searched.content
     assert any("spruce bases" in result["content"] for result in payload["results"])
 
 

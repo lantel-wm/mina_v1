@@ -390,7 +390,7 @@ SCENARIO_DATA = [
             "Relevant remembered facts",
             "Remembered facts",
         ],
-        "rubric": "Memory should serve the agent: the live model writes stable context, then answers natural recall from loaded agent memory or a model-selected memory_search.",
+        "rubric": "Memory should serve the agent: the live model writes stable context, then answers natural recall from loaded remembered facts or a model-selected memory_search.",
     },
     {
         "name": "companion_low_health_live_model",

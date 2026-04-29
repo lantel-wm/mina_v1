@@ -8,7 +8,9 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "web_search" in SYSTEM_PROMPT
     assert "preserve exact source values" in SYSTEM_PROMPT
     assert "memory_search" in SYSTEM_PROMPT
-    assert "Agent memory" in SYSTEM_PROMPT or "agent memory" in SYSTEM_PROMPT
+    assert "remembered facts" in SYSTEM_PROMPT
+    assert "Agent memory" not in SYSTEM_PROMPT
+    assert "agent memory" not in SYSTEM_PROMPT
     assert "Treat memory as historical context" in SYSTEM_PROMPT
     assert "answer only the relevant remembered fact" in SYSTEM_PROMPT
     assert "Do not mention internal section/tool names" in SYSTEM_PROMPT
