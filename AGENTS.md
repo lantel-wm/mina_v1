@@ -43,6 +43,7 @@ Mina uses a sidecar architecture.
 - The current product scope is text conversation, knowledge/search, memory, tightly constrained read-only Minecraft commands, and player/world state observation.
 - There is no separate controllable Mina character in the runtime. Movement, mining, attacking, item use, and world mutation tools are not model-facing and should not be reintroduced.
 - Model-facing tools are limited to `web_search`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.
+- Do not add hardcoded player-intent routes or local keyword classifiers for observation, search, memory, or commands. Long-term memory recall should happen through the model-facing `memory_search` tool, not hidden context prefetch.
 - If `MINA_API_KEY` is not configured, the sidecar returns a configuration error instead of attempting local chat, memory, search, command, or observation fallbacks.
 - `/v1/action-results` remains for Fabric command callbacks. `/v1/observations` and `/v1/tasks` are not part of the runtime API.
 
@@ -135,7 +136,7 @@ Allowed read-only Minecraft command forms are intentionally narrow: `seed`, `tim
 For every behavior change:
 
 1. Keep model-facing tools high-level and safe. Do not expose private Fabric action primitives, write-capable Minecraft commands, or unrestricted MCP tools to the model.
-2. Add or update declarative E2E coverage in `agent_service/src/mina_agent/e2e/` and extend `/mina-test` only through safe fixture/assertion commands. E2E must use the real sidecar and real DeepSeek API; use unit tests for isolated policy or parser checks.
+2. Add or update declarative E2E coverage in `agent_service/src/mina_agent/e2e/` and extend `/mina-test` only through safe fixture/assertion commands. E2E must use the real sidecar and real DeepSeek API for player-facing behavior; use unit tests for isolated safety policy or parser checks.
 3. Run the baseline checks:
 
 ```sh

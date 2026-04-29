@@ -64,7 +64,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert len(context) < 6000
 
 
-def test_memory_recall_requests_force_memory_search(tmp_path) -> None:
+def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("old", "player-1", "user", "我家在云杉林旁边")
     turn = {
@@ -78,5 +78,6 @@ def test_memory_recall_requests_force_memory_search(tmp_path) -> None:
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "must call memory_search" in content
-    assert "Recent conversation memory is intentionally omitted" in content
+    assert "Recent player conversation context" in content
+    assert "This user message is a memory recall request" not in content
+    assert "Recent conversation memory is intentionally omitted" not in content

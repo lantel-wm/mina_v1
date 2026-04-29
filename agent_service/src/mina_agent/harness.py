@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from .config import Settings
-from .context import build_messages, is_memory_recall_request
+from .context import build_messages
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .schemas import TurnResponse
@@ -52,8 +52,6 @@ class AgentHarness:
         actions: list[dict[str, Any]] = []
         usage: dict[str, Any] = {}
         invalid_tool_results = 0
-        requires_memory_search = is_memory_recall_request(message)
-        memory_search_seen = False
         try:
             for subturn in range(1, self.settings.max_tool_turns + 1):
                 self._debug("model call request_id=%s subturn=%s messages=%s", request_id, subturn, len(messages))
@@ -97,18 +95,6 @@ class AgentHarness:
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
                     content = _minecraft_chat_text(str(assistant_message.get("content") or ""))
-                    if content and requires_memory_search and not memory_search_seen:
-                        messages.append(
-                            {
-                                "role": "system",
-                                "content": (
-                                    "Policy reminder: this is a memory recall request. The direct answer was not sent. "
-                                    "Call memory_search with the relevant key terms before giving a final answer."
-                                ),
-                            }
-                        )
-                        self._debug("turn repair request_id=%s reason=missing_memory_search", request_id)
-                        continue
                     if content:
                         self.memory.add_conversation(request_id, player_id, "assistant", content)
                         self._debug("turn final request_id=%s messages=1 actions=%s", request_id, len(actions))
@@ -138,8 +124,6 @@ class AgentHarness:
                     function = call.get("function") or {}
                     name = str(function.get("name") or "")
                     args = _parse_args(function.get("arguments"))
-                    if name == "memory_search":
-                        memory_search_seen = True
                     self._debug(
                         "tool call request_id=%s subturn=%s tool_call_id=%s name=%s args=%s",
                         request_id,

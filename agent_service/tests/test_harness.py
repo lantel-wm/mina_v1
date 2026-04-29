@@ -285,6 +285,26 @@ def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]
 
 
+def test_memory_recall_is_not_repaired_by_local_intent_classifier(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "我记得你的基地在樱花林旁边。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("你还记得我的基地在哪里吗？", "req-memory-direct"))
+
+    assert "樱花林" in response["messages"][0]["content"]
+    assert len(model.calls) == 1
+    assert memory.recent_tool_calls("req-memory-direct") == []
+
+
 def test_body_like_request_goes_to_model_and_is_refused(tmp_path) -> None:
     model = FakeDeepSeek(
         [

@@ -31,42 +31,17 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
     player_id = str(player.get("uuid") or "unknown")
     snapshot = turn.get("snapshot") or {}
     user_content = str(turn.get("message") or "").strip()
-    recall_request = is_memory_recall_request(user_content)
     recent = memory.recent_conversation(player_id, limit=12)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if recent and not recall_request:
+    if recent:
         messages.append(
             {
                 "role": "system",
-                "content": "Recent player conversation memory:\n"
+                "content": "Recent player conversation context:\n"
                 + "\n".join(f"{row['role']}: {row['content']}" for row in recent),
             }
         )
-    elif recent and recall_request:
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "Recent conversation memory is intentionally omitted for this memory recall request. "
-                    "Call memory_search with the relevant key terms before answering."
-                ),
-            }
-        )
-    if recall_request:
-        messages.append(
-            {
-                "role": "system",
-                "content": (
-                    "This user message is a memory recall request. You must call memory_search in this turn "
-                    "before any final answer, even if you think you know the answer."
-                ),
-            }
-        )
-    else:
-        relevant = build_relevant_memory_summary(turn, memory, player_id)
-        if relevant:
-            messages.append({"role": "system", "content": relevant})
     messages.append({"role": "system", "content": "Current Minecraft context summary:\n" + build_context_summary(turn)})
     target_summary = build_target_summary(snapshot)
     if target_summary:
@@ -75,30 +50,6 @@ def build_messages(turn: dict[str, Any], memory: MemoryStore) -> list[dict[str, 
         user_content = "这是一次 companion tick。如果没有重要、及时的理由要提醒玩家，请回复空字符串；如果需要提醒，请使用玩家最近使用的语言。"
     messages.append({"role": "user", "content": user_content})
     return messages
-
-
-def is_memory_recall_request(message: str) -> bool:
-    normalized = message.lower()
-    return any(token in normalized for token in ("你还记得", "还记得", "记得我", "记不记得", "记忆里", "记忆中"))
-
-
-def build_relevant_memory_summary(turn: dict[str, Any], memory: MemoryStore, player_id: str) -> str:
-    message = str(turn.get("message") or "").strip()
-    query = message
-    lines: list[str] = []
-    seen: set[tuple[str, str, str]] = set()
-    if query:
-        for item in memory.search(player_id, query, limit=6):
-            kind = str(item.get("kind") or "memory")
-            label = str(item.get("label") or "")
-            content = _compact_memory_content(item.get("content"))
-            key = (kind, label, content)
-            if content and key not in seen:
-                seen.add(key)
-                lines.append(f"- {kind}/{label}: {content}")
-    if not lines:
-        return ""
-    return "Relevant memory:\n" + "\n".join(lines[:8])
 
 
 def build_target_summary(snapshot: dict[str, Any]) -> str:
@@ -166,14 +117,3 @@ def _compact_block_target(block: dict[str, Any]) -> dict[str, Any]:
         "distance": block.get("distance"),
         "approach_available": all(key in block for key in ("approach_x", "approach_y", "approach_z")),
     }
-
-
-def _compact_memory_content(value: Any, limit: int = 260) -> str:
-    if isinstance(value, str):
-        content = value
-    else:
-        content = json.dumps(value, ensure_ascii=False)
-    content = " ".join(content.split())
-    if len(content) <= limit:
-        return content
-    return content[: limit - 14].rstrip() + "...<truncated>"

@@ -57,7 +57,7 @@ SCENARIO_DATA = [
         ],
         "forbidden_actions": {"run_read_only_command"},
         "expected_model": {"mode": "at_least", "min_count": 1},
-        "expected_response_contains": ["Creeper"],
+        "expected_response_contains": ["苦力怕"],
         "rubric": "Nearby danger questions should go through the live model and summarize hostile mobs from the snapshot without actions.",
     },
     {
@@ -175,7 +175,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "memory-recall-live-model",
-                "value": "你还记得我的基地在哪里吗？",
+                "value": "请调用 memory_search 查询你保存的记忆，然后回答：我的基地在哪里？",
                 "wait_for": ["樱花林"],
                 "timeout": 60,
             },
