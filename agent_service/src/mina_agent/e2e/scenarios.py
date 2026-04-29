@@ -156,6 +156,39 @@ SCENARIO_DATA = [
         "rubric": "Search results should be shown through the sidecar search tool while untrusted command-injection text is filtered out.",
     },
     {
+        "name": "local_memory_write_and_recall",
+        "fixture": "default_world",
+        "tags": ["live", "core", "memory"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "local-memory-write",
+                "value": "请记住：我的基地在樱花林旁边",
+                "wait_for": ["我记住了"],
+                "timeout": 30,
+            },
+            {
+                "kind": "request",
+                "request_id": "local-memory-recall",
+                "value": "你还记得我的基地在哪里吗？",
+                "wait_for": ["樱花林"],
+                "timeout": 30,
+            },
+        ],
+        "expected_tools": [
+            {"name": "memory_write", "status": "ok", "args_contains": "樱花林"},
+            {"name": "memory_search", "status": "ok", "args_contains": "基地"},
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 0},
+        "expected_response_contains": ["我记住了", "樱花林"],
+        "rubric": "Explicit memory write and recall should be handled locally through Mina memory tools without model calls.",
+    },
+    {
         "name": "companion_low_health_local",
         "fixture": "default_world",
         "tags": ["live", "core", "companion", "safety"],

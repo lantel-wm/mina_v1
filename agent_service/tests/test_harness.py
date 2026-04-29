@@ -145,6 +145,19 @@ def test_local_web_search_filters_prompt_injection_result(tmp_path) -> None:
     assert model.calls == []
 
 
+def test_local_memory_write_and_recall_without_model(tmp_path) -> None:
+    harness, memory, model, _search = _harness(tmp_path)
+
+    written = harness.run_turn(_turn("请记住：我的基地在樱花林旁边", "req-memory-write"))
+    recalled = harness.run_turn(_turn("你还记得我的基地在哪里吗？", "req-memory-recall"))
+
+    assert written["messages"][0]["content"] == "我记住了。"
+    assert "樱花林" in recalled["messages"][0]["content"]
+    assert model.calls == []
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-write")] == ["memory_write"]
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-memory-recall")] == ["memory_search"]
+
+
 def test_body_like_request_is_no_longer_intercepted_by_local_paused_branch(tmp_path) -> None:
     model = FakeDeepSeek(
         [

@@ -1936,6 +1936,10 @@ def _local_memory_query(message: str) -> str:
     for prefix in ("搜索", "查找", "我的", "这个", "the"):
         if query.startswith(prefix):
             query = query[len(prefix) :].strip(" ：:，,。?？")
+    for suffix in ("在哪里", "在哪儿", "在哪", "哪里", "位置", "坐标", "location", "coordinate"):
+        if query.endswith(suffix) and len(query) > len(suffix):
+            query = query[: -len(suffix)].strip(" ：:，,。?？")
+            break
     return query or message.strip()
 
 
