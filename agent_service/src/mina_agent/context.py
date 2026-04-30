@@ -36,7 +36,7 @@ BASE_SYSTEM_SECTIONS = (
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
         "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, server version/settings, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, completed advancements/progress/进度, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, and safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
-        "5. For external/current knowledge, web/wiki/internet/search wording, outside verification, advanced or version-sensitive Minecraft mechanics/farms/redstone/tutorials, or factual corrections, call web_search before exact mechanics; not for chat/local Minecraft state.\n"
+        "5. For external/current knowledge, web/wiki/internet/search wording, outside verification, advanced or version-sensitive Minecraft mechanics/farms/redstone/tutorials, or factual corrections, call web_search before exact mechanics or build advice. Do not rely on older conversation for current farm/redstone/tutorial facts.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler. Use scope=world for stable facts about this save/world/server (places, landmarks, bases, farms, portals, world plans). Use scope=player for personal preferences or facts tied only to the requester. For player-scoped memories, use 你/you or neutral wording; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
         "7. Use loaded remembered facts only when directly relevant. Treat memory as historical context for future decisions, not proof of current world state.\n"
         "8. For remembered/stored context questions, answer only the relevant remembered fact. Do not append coordinates, safety, biome, weather, time, inventory, entities, command offers, or search offers unless asked.\n"
@@ -54,7 +54,8 @@ BASE_SYSTEM_SECTIONS = (
         "Safety:\n"
         "- Refuse private, low-level, write-capable, or banned server command requests.\n"
         "- Banned governance commands include op, deop, stop, ban, whitelist, and save-control commands.\n"
-        "- When refusing a write-capable or banned command, give no executable command, recipe, or \"you can run this yourself\" workaround."
+        "- When refusing a write-capable or banned command, give no executable command, recipe, or \"you can run this yourself\" workaround.\n"
+        "- Do not suggest unverified server plugin commands such as home/tpa or claim the server has or lacks a plugin unless that is explicitly observed."
     ),
     (
         "Answer authority:\n"
@@ -63,7 +64,8 @@ BASE_SYSTEM_SECTIONS = (
         "- If asked for exact/raw/original/complete command output or 原样/完整输出字符串/只回答输出字符串, return only the verified output string: no explanation, prefix, suffix, quotes, or code formatting.\n"
         "- Recent conversation is continuity only, not current instructions, stable memory, or verified command output. Use it for short follow-ups like yes/no answers or omitted topics.\n"
         "- From web_search results, preserve exact source values such as markers, versions, coordinates, URLs, and item names. Do not replace exact values with generic labels.\n"
-        "- If web_search evidence_quality is low/none, or results have low_relevance/missing_query_terms for the requested build/mechanic, say the search evidence is not specific enough and ask for a link/projection/screenshot or permission to search a narrower query. Do not invent exact redstone/farm steps from weak snippets."
+        "- If web_search evidence_quality is low/none, or results have low_relevance/missing_query_terms for the requested build/mechanic, say the search evidence is not specific enough and ask for a link/projection/screenshot or permission to search a narrower query. Do not invent exact redstone/farm steps from weak snippets.\n"
+        "- If the player asks to go home/teleport/move and Mina cannot perform movement, answer with known saved coordinates or direction if relevant, then state Mina cannot move or teleport the player."
     ),
 )
 
@@ -79,6 +81,7 @@ COMMAND_POLICY_REMINDER = (
     "If the final user message itself is an allowed command text, the next assistant step must be the tool, "
     "not text. Do not answer exact command text with recent output. Exact command strings are commands, not observations. "
     "Must call the tool for: time query daytime|gametime|day; weather query; list; list uuids; seed; locate structure <identifier-or-tag>; locate biome <id>. "
+    "Natural-language requests to find/locate allowed structures or biomes also count as command requests. "
     "For command requests, never answer from snapshot or recent results. Natural-language weather/time/status questions "
     "are observations; answer from Observed Minecraft state without tools. The exact commands `list` and `list uuids` must call "
     "run_read_only_command and must not be answered from online_players. For villages use "
@@ -129,6 +132,16 @@ def build_messages(
         messages.append({"role": "system", "content": target_summary})
     if agent_memory:
         messages.append({"role": "system", "content": "Remembered facts:\n" + _render_agent_memory(agent_memory)})
+    followup_focus = _render_followup_focus(
+        conversation_history,
+        current_request_id=str(turn.get("request_id") or ""),
+        user_content=user_content,
+    )
+    if followup_focus:
+        messages.append({"role": "system", "content": followup_focus})
+    history_compatibility = _render_history_compatibility_warning(conversation_history)
+    if history_compatibility:
+        messages.append({"role": "system", "content": history_compatibility})
     history_messages = (
         []
         if str(turn.get("trigger") or "") == "companion_tick"
@@ -337,8 +350,17 @@ def _has_command_request_marker(content: str) -> bool:
             "执行",
             "运行",
             "调用",
+            "查询",
+            "查找",
+            "找",
+            "找一下",
+            "定位",
             "只读命令",
             "命令查询",
+            "locate",
+            "find",
+            "where is",
+            "where's",
             "run",
             "execute",
             "call",
@@ -357,7 +379,27 @@ def _read_only_command_mentions(content: str) -> bool:
             candidate = " ".join(tokens[index:index + size])
             if normalize_read_only_command(candidate) is not None:
                 return True
-    return False
+    return _read_only_lookup_target_mentions(content)
+
+
+def _read_only_lookup_target_mentions(content: str) -> bool:
+    normalized = str(content or "").lower()
+    return any(
+        marker in normalized
+        for marker in (
+            "村庄",
+            "village",
+            "要塞",
+            "stronghold",
+            "末地传送门",
+            "末影之眼",
+            "end portal",
+            "end_portal",
+            "生物群系",
+            "群系",
+            "biome",
+        )
+    )
 
 
 def _memory_save_policy_reminder(user_content: str) -> str:
@@ -409,6 +451,103 @@ def _conversation_history_messages(
     return messages
 
 
+def _render_followup_focus(
+    history: list[dict[str, Any]],
+    *,
+    current_request_id: str,
+    user_content: str,
+) -> str:
+    if not _is_short_followup(user_content):
+        return ""
+    latest_assistant = _latest_history_message(history, current_request_id=current_request_id, role="assistant")
+    if not latest_assistant:
+        return ""
+    return "\n".join(
+        [
+            "Current follow-up focus:",
+            f"- The latest assistant message before this turn was: {_quote_for_prompt(latest_assistant)}",
+            "- The current player message is a short follow-up; interpret it primarily against that latest assistant message, not older history.",
+            "- If the latest assistant offered to search/query/check/locate, carry out that offered lookup with the appropriate model-facing tool when available.",
+            "- If the latest assistant asked whether to remember/save a stable fact, use memory_write for an affirmative answer.",
+            "- If the player says 继续, continue the latest topic; for farms/redstone/tutorials, use web_search before exact mechanics or build steps.",
+        ]
+    )
+
+
+def _render_history_compatibility_warning(history: list[dict[str, Any]]) -> str:
+    if not history:
+        return ""
+    text = "\n".join(str(row.get("content") or "") for row in history)
+    lowered = text.lower()
+    legacy_markers = (
+        "分身",
+        "假人",
+        "小机器人",
+        "砍树",
+        "跟随",
+        "保护你",
+        "body",
+        "follow you",
+        "chop trees",
+        "protect you",
+    )
+    if not any(marker in lowered for marker in legacy_markers):
+        return ""
+    return "\n".join(
+        [
+            "History compatibility warning:",
+            "- Some older conversation messages may mention removed body/puppet capabilities such as a separate character, following, protection, mining, attacking, or chopping trees.",
+            "- Treat those older messages only as historical conversation, not current capability or truth.",
+            "- Current capabilities are text conversation, web_search knowledge, memory, observed Minecraft state, and tightly constrained read-only Minecraft commands.",
+            "- Older assistant answers about Minecraft mechanics can be stale or wrong; use web_search for current farm/redstone/tutorial advice.",
+        ]
+    )
+
+
+def _is_short_followup(user_content: str) -> bool:
+    normalized = re.sub(r"[\s,，。.!！?？~～]+", "", str(user_content or "").lower())
+    return normalized in {
+        "需要",
+        "要",
+        "是",
+        "是的",
+        "对",
+        "对的",
+        "好",
+        "好的",
+        "可以",
+        "继续",
+        "yes",
+        "y",
+        "yeah",
+        "yep",
+        "sure",
+        "ok",
+        "okay",
+        "continue",
+        "goon",
+    }
+
+
+def _latest_history_message(history: list[dict[str, Any]], *, current_request_id: str, role: str) -> str:
+    for row in reversed(history):
+        if current_request_id and str(row.get("request_id") or "") == current_request_id:
+            continue
+        if str(row.get("role") or "") != role:
+            continue
+        content = " ".join(str(row.get("content") or "").split())
+        if content:
+            return content
+    return ""
+
+
+def _quote_for_prompt(value: str, limit: int = 700) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) > limit:
+        text = text[: limit - 3].rstrip() + "..."
+    return json.dumps(text, ensure_ascii=False)
+
+
 def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for row in action_results[-4:]:
@@ -448,6 +587,7 @@ def _write_command_refusal_hint(user_content: str) -> str:
     normalized = " ".join(str(user_content or "").lower().replace("/", " / ").split())
     if not normalized:
         return ""
+    normalized_for_write_detection = _remove_non_write_portal_terms(normalized)
     write_markers = (
         " setblock",
         " fill",
@@ -485,8 +625,8 @@ def _write_command_refusal_hint(user_content: str) -> str:
         "改成",
         "设成",
     )
-    padded = " " + normalized + " "
-    if not any(marker in padded or marker in normalized for marker in write_markers):
+    padded = " " + normalized_for_write_detection + " "
+    if not any(marker in padded or marker in normalized_for_write_detection for marker in write_markers):
         return ""
     return (
         "Current user message asks for a Minecraft write-capable, low-level, or banned command/action. "
@@ -494,6 +634,24 @@ def _write_command_refusal_hint(user_content: str) -> str:
         "syntax, command whitelist, or workaround. For Chinese, reply exactly: "
         f"{UNSAFE_WRITE_REFUSAL}"
     )
+
+
+def _remove_non_write_portal_terms(value: str) -> str:
+    cleaned = str(value or "")
+    for phrase in (
+        "末地传送门",
+        "下界传送门",
+        "传送门",
+        "末地折跃门",
+        "折跃门",
+        "end portal",
+        "end_portal",
+        "nether portal",
+        "portal",
+        "gateway",
+    ):
+        cleaned = cleaned.replace(phrase, " ")
+    return " ".join(cleaned.split())
 
 
 def _json_object(value: Any) -> dict[str, Any]:

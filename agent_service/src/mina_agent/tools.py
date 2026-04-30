@@ -177,6 +177,7 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
                 "description": (
                     "Run a tightly constrained read-only Minecraft command and show its output to the requester. "
                     "Use this when the player message is exactly or mainly an allowed command form, even if the same value appears in context. "
+                    "Also use it for natural-language requests to find/locate allowed structures or biomes. "
                     "Allowed forms: seed; time query daytime|gametime|day; weather query; list [uuids]; "
                     "locate structure <identifier-or-tag>; locate biome <identifier>. "
                     "Use locate structure #minecraft:village for villages and locate structure minecraft:stronghold for end portal/stronghold searches."

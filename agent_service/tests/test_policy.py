@@ -90,6 +90,17 @@ def test_policy_replaces_time_set_workaround() -> None:
     assert "不能执行或提供会改变世界的操作" in review.content
 
 
+def test_policy_replaces_unverified_teleport_plugin_command_advice() -> None:
+    policy = ResponsePolicyRuntime()
+
+    review = policy.review_final_content("我不能传送你，你可以自己用 /home 或 /tpa 回去。", can_repair=True)
+
+    assert not review.needs_repair
+    assert "/home" not in review.content
+    assert "/tpa" not in review.content
+    assert "不能执行或提供会改变世界的操作" in review.content
+
+
 def test_policy_normalizes_health_points_misread_as_hearts() -> None:
     snapshot = {"player_state": {"health": 4, "max_health": 20}}
 

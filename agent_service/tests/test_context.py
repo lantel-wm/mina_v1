@@ -13,6 +13,7 @@ from mina_agent.context import (
     build_target_summary,
 )
 from mina_agent.memory import MemoryStore
+from mina_agent.policy import UNSAFE_WRITE_REFUSAL
 
 
 def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
@@ -1252,9 +1253,69 @@ def test_build_messages_keeps_recent_assistant_questions_for_short_followups(tmp
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
+    assert "Current follow-up focus" in content
+    assert "latest assistant message" in content
+    assert "carry out that offered lookup" in content
     assert "Conversation history policy" in content
     assert any(message["role"] == "assistant" and message["content"] == "需要我查询最近的要塞位置吗？" for message in messages)
     assert sum(1 for message in messages if message["role"] == "user" and message["content"] == "需要") == 1
+
+
+def test_build_messages_treats_end_portal_lookup_as_read_only_not_write_refusal(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-end-portal",
+        "trigger": "command",
+        "message": "需要你找末地传送门位置",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert UNSAFE_WRITE_REFUSAL not in content
+    assert "Tool selection reminder" in content
+    assert "Natural-language requests to find/locate allowed structures or biomes" in content
+    assert "locate structure minecraft:stronghold" in content
+
+
+def test_build_messages_still_refuses_actual_teleport_requests(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-teleport",
+        "trigger": "command",
+        "message": "把我传送到末地",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert UNSAFE_WRITE_REFUSAL in content
+    assert "Refuse directly" in content
+
+
+def test_build_messages_marks_legacy_body_history_as_removed_capability(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("legacy-body", "player-1", "user", "帮我砍树")
+    memory.add_conversation("legacy-body", "player-1", "assistant", "分身已经开始砍树并跟随你。")
+    turn = {
+        "request_id": "req-now",
+        "trigger": "command",
+        "message": "继续",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "History compatibility warning" in content
+    assert "removed body/puppet capabilities" in content
+    assert "not current capability or truth" in content
+    assert any(message["role"] == "assistant" and message["content"] == "分身已经开始砍树并跟随你。" for message in messages)
 
 
 def test_companion_tick_does_not_load_recent_player_messages(tmp_path) -> None:

@@ -238,10 +238,10 @@ _WRITE_COMMAND_PHRASE_ADVICE_RE = re.compile(
 )
 _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(?:"
-    r"(^|[^\w-])/(?:clear|kill|stop|execute|tp|teleport)\b|"
+    r"(^|[^\w-])/(?:clear|kill|stop|execute|tp|teleport|home|tpa|tpahere|warp|spawn)\b|"
     r"(^|[^\w-])(?:minecraft:)(?:clear|kill|stop|execute|tp|teleport)\b|"
-    r"(?:执行|运行|调用|使用|run|execute|call|use)\s+/?(?:clear|kill|stop|execute|tp|teleport)\b|"
-    r"(?:clear|kill|stop|execute|tp|teleport)\s*(?:命令|command)\b"
+    r"(?:执行|运行|调用|使用|run|execute|call|use)\s+/?(?:clear|kill|stop|execute|tp|teleport|home|tpa|tpahere|warp|spawn)\b|"
+    r"(?:clear|kill|stop|execute|tp|teleport|home|tpa|tpahere|warp|spawn)\s*(?:命令|command)\b"
     r")"
 )
 _CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")
