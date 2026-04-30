@@ -202,17 +202,17 @@ class MemoryStore:
         normalized_importance = max(1, min(5, int(importance)))
         now = time.time()
         with self._connect() as conn:
-            existing = conn.execute(
+            exact_matches = conn.execute(
                 """
                 select id, importance
                 from agent_memories
                 where scope = ? and scope_id = ? and label = ? and content = ?
-                order by id desc
-                limit 1
+                order by updated_at desc, id desc
                 """,
                 (normalized_scope, normalized_scope_id, normalized_label, normalized_content),
-            ).fetchone()
-            if existing is not None:
+            ).fetchall()
+            if exact_matches:
+                existing = exact_matches[0]
                 conn.execute(
                     """
                     update agent_memories
@@ -226,7 +226,61 @@ class MemoryStore:
                         int(existing["id"]),
                     ),
                 )
+                if len(exact_matches) > 1:
+                    conn.executemany(
+                        "delete from agent_memories where id = ?",
+                        [(int(row["id"]),) for row in exact_matches[1:]],
+                    )
+                _replace_agent_memory_fts(
+                    conn,
+                    normalized_scope,
+                    normalized_scope_id,
+                    normalized_label,
+                    [normalized_content],
+                    normalized_content,
+                )
                 return
+            if _is_replaceable_agent_memory_label(normalized_label):
+                same_label_matches = conn.execute(
+                    """
+                    select id, content, importance
+                    from agent_memories
+                    where scope = ? and scope_id = ? and label = ?
+                    order by updated_at desc, id desc
+                    """,
+                    (normalized_scope, normalized_scope_id, normalized_label),
+                ).fetchall()
+                if same_label_matches:
+                    existing = same_label_matches[0]
+                    old_contents = [str(row["content"] or "") for row in same_label_matches]
+                    conn.execute(
+                        """
+                        update agent_memories
+                        set content = ?, importance = ?, source = ?, updated_at = ?
+                        where id = ?
+                        """,
+                        (
+                            normalized_content,
+                            max(int(existing["importance"]), normalized_importance),
+                            str(source or "tool"),
+                            now,
+                            int(existing["id"]),
+                        ),
+                    )
+                    if len(same_label_matches) > 1:
+                        conn.executemany(
+                            "delete from agent_memories where id = ?",
+                            [(int(row["id"]),) for row in same_label_matches[1:]],
+                        )
+                    _replace_agent_memory_fts(
+                        conn,
+                        normalized_scope,
+                        normalized_scope_id,
+                        normalized_label,
+                        old_contents,
+                        normalized_content,
+                    )
+                    return
             conn.execute(
                 """
                 insert into agent_memories(scope, scope_id, label, content, importance, source, created_at, updated_at)
@@ -243,15 +297,7 @@ class MemoryStore:
                     now,
                 ),
             )
-            conn.execute(
-                "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
-                (
-                    "agent_memory",
-                    _agent_scope_key(normalized_scope, normalized_scope_id),
-                    normalized_label,
-                    normalized_content,
-                ),
-            )
+            _insert_agent_memory_fts(conn, normalized_scope, normalized_scope_id, normalized_label, normalized_content)
 
     def record_tool_call(
         self,
@@ -592,11 +638,83 @@ def _agent_scope_key(scope: str, scope_id: str) -> str:
     return f"{scope}:{scope_id}"
 
 
+_GENERIC_AGENT_MEMORY_LABELS = {
+    "fact",
+    "facts",
+    "global_fact",
+    "lesson",
+    "memory",
+    "note",
+    "notes",
+    "plan",
+    "player_fact",
+    "player_preference",
+    "preference",
+    "preferences",
+    "promise",
+    "world_fact",
+    "事实",
+    "偏好",
+    "备忘",
+    "备注",
+    "承诺",
+    "教训",
+    "计划",
+    "记忆",
+}
+
+
+def _is_replaceable_agent_memory_label(label: str) -> bool:
+    token = str(label or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return bool(token) and token not in _GENERIC_AGENT_MEMORY_LABELS
+
+
+def _insert_agent_memory_fts(
+    conn: sqlite3.Connection,
+    scope: str,
+    scope_id: str,
+    label: str,
+    content: str,
+) -> None:
+    conn.execute(
+        "insert into memory_fts_v2(kind, scope_id, label, content) values(?, ?, ?, ?)",
+        ("agent_memory", _agent_scope_key(scope, scope_id), label, content),
+    )
+
+
+def _replace_agent_memory_fts(
+    conn: sqlite3.Connection,
+    scope: str,
+    scope_id: str,
+    label: str,
+    old_contents: list[str],
+    new_content: str,
+) -> None:
+    scope_key = _agent_scope_key(scope, scope_id)
+    for old_content in set([*old_contents, new_content]):
+        conn.execute(
+            """
+            delete from memory_fts_v2
+            where kind = ? and scope_id = ? and label = ? and content = ?
+            """,
+            ("agent_memory", scope_key, label, old_content),
+        )
+    _insert_agent_memory_fts(conn, scope, scope_id, label, new_content)
+
+
 def _agent_memory_key(item: dict[str, Any]) -> tuple[str, str, str, str]:
+    label = str(item.get("label") or "")
+    if _is_replaceable_agent_memory_label(label):
+        return (
+            str(item.get("scope") or ""),
+            str(item.get("scope_id") or ""),
+            label,
+            "",
+        )
     return (
         str(item.get("scope") or ""),
         str(item.get("scope_id") or ""),
-        str(item.get("label") or ""),
+        label,
         str(item.get("content") or ""),
     )
 

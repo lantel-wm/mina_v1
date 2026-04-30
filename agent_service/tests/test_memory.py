@@ -60,6 +60,32 @@ def test_memory_search_deduplicates_fts_and_like_matches(tmp_path) -> None:
     assert len(matches) == 1
 
 
+def test_specific_agent_memory_label_replaces_stale_fact(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("player", "player-1", "基地位置", "你的基地在樱花林旁边", importance=2)
+    memory.add_agent_memory("player", "player-1", "基地位置", "你的基地在沙漠神殿旁边", importance=4)
+
+    loaded = memory.agent_context("player-1", limit=10)
+    rendered = "\n".join(item["content"] for item in loaded)
+
+    assert "你的基地在沙漠神殿旁边" in rendered
+    assert "你的基地在樱花林旁边" not in rendered
+    assert memory.search("player-1", "沙漠神殿", limit=10)
+    assert memory.search("player-1", "樱花林", limit=10) == []
+
+
+def test_generic_agent_memory_label_remains_append_only(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("player", "player-1", "note", "你喜欢云杉木基地", importance=3)
+    memory.add_agent_memory("player", "player-1", "note", "你喜欢海边仓库", importance=3)
+
+    loaded = memory.agent_context("player-1", limit=10)
+    rendered = "\n".join(item["content"] for item in loaded)
+
+    assert "你喜欢云杉木基地" in rendered
+    assert "你喜欢海边仓库" in rendered
+
+
 def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
 

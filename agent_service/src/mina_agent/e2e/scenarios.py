@@ -1514,6 +1514,56 @@ SCENARIO_DATA = [
         "rubric": "Memory should serve the agent: the live model writes stable context, then answers natural recall from loaded remembered facts or a model-selected memory_search.",
     },
     {
+        "name": "memory_update_replaces_old_fact_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "memory"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "memory-update-old-live-model",
+                "value": "请记住：我的基地位置在樱花林旁边",
+                "wait_for": ["记住"],
+                "timeout": 60,
+            },
+            {
+                "kind": "request",
+                "request_id": "memory-update-new-live-model",
+                "value": "请更新记忆：我的基地位置改到沙漠神殿旁边",
+                "wait_for": ["记住", "更新", "改"],
+                "timeout": 60,
+            },
+            {
+                "kind": "request",
+                "request_id": "memory-update-recall-live-model",
+                "value": "我的基地现在在哪里？只回答沙漠神殿旁边。",
+                "wait_for": ["沙漠神殿"],
+                "timeout": 60,
+            },
+        ],
+        "expected_tools": [
+            {"name": "memory_write", "status": "ok", "args_contains": "樱花林"},
+            {"name": "memory_write", "status": "ok", "args_contains": "沙漠神殿"},
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "at_least", "min_count": 5},
+        "expected_response_contains": ["沙漠神殿"],
+        "forbidden_response_contains": [
+            "web_search",
+            "memory_write",
+            "run_read_only_command",
+            "mina_tester",
+        ],
+        "trace_invariants": [
+            "no_test_username_in_memory_write",
+            "no_memory_search_before_memory_write",
+        ],
+        "rubric": "When the player updates a stable remembered fact, Mina should store the new fact through memory_write and later recall the updated value from agent memory.",
+    },
+    {
         "name": "world_memory_write_and_recall_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "memory"],
