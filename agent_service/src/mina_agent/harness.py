@@ -72,6 +72,7 @@ class AgentHarness:
                         finish_reason=response.finish_reason,
                         usage=response.usage,
                         response=_model_response_summary(response.message),
+                        messages=state.messages,
                     )
                 except DeepSeekError as exc:
                     self.memory.record_model_call(
@@ -82,6 +83,7 @@ class AgentHarness:
                         tools=_tool_spec_names(specs),
                         status="error",
                         error=f"HTTP {exc.status}: {_log_preview(exc.message, 1200)}",
+                        messages=state.messages,
                     )
                     raise
                 state.usage = response.usage

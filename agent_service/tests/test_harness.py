@@ -128,9 +128,13 @@ def test_player_status_is_answered_by_model_from_snapshot_context(tmp_path) -> N
     assert "x=0.5" in response["messages"][0]["content"]
     assert len(model.calls) == 1
     assert any("Observed Minecraft state" in message["content"] for message in model.calls[0]["messages"])
-    recorded_response = json.loads(memory.recent_model_calls("req-status")[0]["response_json"])
+    recorded_call = memory.recent_model_calls("req-status")[0]
+    recorded_response = json.loads(recorded_call["response_json"])
     assert recorded_response["content"] == response["messages"][0]["content"]
     assert recorded_response["content_length"] == len(response["messages"][0]["content"])
+    recorded_messages = json.loads(recorded_call["messages_summary_json"])
+    assert len(recorded_messages) == len(model.calls[0]["messages"]) - 1
+    assert any("Observed Minecraft state" in message["content_preview"] for message in recorded_messages)
     assert memory.recent_tool_calls("req-status") == []
 
 

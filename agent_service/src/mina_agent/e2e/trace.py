@@ -30,6 +30,7 @@ def trace_records(trace_id: str, trace: dict[str, Any]) -> list[dict[str, Any]]:
                 "model": call.get("model"),
                 "status": call.get("status"),
                 "finish_reason": call.get("finish_reason"),
+                "messages_summary": parse_json_field(call.get("messages_summary_json")),
                 "tools": parse_json_field(call.get("tools_json")),
                 "usage": parse_json_field(call.get("usage_json")),
                 "response": parse_json_field(call.get("response_json")),
@@ -108,6 +109,7 @@ def compact_summary_model_calls(calls: Any) -> list[dict[str, Any]]:
         if not isinstance(call, dict):
             continue
         compact = dict(call)
+        compact["messages_summary"] = parse_json_field(compact.pop("messages_summary_json", None))
         compact["tools"] = parse_json_field(compact.pop("tools_json", None))
         compact["usage"] = parse_json_field(compact.pop("usage_json", None))
         compact["response"] = parse_json_field(compact.pop("response_json", None))

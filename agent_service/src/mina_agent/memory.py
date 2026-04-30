@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import time
@@ -91,6 +92,7 @@ class MemoryStore:
                     finish_reason text not null,
                     usage_json text not null,
                     response_json text not null,
+                    messages_summary_json text not null default '[]',
                     error text not null,
                     created_at real not null
                 );
@@ -122,6 +124,7 @@ class MemoryStore:
                 );
                 """
             )
+            _ensure_column(conn, "model_calls", "messages_summary_json", "text not null default '[]'")
             if conn.execute("select count(*) from memory_fts_v2").fetchone()[0] == 0:
                 self._backfill_fts_v2(conn)
 
@@ -282,6 +285,7 @@ class MemoryStore:
         finish_reason: str = "",
         usage: dict[str, Any] | None = None,
         response: dict[str, Any] | None = None,
+        messages: list[dict[str, Any]] | None = None,
         error: str = "",
     ) -> None:
         with self._connect() as conn:
@@ -289,9 +293,9 @@ class MemoryStore:
                 """
                 insert into model_calls(
                     request_id, subturn, model, messages_count, tools_json, status,
-                    finish_reason, usage_json, response_json, error, created_at
+                    finish_reason, usage_json, response_json, messages_summary_json, error, created_at
                 )
-                values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     request_id,
@@ -303,6 +307,7 @@ class MemoryStore:
                     finish_reason,
                     json.dumps(usage or {}, ensure_ascii=False),
                     json.dumps(response or {}, ensure_ascii=False),
+                    json.dumps(_summarize_model_messages(messages or []), ensure_ascii=False),
                     error,
                     time.time(),
                 ),
@@ -314,7 +319,7 @@ class MemoryStore:
                 rows = conn.execute(
                     """
                     select request_id, subturn, model, messages_count, tools_json, status,
-                           finish_reason, usage_json, response_json, error, created_at
+                           finish_reason, usage_json, response_json, messages_summary_json, error, created_at
                     from model_calls
                     where request_id = ?
                     order by id desc
@@ -326,7 +331,7 @@ class MemoryStore:
                 rows = conn.execute(
                     """
                     select request_id, subturn, model, messages_count, tools_json, status,
-                           finish_reason, usage_json, response_json, error, created_at
+                           finish_reason, usage_json, response_json, messages_summary_json, error, created_at
                     from model_calls
                     order by id desc
                     limit ?
@@ -495,6 +500,42 @@ class MemoryStore:
             ).fetchall()
         merged = [dict(row) for row in fts_rows + agent_memories]
         return merged[:limit]
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {str(row[1]) for row in conn.execute(f"pragma table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"alter table {table} add column {column} {definition}")
+
+
+def _summarize_model_messages(messages: list[dict[str, Any]], *, max_preview_chars: int = 900) -> list[dict[str, Any]]:
+    summary: list[dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "")
+        content = str(message.get("content") or "")
+        item: dict[str, Any] = {
+            "index": index,
+            "role": role,
+            "content_length": len(content),
+            "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()[:16],
+            "content_preview": content[:max_preview_chars],
+        }
+        if len(content) > max_preview_chars:
+            item["content_omitted_chars"] = len(content) - max_preview_chars
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            item["tool_call_names"] = [
+                str((call.get("function") or {}).get("name") or "")
+                for call in tool_calls
+                if isinstance(call, dict)
+            ]
+        tool_call_id = message.get("tool_call_id")
+        if tool_call_id:
+            item["tool_call_id"] = str(tool_call_id)
+        summary.append(item)
+    return summary
 
 
 def _normalize_scope(scope: str) -> str:

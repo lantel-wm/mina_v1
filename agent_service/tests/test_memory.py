@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import sqlite3
+
 from mina_agent.memory import MemoryStore
 
 
@@ -62,6 +65,10 @@ def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:
         finish_reason="stop",
         usage={"total_tokens": 12},
         response={"content_preview": "hi"},
+        messages=[
+            {"role": "system", "content": "Observed Minecraft state:\n{}"},
+            {"role": "user", "content": "查询种子"},
+        ],
     )
 
     assert memory.recent_tool_calls("req-1")[0]["tool_name"] == "run_read_only_command"
@@ -74,6 +81,47 @@ def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:
     model = memory.recent_model_calls("req-2")[0]
     assert model["model"] == "deepseek-v4-flash"
     assert "web_search" in model["tools_json"]
+    messages = json.loads(model["messages_summary_json"])
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert messages[1]["content_preview"] == "查询种子"
+    assert messages[1]["content_length"] == 4
+
+
+def test_model_call_schema_migrates_prompt_summary_column(tmp_path) -> None:
+    db_path = tmp_path / "mina.sqlite3"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            create table model_calls (
+                id integer primary key autoincrement,
+                request_id text not null,
+                subturn integer not null,
+                model text not null,
+                messages_count integer not null,
+                tools_json text not null,
+                status text not null,
+                finish_reason text not null,
+                usage_json text not null,
+                response_json text not null,
+                error text not null,
+                created_at real not null
+            )
+            """
+        )
+
+    memory = MemoryStore(db_path)
+    memory.record_model_call(
+        request_id="req-migrated",
+        subturn=1,
+        model="deepseek-v4-flash",
+        messages_count=1,
+        tools=[],
+        status="ok",
+        messages=[{"role": "user", "content": "你好"}],
+    )
+
+    call = memory.recent_model_calls("req-migrated")[0]
+    assert json.loads(call["messages_summary_json"])[0]["content_preview"] == "你好"
 
 
 def test_schema_no_longer_creates_body_task_tables(tmp_path) -> None:

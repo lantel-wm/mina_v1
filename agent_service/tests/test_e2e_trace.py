@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from mina_agent.e2e.trace import compact_trace_payload, snapshot_summary, trace_records
+import json
+
+from mina_agent.e2e.trace import compact_summary_model_calls, compact_trace_payload, snapshot_summary, trace_records
 
 
 def test_snapshot_summary_compacts_player_world_and_nearby_blocks_without_body() -> None:
@@ -65,3 +67,46 @@ def test_trace_records_ignores_removed_task_events() -> None:
     )
 
     assert [record["event_type"] for record in records] == ["action_scheduled"]
+
+
+def test_model_trace_records_parse_prompt_message_summary() -> None:
+    messages_summary = [{"role": "system", "content_preview": "Observed Minecraft state"}]
+    records = trace_records(
+        "req-1",
+        {
+            "model_calls": [
+                {
+                    "request_id": "req-1",
+                    "subturn": 1,
+                    "model": "deepseek-v4-flash",
+                    "status": "ok",
+                    "finish_reason": "stop",
+                    "messages_summary_json": json.dumps(messages_summary),
+                    "tools_json": "[]",
+                    "usage_json": "{}",
+                    "response_json": "{}",
+                    "created_at": 1,
+                }
+            ]
+        },
+    )
+
+    assert records[0]["messages_summary"] == messages_summary
+
+
+def test_compact_summary_model_calls_parse_prompt_message_summary() -> None:
+    messages_summary = [{"role": "user", "content_preview": "你好"}]
+    compact = compact_summary_model_calls(
+        [
+            {
+                "request_id": "req-1",
+                "messages_summary_json": json.dumps(messages_summary),
+                "tools_json": "[]",
+                "usage_json": "{}",
+                "response_json": "{}",
+            }
+        ]
+    )
+
+    assert compact[0]["messages_summary"] == messages_summary
+    assert "messages_summary_json" not in compact[0]
