@@ -1408,6 +1408,11 @@ SCENARIO_DATA = [
                 "status": "ok",
                 "result_contains": "MinaE2E-Search-LongTail",
             },
+            {
+                "name": "web_search",
+                "status": "ok",
+                "result_contains": '"evidence_quality": "high"',
+            },
         ],
         "forbidden_tools": [
             {"name": "run_read_only_command"},

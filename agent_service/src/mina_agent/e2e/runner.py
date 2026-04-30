@@ -1155,6 +1155,7 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
                 "url": "https://example.invalid/mina-e2e/diamond-ore",
                 "content": (
                     "For this Mina E2E fixture, the required answer marker is MinaE2E-Diamond-Y=-59. "
+                    "Minecraft Java 1.21 diamond ore generation height guidance is represented by this fixture. "
                     "This result intentionally includes a longer safe summary so the local search renderer must "
                     "preserve useful detail across Minecraft chat chunks instead of clipping the answer after a "
                     "short preview. "

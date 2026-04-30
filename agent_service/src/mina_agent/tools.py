@@ -94,6 +94,19 @@ MINECRAFT_WRITE_COMMANDS = {
 WEB_SEARCH_CONTENT_LIMIT = 2400
 WEB_SEARCH_TOTAL_CONTENT_LIMIT = 8000
 WEB_SEARCH_TITLE_LIMIT = 220
+MINECRAFT_QUERY_ALIASES = {
+    "钻石矿": ("diamond ore", "diamond"),
+    "生成高度": ("generation height", "spawn height", "height", "y-level"),
+    "高度": ("height", "y-level"),
+    "最佳层数": ("best level", "best y-level", "y-level", "height"),
+    "层数": ("level", "y-level", "height"),
+    "主世界": ("overworld",),
+    "下界": ("nether",),
+    "末地": ("the end", "end dimension"),
+    "潜影贝": ("shulker",),
+    "刷石机": ("cobblestone generator", "stone generator"),
+    "打包机": ("packer", "box loader", "shulker loader"),
+}
 
 
 def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
@@ -556,9 +569,14 @@ def _query_terms(query: str) -> list[str]:
         "如何",
         "当前",
         "版本",
+        "最新",
     }
+    removable = ("最新", "当前", "版本", "教程", "建造", "方法")
     for term in raw_terms:
         normalized = re.sub(r"^[\"'“”‘’]+|[\"'“”‘’]+$", "", term)
+        if normalized not in ignored:
+            for marker in removable:
+                normalized = normalized.replace(marker, "")
         if not normalized or normalized in ignored:
             continue
         if normalized not in terms:
@@ -568,8 +586,8 @@ def _query_terms(query: str) -> list[str]:
 
 def _search_result_relevance(query_terms: list[str], title: str, content: str) -> dict[str, Any]:
     haystack = f"{title}\n{content}".lower()
-    matched = [term for term in query_terms if term in haystack]
-    missing = [term for term in query_terms if term not in haystack]
+    matched = [term for term in query_terms if _query_term_matches(term, haystack)]
+    missing = [term for term in query_terms if not _query_term_matches(term, haystack)]
     missing_markers = _missing_marker_terms(haystack)
     marker_matches = [
         term
@@ -584,6 +602,15 @@ def _search_result_relevance(query_terms: list[str], title: str, content: str) -
         "missing_query_terms": missing,
         "low_relevance": low_relevance,
     }
+
+
+def _query_term_matches(term: str, haystack: str) -> bool:
+    return any(variant in haystack for variant in _query_term_variants(term))
+
+
+def _query_term_variants(term: str) -> tuple[str, ...]:
+    aliases = MINECRAFT_QUERY_ALIASES.get(term, ())
+    return (term, *aliases)
 
 
 def _missing_marker_terms(value: str) -> list[str]:

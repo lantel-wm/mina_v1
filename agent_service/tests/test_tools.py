@@ -80,6 +80,17 @@ class WeakSearch:
         ]
 
 
+class BilingualMinecraftSearch:
+    def search(self, query: str, max_results: int = 5):  # noqa: ANN201, ARG002
+        return [
+            {
+                "title": "Minecraft Java 1.21 diamond ore generation height guide",
+                "url": "https://example.invalid/diamond-height",
+                "content": "Diamond ore generation height in Minecraft 1.21 is covered here.",
+            }
+        ]
+
+
 def _runner(tmp_path) -> ToolRunner:  # noqa: ANN001
     return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearch())  # type: ignore[arg-type]
 
@@ -375,6 +386,23 @@ def test_web_search_marks_low_relevance_missing_terms(tmp_path) -> None:
     assert payload["evidence_quality"] == "low"
     assert payload["results"][0]["low_relevance"] is True
     assert "打包机" in payload["results"][0]["missing_query_terms"]
+
+
+def test_web_search_matches_bilingual_minecraft_terms(tmp_path) -> None:
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), BilingualMinecraftSearch())  # type: ignore[arg-type]
+
+    result = runner.run("web_search", {"query": "我的世界 钻石矿 最新生成高度 最佳层数 1.21", "max_results": 5}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is True
+    assert payload["evidence_quality"] == "high"
+    assert payload["results"][0]["low_relevance"] is False
+    assert "钻石矿" in payload["results"][0]["matched_query_terms"]
+    assert "生成高度" in payload["results"][0]["matched_query_terms"]
+    assert "最佳层数" in payload["results"][0]["matched_query_terms"]
+    assert "1.21" in payload["results"][0]["matched_query_terms"]
+    assert "最新" not in payload["results"][0]["missing_query_terms"]
+    assert "最新生成高度" not in payload["results"][0]["missing_query_terms"]
 
 
 def test_mcp_call_blocks_minecraft_write_operations(tmp_path) -> None:
