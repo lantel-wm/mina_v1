@@ -194,7 +194,7 @@ class MemoryStore:
         *,
         importance: int = 1,
         source: str = "tool",
-    ) -> None:
+    ) -> dict[str, Any]:
         normalized_scope = _normalize_scope(scope)
         normalized_scope_id = str(scope_id or "*")
         normalized_label = _normalize_label(label)
@@ -239,7 +239,11 @@ class MemoryStore:
                     [normalized_content],
                     normalized_content,
                 )
-                return
+                return {
+                    "operation": "deduplicated",
+                    "updated_existing": True,
+                    "duplicate_count_removed": max(0, len(exact_matches) - 1),
+                }
             if _is_replaceable_agent_memory_label(normalized_label):
                 same_label_matches = conn.execute(
                     """
@@ -280,7 +284,11 @@ class MemoryStore:
                         old_contents,
                         normalized_content,
                     )
-                    return
+                    return {
+                        "operation": "replaced",
+                        "updated_existing": True,
+                        "duplicate_count_removed": max(0, len(same_label_matches) - 1),
+                    }
             conn.execute(
                 """
                 insert into agent_memories(scope, scope_id, label, content, importance, source, created_at, updated_at)
@@ -298,6 +306,7 @@ class MemoryStore:
                 ),
             )
             _insert_agent_memory_fts(conn, normalized_scope, normalized_scope_id, normalized_label, normalized_content)
+            return {"operation": "inserted", "updated_existing": False, "duplicate_count_removed": 0}
 
     def record_tool_call(
         self,

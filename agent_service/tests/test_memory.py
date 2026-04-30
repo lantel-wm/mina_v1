@@ -40,14 +40,17 @@ def test_agent_context_loads_scoped_memory_by_importance(tmp_path) -> None:
 
 def test_agent_memory_rewrite_updates_existing_fact(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
-    memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=2)
-    memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=5)
+    first = memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=2)
+    second = memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=5)
 
     loaded = memory.agent_context("player-1", limit=10)
     matches = [item for item in loaded if item["content"] == "基地在樱花林旁边"]
 
     assert len(matches) == 1
     assert matches[0]["importance"] == 5
+    assert first["operation"] == "inserted"
+    assert second["operation"] == "deduplicated"
+    assert second["updated_existing"] is True
 
 
 def test_memory_search_deduplicates_fts_and_like_matches(tmp_path) -> None:
@@ -62,8 +65,8 @@ def test_memory_search_deduplicates_fts_and_like_matches(tmp_path) -> None:
 
 def test_specific_agent_memory_label_replaces_stale_fact(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
-    memory.add_agent_memory("player", "player-1", "基地位置", "你的基地在樱花林旁边", importance=2)
-    memory.add_agent_memory("player", "player-1", "基地位置", "你的基地在沙漠神殿旁边", importance=4)
+    first = memory.add_agent_memory("player", "player-1", "基地位置", "你的基地在樱花林旁边", importance=2)
+    second = memory.add_agent_memory("player", "player-1", "基地位置", "你的基地在沙漠神殿旁边", importance=4)
 
     loaded = memory.agent_context("player-1", limit=10)
     rendered = "\n".join(item["content"] for item in loaded)
@@ -72,6 +75,9 @@ def test_specific_agent_memory_label_replaces_stale_fact(tmp_path) -> None:
     assert "你的基地在樱花林旁边" not in rendered
     assert memory.search("player-1", "沙漠神殿", limit=10)
     assert memory.search("player-1", "樱花林", limit=10) == []
+    assert first["operation"] == "inserted"
+    assert second["operation"] == "replaced"
+    assert second["updated_existing"] is True
 
 
 def test_generic_agent_memory_label_remains_append_only(tmp_path) -> None:

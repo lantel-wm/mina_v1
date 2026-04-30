@@ -240,6 +240,35 @@ def test_world_scoped_memory_uses_top_level_world_id(tmp_path) -> None:
     )
 
 
+def test_memory_write_reports_insert_and_replace_operations(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = _turn()
+
+    first = runner.run(
+        "memory_write",
+        {
+            "event_type": "base_location",
+            "content": "你的基地位置在樱花林旁边",
+            "label": "base_location",
+        },
+        turn,
+    )
+    second = runner.run(
+        "memory_write",
+        {
+            "event_type": "base_location",
+            "content": "你的基地位置在沙漠神殿旁边",
+            "label": "base_location",
+        },
+        turn,
+    )
+
+    assert _payload(first.content)["memory"]["operation"] == "inserted"
+    second_memory = _payload(second.content)["memory"]
+    assert second_memory["operation"] == "replaced"
+    assert second_memory["updated_existing"] is True
+
+
 def test_memory_write_sanitizes_current_player_name_from_player_memory(tmp_path) -> None:
     runner = _runner(tmp_path)
     turn = _turn()

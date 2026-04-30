@@ -302,7 +302,14 @@ class ToolRunner:
             label = _sanitize_player_memory_label(label, player_name)
         if not content:
             return ToolResult(content=json.dumps({"ok": False, "error": "memory_write content is required"}, ensure_ascii=False))
-        self.memory.add_agent_memory(scope, scope_id, label, content, importance=importance, source="memory_write")
+        write_result = self.memory.add_agent_memory(
+            scope,
+            scope_id,
+            label,
+            content,
+            importance=importance,
+            source="memory_write",
+        )
         self.memory.add_event(player_id, event_type, {"content": content}, importance=importance)
         LOGGER.info(
             "memory_write player=%s scope=%s scope_id=%s label=%s importance=%s content=%s",
@@ -314,7 +321,19 @@ class ToolRunner:
             content[:500],
         )
         return ToolResult(
-            content=json.dumps({"ok": True, "memory": {"scope": scope, "label": label, "content": content}}, ensure_ascii=False)
+            content=json.dumps(
+                {
+                    "ok": True,
+                    "memory": {
+                        "scope": scope,
+                        "label": label,
+                        "content": content,
+                        "operation": write_result.get("operation", "inserted"),
+                        "updated_existing": bool(write_result.get("updated_existing", False)),
+                    },
+                },
+                ensure_ascii=False,
+            )
         )
 
     def _run_read_only_command(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:

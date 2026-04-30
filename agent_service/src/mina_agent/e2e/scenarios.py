@@ -1543,6 +1543,8 @@ SCENARIO_DATA = [
         "expected_tools": [
             {"name": "memory_write", "status": "ok", "args_contains": "樱花林"},
             {"name": "memory_write", "status": "ok", "args_contains": "沙漠神殿"},
+            {"name": "memory_write", "status": "ok", "result_contains": "\"operation\": \"inserted\""},
+            {"name": "memory_write", "status": "ok", "result_contains": "\"operation\": \"replaced\""},
         ],
         "forbidden_tools": [
             {"name": "web_search"},
