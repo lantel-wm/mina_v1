@@ -40,6 +40,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "nearby_log_block_snapshot_live_model" in names
     assert "world_status_snapshot_live_model" in names
     assert "current_date_context_live_model" in names
+    assert "current_weekday_context_live_model" in names
     assert "tomorrow_date_context_live_model" in names
     assert "current_time_context_live_model" in names
     assert "read_only_time_command_live_model" in names
@@ -65,6 +66,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "spawn_coordinates_response_matches_snapshot" in SCENARIOS["spawn_coordinates_snapshot_live_model"].trace_invariants
     assert "response_excludes_current_minute" in SCENARIOS["world_status_snapshot_live_model"].trace_invariants
     assert "response_contains_current_date" in SCENARIOS["current_date_context_live_model"].trace_invariants
+    assert "response_contains_current_weekday" in SCENARIOS["current_weekday_context_live_model"].trace_invariants
     assert "response_contains_tomorrow_date" in SCENARIOS["tomorrow_date_context_live_model"].trace_invariants
     assert "response_contains_current_minute" in SCENARIOS["current_time_context_live_model"].trace_invariants
 
@@ -91,6 +93,7 @@ def test_validate_scenarios_accepts_current_manifest_shape() -> None:
                 "non_empty_final_model_content",
                 "response_contains_current_date",
                 "response_contains_current_minute",
+                "response_contains_current_weekday",
                 "response_contains_tomorrow_date",
                 "response_excludes_current_minute",
                 "single_memory_write_tool_call",
@@ -880,6 +883,32 @@ def test_trace_invariant_accepts_tomorrow_date_response(tmp_path, monkeypatch) -
     runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
+def test_trace_invariant_accepts_current_weekday_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="current-weekday",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_current_weekday"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-weekday",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": "星期四"}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
 def test_trace_invariant_accepts_current_minute_response(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="current-minute",
@@ -960,6 +989,33 @@ def test_trace_invariant_rejects_wrong_current_date_response(tmp_path, monkeypat
     )
 
     with pytest.raises(AssertionError, match="expected runtime date"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_wrong_current_weekday_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="current-weekday",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_current_weekday"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-weekday",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": "星期五"}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    with pytest.raises(AssertionError, match="expected runtime weekday"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 

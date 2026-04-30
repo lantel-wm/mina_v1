@@ -164,18 +164,34 @@ def build_runtime_context(now: datetime | None = None) -> str:
     offset = current.strftime("%z")
     offset_display = f"{offset[:3]}:{offset[3:]}" if offset else "local"
     current_date = current.date()
+    yesterday = current_date - timedelta(days=1)
+    tomorrow = current_date + timedelta(days=1)
     return "\n".join(
         [
             "Runtime:",
-            f"- yesterday_date: {(current_date - timedelta(days=1)).isoformat()}",
+            f"- yesterday_date: {yesterday.isoformat()}",
             f"- current_date: {current_date.isoformat()}",
-            f"- tomorrow_date: {(current_date + timedelta(days=1)).isoformat()}",
+            f"- weekday: {_weekday_label(current_date.weekday())}",
+            f"- tomorrow_date: {tomorrow.isoformat()}",
             f"- current_time: {current.strftime('%H:%M:%S')}",
             f"- current_minute: {current.strftime('%H:%M')}",
             f"- utc_offset: {offset_display}",
-            "- Real-world date/time only; Minecraft time uses Observed Minecraft state.",
+            "- Real-world time only; Minecraft time uses world_state.",
         ]
     )
+
+
+def _weekday_label(index: int) -> str:
+    labels = (
+        "星期一",
+        "星期二",
+        "星期三",
+        "星期四",
+        "星期五",
+        "星期六",
+        "星期日",
+    )
+    return labels[index % 7]
 
 
 def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_available: bool = False) -> str:

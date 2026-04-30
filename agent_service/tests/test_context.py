@@ -103,13 +103,14 @@ def test_runtime_context_is_dynamic_and_separate_from_base_prompt(tmp_path) -> N
     assert "Runtime:" not in SYSTEM_PROMPT
     assert "yesterday_date: 2026-04-29" in runtime
     assert "current_date: 2026-04-30" in runtime
+    assert "weekday: 星期四" in runtime
     assert "tomorrow_date: 2026-05-01" in runtime
     assert "current_time: 08:09:10" in runtime
     assert "current_minute: 08:09" in runtime
     assert "utc_offset: +00:00" in runtime
     assert "current_date: 2026-04-30" in context
-    assert "Real-world date/time only" in context
-    assert "Minecraft time uses Observed Minecraft state" in context
+    assert "Real-world time only" in context
+    assert "Minecraft time uses world_state" in context
 
 
 def test_target_summary_is_observation_only(tmp_path) -> None:

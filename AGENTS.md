@@ -40,7 +40,7 @@ Mina uses a sidecar architecture.
 
 - The Fabric mod registers `/mina <content>` and `/mina-admin ...`, samples Minecraft player/world state, and executes approved read-only Minecraft actions on the server thread.
 - The Python sidecar handles DeepSeek API calls, agent tool loops, SQLite memory, SearXNG search, and MCP integration points. Runtime turns are LLM-first when `MINA_API_KEY` is configured; deterministic code should stay at safety/tool boundaries, not as player-facing intent routes.
-- The sidecar injects dynamic runtime context, including yesterday/current/tomorrow local dates, current local time/minute, and UTC offset, as a separate prompt section so the model can resolve real-world relative-date/time wording without a local intent route. Minecraft weather/time/day questions must use Fabric snapshot `world_state` fields instead of this runtime clock.
+- The sidecar injects dynamic runtime context, including yesterday/current/tomorrow local dates, current local weekday, current local time/minute, and UTC offset, as a separate prompt section so the model can resolve real-world relative-date/time wording without a local intent route. Minecraft weather/time/day questions must use Fabric snapshot `world_state` fields instead of this runtime clock.
 - The current product scope is text conversation, knowledge/search, memory, tightly constrained read-only Minecraft commands, and player/world state observation.
 - There is no separate controllable Mina character in the runtime. Movement, mining, attacking, item use, and world mutation tools are not model-facing and should not be reintroduced.
 - Model-facing tools are limited to `web_search`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.

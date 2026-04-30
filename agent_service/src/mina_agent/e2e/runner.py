@@ -153,6 +153,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "plain_chat_response",
         "response_contains_current_date",
         "response_contains_current_minute",
+        "response_contains_current_weekday",
         "response_contains_tomorrow_date",
         "response_excludes_current_minute",
         "single_memory_write_tool_call",
@@ -804,6 +805,21 @@ class E2ERunner:
                     raise AssertionError(
                         f"{scenario.name}: final response did not include expected runtime date "
                         f"{expected}: {final_content!r}"
+                    )
+            elif invariant == "response_contains_current_weekday":
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_content = "\n".join(
+                    _model_content_preview(call).strip()
+                    for call in calls
+                    if call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and _model_content_preview(call).strip()
+                )
+                expected = _runtime_weekday_candidates_for_model_calls(calls)
+                if not any(candidate in final_content for candidate in expected):
+                    raise AssertionError(
+                        f"{scenario.name}: final response did not include expected runtime weekday "
+                        f"one of {expected}: {final_content!r}"
                     )
             elif invariant == "response_contains_current_minute":
                 calls = self._combined("model_calls", scenario.request_ids())
@@ -1591,6 +1607,28 @@ def _runtime_minute_candidates_for_model_calls(calls: list[dict[str, Any]], *, t
         (base + timedelta(minutes=delta)).strftime("%H:%M")
         for delta in range(-tolerance_minutes, tolerance_minutes + 1)
     ]
+
+
+def _runtime_weekday_candidates_for_model_calls(calls: list[dict[str, Any]], *, days: int = 0) -> list[str]:
+    current = datetime.now().astimezone()
+    for call in calls:
+        if call.get("status") != "ok" or call.get("finish_reason") == "tool_calls":
+            continue
+        created_at = _float_value(call.get("created_at"))
+        if created_at is not None:
+            current = datetime.fromtimestamp(created_at).astimezone()
+            break
+    weekday = (current.date() + timedelta(days=days)).weekday()
+    return _weekday_candidates(weekday)
+
+
+def _weekday_candidates(index: int) -> list[str]:
+    english = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    chinese = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    short_chinese = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    informal_chinese = ["礼拜一", "礼拜二", "礼拜三", "礼拜四", "礼拜五", "礼拜六", "礼拜日"]
+    idx = index % 7
+    return [english[idx], chinese[idx], short_chinese[idx], informal_chinese[idx]]
 
 
 def _sentence_terminal_count(content: str) -> int:
