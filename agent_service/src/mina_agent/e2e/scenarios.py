@@ -1715,6 +1715,36 @@ SCENARIO_DATA = [
         "rubric": "Recent advancement events should be visible in observed Minecraft state without a command tool.",
     },
     {
+        "name": "completed_advancement_snapshot_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation"],
+        "steps": [
+            {
+                "kind": "world_mutate",
+                "value": "grant_eye_spy_advancement",
+                "wait_for": ["Mina test world mutate grant_eye_spy_advancement complete"],
+            },
+            {
+                "kind": "request",
+                "request_id": "completed-advancement-snapshot-live-model",
+                "value": "我现在已经完成 Eye Spy 进度了吗？只回答看到了 Eye Spy 或没看到，不要联网，不要执行命令。",
+                "wait_for": ["Eye Spy"],
+                "timeout": 60,
+            },
+        ],
+        "forbidden_tools": [
+            {"name": "web_search"},
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+            {"name": "run_read_only_command"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "exact", "count": 1},
+        "expected_response_contains": ["Eye Spy"],
+        "forbidden_response_contains": ["没看到", "无法读取", "没有看到"],
+        "rubric": "Completed advancement questions should be answered from the Fabric snapshot without command or search tools.",
+    },
+    {
         "name": "readonly_explanation_plain_language_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "safety", "ux"],

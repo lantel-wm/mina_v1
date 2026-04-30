@@ -34,7 +34,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, server version/settings, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, and safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, server version/settings, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, completed advancements/progress/进度, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, and safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For external/current knowledge, web/wiki/internet/search wording, outside verification, advanced or version-sensitive Minecraft mechanics/farms/redstone/tutorials, or factual corrections, call web_search before exact mechanics; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler. Use scope=world for stable facts about this save/world/server (places, landmarks, bases, farms, portals, world plans). Use scope=player for personal preferences or facts tied only to the requester. For player-scoped memories, use 你/you or neutral wording; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -118,7 +118,12 @@ def build_messages(
     write_refusal_hint = _write_command_refusal_hint(user_content)
     if write_refusal_hint:
         messages.append({"role": "system", "content": write_refusal_hint})
-    messages.append({"role": "system", "content": "Observed Minecraft state:\n" + build_context_summary(turn)})
+    observed_context = "Observed Minecraft state:\n"
+    observation_highlights = build_observation_highlights(turn)
+    if observation_highlights:
+        observed_context += observation_highlights + "\n"
+    observed_context += build_context_summary(turn)
+    messages.append({"role": "system", "content": observed_context})
     target_summary = build_target_summary(snapshot)
     if target_summary:
         messages.append({"role": "system", "content": target_summary})
@@ -551,6 +556,26 @@ def build_target_summary(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_observation_highlights(turn: dict[str, Any]) -> str:
+    snapshot = turn.get("snapshot") if isinstance(turn.get("snapshot"), dict) else {}
+    completed_advancements = _compact_completed_advancements(snapshot.get("completed_advancements"), limit=24)
+    if not completed_advancements:
+        return ""
+    labels: list[str] = []
+    for advancement in completed_advancements:
+        title = str(advancement.get("title") or "").strip()
+        advancement_id = str(advancement.get("id") or "").strip()
+        if title and advancement_id and title != advancement_id:
+            labels.append(f"{title} ({advancement_id})")
+        elif title:
+            labels.append(title)
+        elif advancement_id:
+            labels.append(advancement_id)
+    if not labels:
+        return ""
+    return "Completed visible advancements observed for current player: " + "; ".join(labels)
+
+
 def build_context_summary(turn: dict[str, Any]) -> str:
     snapshot = turn.get("snapshot") or {}
     player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
@@ -640,13 +665,13 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     compact_events = [event for event in compact_events if event]
     if compact_events:
         payload["recent_events"] = compact_events
-    compact_advancements = [
-        _compact_advancement(advancement)
-        for advancement in completed_advancements[:80]
-        if isinstance(advancement, dict)
-    ]
-    compact_advancements = [advancement for advancement in compact_advancements if advancement]
+    compact_advancements = _compact_completed_advancements(completed_advancements, limit=80)
     if compact_advancements:
+        payload["completed_advancement_titles"] = [
+            advancement["title"]
+            for advancement in compact_advancements
+            if advancement.get("title")
+        ]
         payload["completed_advancements"] = compact_advancements
     if server_context:
         payload["server_state"] = server_context
@@ -711,6 +736,28 @@ def _compact_recent_event(event: dict[str, Any]) -> dict[str, Any]:
 def _compact_advancement(advancement: dict[str, Any]) -> dict[str, Any]:
     keys = ("id", "title", "description", "advancement_type")
     return {key: advancement.get(key) for key in keys if advancement.get(key) not in {None, ""}}
+
+
+def _compact_completed_advancements(value: Any, *, limit: int) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    compact: list[dict[str, Any]] = []
+    for advancement in value:
+        if not isinstance(advancement, dict):
+            continue
+        if _is_recipe_advancement(advancement):
+            continue
+        item = _compact_advancement(advancement)
+        if item:
+            compact.append(item)
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _is_recipe_advancement(advancement: dict[str, Any]) -> bool:
+    advancement_id = str(advancement.get("id") or "")
+    return advancement_id.startswith("minecraft:recipes/")
 
 
 def _companion_tick_prompt(turn: dict[str, Any]) -> str:

@@ -60,6 +60,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "For player-scoped memories" in SYSTEM_PROMPT
     assert "Use scope=world for stable facts about this save/world/server" in SYSTEM_PROMPT
     assert "Use scope=player for personal preferences" in SYSTEM_PROMPT
+    assert "completed advancements/progress/进度" in SYSTEM_PROMPT
     assert "call memory_write directly" in SYSTEM_PROMPT
     assert "do not first call memory_search" in SYSTEM_PROMPT
     assert "memory_write content/label must omit the current Minecraft username" in SYSTEM_PROMPT
@@ -191,6 +192,20 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
             ],
             "nearby_entities": [{"type": "minecraft:cow", "category": "passive", "distance": 4}],
             "nearby_blocks": {"requester": [{"block": "minecraft:spruce_log", "category": "log", "x": 2, "y": 80, "z": 0}]},
+            "completed_advancements": [
+                {
+                    "id": "minecraft:recipes/decorations/crafting_table",
+                    "title": "minecraft:recipes/decorations/crafting_table",
+                    "description": "",
+                    "advancement_type": "",
+                },
+                {
+                    "id": "minecraft:story/follow_ender_eye",
+                    "title": "Eye Spy",
+                    "description": "Follow an Eye of Ender",
+                    "advancement_type": "task",
+                }
+            ],
         },
     }
 
@@ -217,6 +232,11 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert '"relative_direction": "southeast"' in context
     assert '"inventory_items": [{"item": "minecraft:gunpowder", "count": 1' in context
     assert '"weather": "clear"' in context
+    assert "Completed visible advancements observed for current player: Eye Spy" in context
+    assert '"completed_advancement_titles": ["Eye Spy"]' in context
+    assert '"completed_advancements"' in context
+    assert '"title": "Eye Spy"' in context
+    assert "minecraft:recipes/decorations/crafting_table" not in context
     assert "Remembered facts" in context
     assert "玩家基地在樱花林旁边" in context
     assert "Recent verified Minecraft command/action results" in context
