@@ -38,6 +38,28 @@ def test_agent_context_loads_scoped_memory_by_importance(tmp_path) -> None:
     assert loaded[0]["label"] == "base"
 
 
+def test_agent_memory_rewrite_updates_existing_fact(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=2)
+    memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=5)
+
+    loaded = memory.agent_context("player-1", limit=10)
+    matches = [item for item in loaded if item["content"] == "基地在樱花林旁边"]
+
+    assert len(matches) == 1
+    assert matches[0]["importance"] == 5
+
+
+def test_memory_search_deduplicates_fts_and_like_matches(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_agent_memory("player", "player-1", "base", "基地在樱花林旁边", importance=4)
+
+    results = memory.search("player-1", "基地", limit=10)
+    matches = [item for item in results if item["content"] == "基地在樱花林旁边"]
+
+    assert len(matches) == 1
+
+
 def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
 

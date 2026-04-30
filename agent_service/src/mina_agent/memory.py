@@ -202,6 +202,31 @@ class MemoryStore:
         normalized_importance = max(1, min(5, int(importance)))
         now = time.time()
         with self._connect() as conn:
+            existing = conn.execute(
+                """
+                select id, importance
+                from agent_memories
+                where scope = ? and scope_id = ? and label = ? and content = ?
+                order by id desc
+                limit 1
+                """,
+                (normalized_scope, normalized_scope_id, normalized_label, normalized_content),
+            ).fetchone()
+            if existing is not None:
+                conn.execute(
+                    """
+                    update agent_memories
+                    set importance = ?, source = ?, updated_at = ?
+                    where id = ?
+                    """,
+                    (
+                        max(int(existing["importance"]), normalized_importance),
+                        str(source or "tool"),
+                        now,
+                        int(existing["id"]),
+                    ),
+                )
+                return
             conn.execute(
                 """
                 insert into agent_memories(scope, scope_id, label, content, importance, source, created_at, updated_at)
@@ -452,8 +477,13 @@ class MemoryStore:
             ).fetchall()
         memories: list[dict[str, Any]] = []
         used_chars = 0
+        seen: set[tuple[str, str, str, str]] = set()
         for row in rows:
             item = dict(row)
+            key = _agent_memory_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
             content = str(item.get("content") or "")
             used_chars += len(content)
             if used_chars > max_chars and memories:
@@ -498,7 +528,15 @@ class MemoryStore:
                 """,
                 (*_scope_where_args(_agent_scope_filters(player_id, world_id)), pattern, limit),
             ).fetchall()
-        merged = [dict(row) for row in fts_rows + agent_memories]
+        merged: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for row in fts_rows + agent_memories:
+            item = dict(row)
+            key = _agent_memory_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
         return merged[:limit]
 
 
@@ -552,6 +590,15 @@ def _normalize_label(label: str) -> str:
 
 def _agent_scope_key(scope: str, scope_id: str) -> str:
     return f"{scope}:{scope_id}"
+
+
+def _agent_memory_key(item: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(item.get("scope") or ""),
+        str(item.get("scope_id") or ""),
+        str(item.get("label") or ""),
+        str(item.get("content") or ""),
+    )
 
 
 def _agent_scope_filters(player_id: str, world_id: str | None = None) -> list[tuple[str, str]]:
