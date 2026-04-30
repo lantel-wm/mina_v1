@@ -151,6 +151,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "concise_single_sentence_response",
         "non_empty_final_model_content",
         "plain_chat_response",
+        "read_only_command_trace_alignment",
         "response_contains_current_date",
         "response_contains_current_minute",
         "response_contains_current_weekday",
@@ -658,6 +659,13 @@ class E2ERunner:
                 ]
                 if len(scheduled) > 1:
                     raise AssertionError(f"{scenario.name}: duplicate read-only command actions found: {scheduled!r}")
+            elif invariant == "read_only_command_trace_alignment":
+                offenders = _read_only_command_trace_alignment_offenders(
+                    self._combined("tool_calls", scenario.request_ids()),
+                    events,
+                )
+                if offenders:
+                    raise AssertionError(f"{scenario.name}: read-only command trace alignment failed: {offenders!r}")
             elif invariant == "no_model_requested_read_only_command":
                 calls = self._combined("model_calls", scenario.request_ids())
                 offenders = [
@@ -1447,6 +1455,132 @@ def _is_timeout_or_failure_action_result(event: dict[str, Any]) -> bool:
         str(monitor.get("status") or ""),
     }
     return bool(statuses.intersection({"timeout", "failed", "monitor_failed"}))
+
+
+def _read_only_command_trace_alignment_offenders(
+    tool_calls: list[dict[str, Any]],
+    action_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    scheduled_by_id: dict[str, dict[str, Any]] = {}
+    results_by_id: dict[str, dict[str, Any]] = {}
+    for event in action_events:
+        if event.get("action_name") != "run_read_only_command":
+            continue
+        payload = parse_payload_json(event)
+        action_id = _action_event_id(event, payload)
+        if not action_id:
+            continue
+        if event.get("event_type") == "action_scheduled":
+            scheduled_by_id[action_id] = event
+        elif event.get("event_type") == "action_result":
+            results_by_id[action_id] = event
+
+    offenders: list[dict[str, Any]] = []
+    for call in tool_calls:
+        if call.get("tool_name") != "run_read_only_command" or call.get("status") != "ok":
+            continue
+        result_payload = _json_object_value(call.get("result") or call.get("result_json"))
+        content_payload = _json_object_value(result_payload.get("content"))
+        actions = result_payload.get("actions") if isinstance(result_payload.get("actions"), list) else []
+        first_action = next((action for action in actions if isinstance(action, dict)), {})
+        content_action = content_payload.get("action") if isinstance(content_payload.get("action"), dict) else {}
+        action_id = str(
+            content_payload.get("action_id")
+            or first_action.get("id")
+            or content_action.get("id")
+            or ""
+        )
+        command = str(
+            content_payload.get("command")
+            or _action_command(first_action)
+            or _action_command(content_action)
+            or ""
+        )
+        if not action_id or not command:
+            offenders.append(
+                {
+                    "request_id": call.get("request_id"),
+                    "reason": "missing tool action_id or command",
+                    "action_id": action_id,
+                    "command": command,
+                }
+            )
+            continue
+        scheduled = scheduled_by_id.get(action_id)
+        if scheduled is None:
+            offenders.append(
+                {
+                    "request_id": call.get("request_id"),
+                    "reason": "missing scheduled action",
+                    "action_id": action_id,
+                    "command": command,
+                }
+            )
+            continue
+        scheduled_command = _action_command(parse_payload_json(scheduled))
+        if scheduled_command != command:
+            offenders.append(
+                {
+                    "request_id": call.get("request_id"),
+                    "reason": "scheduled command mismatch",
+                    "action_id": action_id,
+                    "tool_command": command,
+                    "scheduled_command": scheduled_command,
+                }
+            )
+        result = results_by_id.get(action_id)
+        if result is None:
+            offenders.append(
+                {
+                    "request_id": call.get("request_id"),
+                    "reason": "missing action result",
+                    "action_id": action_id,
+                    "command": command,
+                }
+            )
+            continue
+        result_command = _action_result_command(parse_payload_json(result))
+        if result_command != command:
+            offenders.append(
+                {
+                    "request_id": call.get("request_id"),
+                    "reason": "result command mismatch",
+                    "action_id": action_id,
+                    "tool_command": command,
+                    "result_command": result_command,
+                }
+            )
+    return offenders
+
+
+def _action_event_id(event: dict[str, Any], payload: dict[str, Any]) -> str:
+    return str(event.get("action_id") or payload.get("action_id") or payload.get("id") or "")
+
+
+def _action_command(payload: dict[str, Any]) -> str:
+    args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
+    return str(payload.get("command") or args.get("command") or "")
+
+
+def _action_result_command(payload: dict[str, Any]) -> str:
+    command_results = payload.get("command_results")
+    if isinstance(command_results, list):
+        for command_result in command_results:
+            if isinstance(command_result, dict) and command_result.get("command"):
+                return str(command_result.get("command") or "")
+    return _action_command(payload)
+
+
+def _json_object_value(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
 
 
 def parse_payload_json(event: dict[str, Any]) -> dict[str, Any]:

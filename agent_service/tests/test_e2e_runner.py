@@ -420,6 +420,112 @@ def test_trace_invariant_rejects_duplicate_read_only_command_actions(tmp_path, m
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
+def test_trace_invariant_accepts_aligned_read_only_command_trace(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="aligned-read-only",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["read_only_command_trace_alignment"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    action_id = "action-1"
+
+    def combined(key, request_ids):  # noqa: ANN001, ARG001
+        if key == "tool_calls":
+            return [
+                {
+                    "request_id": "req-1",
+                    "tool_name": "run_read_only_command",
+                    "status": "ok",
+                    "result_json": json.dumps(
+                        {
+                            "content": json.dumps(
+                                {"ok": True, "scheduled": True, "action_id": action_id, "command": "seed"}
+                            ),
+                            "actions": [{"id": action_id, "name": "run_read_only_command", "args": {"command": "seed"}}],
+                        }
+                    ),
+                }
+            ]
+        if key == "action_events":
+            return [
+                {
+                    "request_id": "req-1",
+                    "event_type": "action_scheduled",
+                    "action_id": action_id,
+                    "action_name": "run_read_only_command",
+                    "payload_json": json.dumps({"id": action_id, "args": {"command": "seed"}}),
+                },
+                {
+                    "request_id": "req-1",
+                    "event_type": "action_result",
+                    "action_id": action_id,
+                    "action_name": "run_read_only_command",
+                    "payload_json": json.dumps(
+                        {"action_id": action_id, "command_results": [{"command": "seed", "outputs": ["Seed: [1]"]}]}
+                    ),
+                },
+            ]
+        return []
+
+    monkeypatch.setattr(runner, "_combined", combined)
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_misaligned_read_only_command_trace(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="misaligned-read-only",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["read_only_command_trace_alignment"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+
+    def combined(key, request_ids):  # noqa: ANN001, ARG001
+        if key == "tool_calls":
+            return [
+                {
+                    "request_id": "req-1",
+                    "tool_name": "run_read_only_command",
+                    "status": "ok",
+                    "result_json": json.dumps(
+                        {
+                            "content": json.dumps(
+                                {"ok": True, "scheduled": True, "action_id": "action-1", "command": "seed"}
+                            ),
+                            "actions": [{"id": "action-1", "name": "run_read_only_command", "args": {"command": "seed"}}],
+                        }
+                    ),
+                }
+            ]
+        if key == "action_events":
+            return [
+                {
+                    "request_id": "req-1",
+                    "event_type": "action_scheduled",
+                    "action_id": "action-1",
+                    "action_name": "run_read_only_command",
+                    "payload_json": json.dumps({"id": "action-1", "args": {"command": "time query day"}}),
+                },
+                {
+                    "request_id": "req-1",
+                    "event_type": "action_result",
+                    "action_id": "action-1",
+                    "action_name": "run_read_only_command",
+                    "payload_json": json.dumps(
+                        {"action_id": "action-1", "command_results": [{"command": "seed", "outputs": ["Seed: [1]"]}]}
+                    ),
+                },
+            ]
+        return []
+
+    monkeypatch.setattr(runner, "_combined", combined)
+
+    with pytest.raises(AssertionError, match="scheduled command mismatch"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
 def test_trace_invariant_rejects_model_requested_read_only_command(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="model-requested-read-only",

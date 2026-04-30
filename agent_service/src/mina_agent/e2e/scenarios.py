@@ -1210,7 +1210,7 @@ SCENARIO_DATA = [
             {"name": "run_read_only_command", "event_type": "action_result", "payload_contains": "Seed:"},
         ],
         "expected_model": {"mode": "exact", "count": 1},
-        "trace_invariants": ["no_action_monitor_timeout"],
+        "trace_invariants": ["no_action_monitor_timeout", "read_only_command_trace_alignment"],
         "rubric": "Explicit world-seed command requests should be selected by the live model and constrained to the exact read-only seed command.",
     },
     {
