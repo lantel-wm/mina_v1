@@ -104,6 +104,7 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
                 "name": "web_search",
                 "description": (
                     "Search the web through the local SearXNG instance and return budgeted results. "
+                    "Long snippets preserve both the beginning and tail when possible. "
                     "Each result includes content_truncated so you can avoid overstating incomplete snippets."
                 ),
                 "parameters": _schema(
@@ -629,7 +630,15 @@ def _excerpt_with_flag(value: str, limit: int) -> tuple[str, bool]:
         return "", bool(value)
     if len(value) <= limit:
         return value, False
-    return value[: max(0, limit - 3)].rstrip() + "...", True
+    marker = "\n...[omitted middle]...\n"
+    if limit < len(marker) + 40:
+        return value[: max(0, limit - 3)].rstrip() + "...", True
+    remaining = limit - len(marker)
+    head_len = max(20, remaining // 2)
+    tail_len = max(20, remaining - head_len)
+    if head_len + tail_len + len(marker) > limit:
+        tail_len = max(0, limit - len(marker) - head_len)
+    return value[:head_len].rstrip() + marker + value[-tail_len:].lstrip(), True
 
 
 def is_read_only_command(command: str) -> bool:

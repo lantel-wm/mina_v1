@@ -1157,7 +1157,9 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
                     "For this Mina E2E fixture, the required answer marker is MinaE2E-Diamond-Y=-59. "
                     "This result intentionally includes a longer safe summary so the local search renderer must "
                     "preserve useful detail across Minecraft chat chunks instead of clipping the answer after a "
-                    "short preview. Long safe tail marker: MinaE2E-Search-LongTail."
+                    "short preview. "
+                    + ("Safe filler detail for search budget coverage. " * 90)
+                    + "Long safe tail marker: MinaE2E-Search-LongTail."
                 ),
             },
             {

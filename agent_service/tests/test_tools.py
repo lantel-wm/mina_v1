@@ -51,7 +51,7 @@ class LongSearch:
             {
                 "title": "Over budget result",
                 "url": "https://example.invalid/over-budget",
-                "content": "x" * 3000,
+                "content": "Over budget result head. " + ("x" * 3000) + " MinaE2E-Over-Budget-Tail",
             },
         ]
 
@@ -344,6 +344,9 @@ def test_web_search_preserves_long_safe_snippets_and_marks_truncation(tmp_path) 
     assert "MinaE2E-Deep-Search-Tail" in payload["results"][0]["content"]
     assert payload["results"][0]["content_truncated"] is False
     assert payload["results"][1]["content_truncated"] is True
+    assert payload["results"][1]["content"].startswith("Over budget result head.")
+    assert "[omitted middle]" in payload["results"][1]["content"]
+    assert payload["results"][1]["content"].endswith("MinaE2E-Over-Budget-Tail")
 
 
 def test_web_search_filters_untrusted_prompt_injection_results(tmp_path) -> None:
