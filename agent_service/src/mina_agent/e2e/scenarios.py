@@ -829,7 +829,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "world-status-snapshot-live-model",
-                "value": "现在天气和时间怎么样？",
+                "value": "现在游戏内天气和时间怎么样？不要回答现实时间。",
                 "wait_for": ["mina turn response requestId=world-status-snapshot-live-model"],
                 "timeout": 60,
             }
@@ -854,12 +854,13 @@ SCENARIO_DATA = [
             "坐标",
             "生命",
             "饱食",
+            "现实时间",
             "附近",
             "怪物",
             "安全",
             "X=",
         ],
-        "trace_invariants": ["no_model_requested_read_only_command"],
+        "trace_invariants": ["no_model_requested_read_only_command", "response_excludes_current_minute"],
         "rubric": "Natural local world-state questions should be answered from Fabric snapshot context without running read-only commands.",
     },
     {

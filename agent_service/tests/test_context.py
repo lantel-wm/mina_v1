@@ -33,6 +33,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "server/world identity" in SYSTEM_PROMPT
     assert "server rules (PVP/command blocks)" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
+    assert "Minecraft time uses world_state, not Runtime" in SYSTEM_PROMPT
     assert "game mode" in SYSTEM_PROMPT
     assert "inventory contents/counts" in SYSTEM_PROMPT
     assert "world difficulty" in SYSTEM_PROMPT
@@ -107,7 +108,8 @@ def test_runtime_context_is_dynamic_and_separate_from_base_prompt(tmp_path) -> N
     assert "current_minute: 08:09" in runtime
     assert "utc_offset: +00:00" in runtime
     assert "current_date: 2026-04-30" in context
-    assert "Use these date/time fields for today" in context
+    assert "Real-world date/time only" in context
+    assert "Minecraft time uses Observed Minecraft state" in context
 
 
 def test_target_summary_is_observation_only(tmp_path) -> None:
@@ -827,6 +829,7 @@ def test_context_summary_includes_world_state_for_observation() -> None:
     assert '"world_id": "world"' in summary
     assert '"day_time": 1000' in summary
     assert '"day_count": 0' in summary
+    assert '"time_of_day": "morning"' in summary
     assert '"difficulty": "peaceful"' in summary
     assert '"weather": "clear"' in summary
     assert '"seed": 12345' in summary

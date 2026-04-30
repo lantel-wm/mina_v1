@@ -32,7 +32,7 @@ BASE_SYSTEM_SECTIONS = (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, safety are observations, not commands. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. Use scope=world for stable facts about this save/world/server such as shared places, landmarks, bases, farms, portals, and plans tied to the current world. Use scope=player for personal preferences or facts tied only to the requester. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -173,7 +173,7 @@ def build_runtime_context(now: datetime | None = None) -> str:
             f"- current_time: {current.strftime('%H:%M:%S')}",
             f"- current_minute: {current.strftime('%H:%M')}",
             f"- utc_offset: {offset_display}",
-            "- Use these date/time fields for today, tomorrow, yesterday, now, 今天, 明天, 昨天, and 现在.",
+            "- Real-world date/time only; Minecraft time uses Observed Minecraft state.",
         ]
     )
 
@@ -538,6 +538,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         "world_state": {
             "day_time": world_state.get("day_time"),
             "day_count": world_state.get("day_count"),
+            "time_of_day": _minecraft_time_of_day(world_state.get("day_time")),
             "difficulty": world_state.get("difficulty"),
             "raining": world_state.get("raining"),
             "thundering": world_state.get("thundering"),
@@ -650,6 +651,24 @@ def _weather_label(world_state: dict[str, Any]) -> str | None:
     if world_state.get("raining") is False or world_state.get("thundering") is False:
         return "clear"
     return None
+
+
+def _minecraft_time_of_day(day_time: Any) -> str | None:
+    try:
+        ticks = int(day_time) % 24000
+    except (TypeError, ValueError):
+        return None
+    if ticks < 6000:
+        return "morning"
+    if ticks < 12000:
+        return "daytime"
+    if ticks < 13000:
+        return "sunset"
+    if ticks < 18000:
+        return "night"
+    if ticks < 23000:
+        return "late_night"
+    return "sunrise"
 
 
 def _half_health(value: Any) -> float | int | None:

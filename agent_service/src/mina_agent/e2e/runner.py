@@ -154,6 +154,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "response_contains_current_date",
         "response_contains_current_minute",
         "response_contains_tomorrow_date",
+        "response_excludes_current_minute",
         "single_memory_write_tool_call",
         "single_read_only_command_action",
         "spawn_coordinates_response_matches_snapshot",
@@ -818,6 +819,22 @@ class E2ERunner:
                     raise AssertionError(
                         f"{scenario.name}: final response did not include expected runtime minute "
                         f"one of {expected}: {final_content!r}"
+                    )
+            elif invariant == "response_excludes_current_minute":
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_content = "\n".join(
+                    _model_content_preview(call).strip()
+                    for call in calls
+                    if call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and _model_content_preview(call).strip()
+                )
+                forbidden = _runtime_minute_candidates_for_model_calls(calls)
+                used = [candidate for candidate in forbidden if candidate in final_content]
+                if used:
+                    raise AssertionError(
+                        f"{scenario.name}: final response used Runtime real-world minute "
+                        f"{used} instead of Minecraft observed time: {final_content!r}"
                     )
             elif invariant == "spawn_distance_response_matches_snapshot":
                 calls = self._combined("model_calls", scenario.request_ids())
