@@ -1202,6 +1202,8 @@ SCENARIO_DATA = [
         ],
         "expected_tools": [
             {"name": "run_read_only_command", "status": "ok", "args_contains": "seed"},
+            {"name": "run_read_only_command", "status": "ok", "result_contains": "\"scheduled\": true"},
+            {"name": "run_read_only_command", "status": "ok", "result_contains": "\"command\": \"seed\""},
         ],
         "expected_actions": [
             {"name": "run_read_only_command"},

@@ -160,6 +160,9 @@ def test_run_read_only_command_schedules_fabric_action(tmp_path) -> None:
 
     assert payload["ok"] is True
     assert result.action is not None
+    assert payload["scheduled"] is True
+    assert payload["command"] == "time query day"
+    assert payload["action_id"] == result.action["id"]
     assert result.action["name"] == "run_read_only_command"
     assert result.action["args"] == {"command": "time query day"}
     assert result.action["requires_permission"] is False

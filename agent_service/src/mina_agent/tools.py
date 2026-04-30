@@ -358,7 +358,19 @@ class ToolRunner:
             "requires_permission": False,
             "deadline_ticks": 0,
         }
-        return ToolResult(content=json.dumps({"ok": True, "action": action}, ensure_ascii=False), action=action)
+        return ToolResult(
+            content=json.dumps(
+                {
+                    "ok": True,
+                    "scheduled": True,
+                    "action_id": action["id"],
+                    "command": command,
+                    "action": action,
+                },
+                ensure_ascii=False,
+            ),
+            action=action,
+        )
 
     def _mcp_call(self, args: dict[str, Any], turn: dict[str, Any]) -> ToolResult:
         server = str(args.get("server") or "")
