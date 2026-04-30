@@ -138,7 +138,11 @@ def strip_player_name_address(content: str, player_name: str | None) -> str:
 
 
 def contains_write_command_advice(content: str) -> bool:
-    return bool(_WRITE_COMMAND_ADVICE_RE.search(content) or _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE.search(content))
+    return bool(
+        _WRITE_COMMAND_ADVICE_RE.search(content)
+        or _WRITE_COMMAND_PHRASE_ADVICE_RE.search(content)
+        or _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE.search(content)
+    )
 
 
 def claims_memory_saved(content: str) -> bool:
@@ -223,6 +227,14 @@ _WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(^|[^\w-])"
     r"(?:minecraft:)?"
     r"(setblock|fill|fillbiome|gamemode|give|summon|gamerule|op|deop|ban)\b"
+)
+_WRITE_COMMAND_PHRASE_ADVICE_RE = re.compile(
+    r"(?im)(?:"
+    r"(^|[^\w-])/?time\s+set\b|"
+    r"(^|[^\w-])/?weather\s+(?:clear|rain|thunder)\b|"
+    r"(^|[^\w-])/?difficulty\s+(?:peaceful|easy|normal|hard)\b|"
+    r"(^|[^\w-])/?defaultgamemode\s+\w+\b"
+    r")"
 )
 _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?im)(?:"

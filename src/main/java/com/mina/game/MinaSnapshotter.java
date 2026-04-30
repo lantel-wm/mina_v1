@@ -3,6 +3,7 @@ package com.mina.game;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mina.config.MinaConfig;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
@@ -50,6 +51,7 @@ public final class MinaSnapshotter {
 	public JsonObject snapshot(MinecraftServer server, ServerPlayer player, MinaConfig config) {
 		ServerLevel level = player.level();
 		JsonObject snapshot = new JsonObject();
+		snapshot.add("server_state", serverState(server));
 		snapshot.add("player_state", playerState(player));
 		snapshot.add("world_state", worldState(server, level, player));
 		snapshot.add("inventory", inventory(player, config));
@@ -66,6 +68,41 @@ public final class MinaSnapshotter {
 		json.addProperty("is_op", server.getPlayerList().isOp(player.nameAndId()));
 		json.addProperty("can_use_actions", config.canUseActions(server, player));
 		return json;
+	}
+
+	private JsonObject serverState(MinecraftServer server) {
+		JsonObject json = new JsonObject();
+		json.addProperty("minecraft_version", server.getServerVersion());
+		json.addProperty("server_mod_name", server.getServerModName());
+		json.addProperty("mina_mod_version", modVersion("mina"));
+		json.addProperty("fabric_loader_version", modVersion("fabricloader"));
+		json.addProperty("fabric_api_version", modVersion("fabric-api"));
+		json.addProperty("dedicated_server", server.isDedicatedServer());
+		json.addProperty("singleplayer", server.isSingleplayer());
+		json.addProperty("online_mode", server.usesAuthentication());
+		json.addProperty("hardcore", server.isHardcore());
+		json.addProperty("default_game_mode", server.getDefaultGameType().getName());
+		if (server.getForcedGameType() != null) {
+			json.addProperty("forced_game_mode", server.getForcedGameType().getName());
+		}
+		json.addProperty("motd", server.getMotd());
+		json.addProperty("server_port", server.getPort());
+		json.addProperty("max_players", server.getPlayerList().getMaxPlayers());
+		json.addProperty("view_distance", server.getPlayerList().getViewDistance());
+		json.addProperty("simulation_distance", server.getPlayerList().getSimulationDistance());
+		json.addProperty("allow_flight", server.allowFlight());
+		json.addProperty("whitelist_enabled", server.isUsingWhitelist());
+		json.addProperty("enforce_whitelist", server.isEnforceWhitelist());
+		json.addProperty("resource_pack_required", server.isResourcePackRequired());
+		json.addProperty("modded_status", server.getModdedStatus().fullDescription());
+		return json;
+	}
+
+	private String modVersion(String modId) {
+		return FabricLoader.getInstance()
+			.getModContainer(modId)
+			.map(container -> container.getMetadata().getVersion().getFriendlyString())
+			.orElse("not_installed");
 	}
 
 	private JsonObject permissions(ServerPlayer player, MinecraftServer server, MinaConfig config) {

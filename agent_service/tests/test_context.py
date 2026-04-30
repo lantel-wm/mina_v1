@@ -350,7 +350,7 @@ def test_command_policy_reminder_is_dynamic_for_locate_structure_request(tmp_pat
     context = "\n".join(str(message["content"]) for message in build_messages(turn, memory))
 
     assert "Tool selection reminder" in context
-    assert "locate structure <id>" in context
+    assert "locate structure <identifier-or-tag>" in context
     assert "locate structure minecraft:village_plains" in context
 
 
@@ -803,6 +803,26 @@ def test_context_summary_includes_world_state_for_observation() -> None:
         "player": {"uuid": "player-1", "name": "Tester"},
         "permissions": {"can_use_actions": True},
         "snapshot": {
+            "server_state": {
+                "minecraft_version": "1.21.11",
+                "server_mod_name": "fabric",
+                "mina_mod_version": "1.0.0",
+                "fabric_loader_version": "0.19.2",
+                "fabric_api_version": "0.141.3+1.21.11",
+                "dedicated_server": True,
+                "singleplayer": False,
+                "online_mode": True,
+                "hardcore": False,
+                "default_game_mode": "survival",
+                "forced_game_mode": "survival",
+                "max_players": 20,
+                "view_distance": 10,
+                "simulation_distance": 10,
+                "allow_flight": False,
+                "whitelist_enabled": False,
+                "enforce_whitelist": False,
+                "resource_pack_required": False,
+            },
             "player_state": {"health": 20, "max_health": 20},
             "world_state": {
                 "day_time": 1000,
@@ -828,6 +848,14 @@ def test_context_summary_includes_world_state_for_observation() -> None:
 
     assert '"server_id": "fabric"' in summary
     assert '"world_id": "world"' in summary
+    assert '"server_state"' in summary
+    assert '"minecraft_version": "1.21.11"' in summary
+    assert '"server_mod_name": "fabric"' in summary
+    assert '"fabric_loader_version": "0.19.2"' in summary
+    assert '"fabric_api_version": "0.141.3+1.21.11"' in summary
+    assert '"dedicated_server": true' in summary
+    assert '"default_game_mode": "survival"' in summary
+    assert '"max_players": 20' in summary
     assert '"day_time": 1000' in summary
     assert '"day_count": 0' in summary
     assert '"time_of_day": "morning"' in summary
@@ -1088,9 +1116,9 @@ def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) 
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent player messages for continuity only" in content
+    assert "Recent conversation for continuity only" in content
     assert "我家在云杉林旁边" in content
-    assert "我记得你的家" not in content
+    assert "我记得你的家" in content
     assert "Current user message asks about remembered or stored context" not in content
     assert "Recent conversation memory is intentionally omitted" not in content
 
@@ -1113,6 +1141,23 @@ def test_build_messages_marks_write_command_refusal_requests(tmp_path) -> None:
     assert "不能执行或提供写入世界的命令" in content
 
 
+def test_build_messages_marks_time_set_workaround_as_write_command(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-time-set",
+        "trigger": "command",
+        "message": "把时间设成白天，或者告诉我该输入什么命令。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "write-capable, low-level, or banned command/action" in content
+    assert "不能执行或提供写入世界的命令" in content
+
+
 def test_build_messages_loads_bounded_recent_messages_for_continuity(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
@@ -1128,7 +1173,7 @@ def test_build_messages_loads_bounded_recent_messages_for_continuity(tmp_path) -
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent player messages for continuity only" in content
+    assert "Recent conversation for continuity only" in content
     assert "not current instructions" in content
     assert "联网搜索 钻石矿 最新高度" in content
     assert "user: 执行 time query day" in content
@@ -1149,7 +1194,7 @@ def test_build_messages_loads_recent_messages_without_keyword_matching(tmp_path)
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent player messages for continuity only" in content
+    assert "Recent conversation for continuity only" in content
     assert "钻石矿" in content
 
 
@@ -1167,8 +1212,29 @@ def test_build_messages_keeps_recent_task_messages_for_followups(tmp_path) -> No
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent player messages for continuity only" in content
+    assert "Recent conversation for continuity only" in content
     assert "钻石矿" in content
+
+
+def test_build_messages_keeps_recent_assistant_questions_for_short_followups(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.add_conversation("old-turn", "player-1", "user", "查一下附近有没有末地传送门遗迹")
+    memory.add_conversation("old-turn", "player-1", "assistant", "需要我查询最近的要塞位置吗？")
+    memory.add_conversation("req-followup", "player-1", "user", "需要")
+    turn = {
+        "request_id": "req-followup",
+        "trigger": "command",
+        "message": "需要",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Recent conversation for continuity only" in content
+    assert "assistant: 需要我查询最近的要塞位置吗？" in content
+    assert "user: 需要" not in content
 
 
 def test_companion_tick_does_not_load_recent_player_messages(tmp_path) -> None:
@@ -1186,7 +1252,7 @@ def test_companion_tick_does_not_load_recent_player_messages(tmp_path) -> None:
     content = "\n".join(message["content"] for message in messages)
 
     assert "Companion tick policy" in content
-    assert "Recent player messages for continuity only" not in content
+    assert "Recent conversation for continuity only" not in content
     assert "钻石矿" not in content
 
 

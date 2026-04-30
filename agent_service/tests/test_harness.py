@@ -287,7 +287,7 @@ def test_snapshot_status_request_does_not_use_local_classifier_to_block_model_to
 
     response = harness.run_turn(_turn("现在天气和时间怎么样？", "req-world-status"))
 
-    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["messages"][0]["content"] == "正在查询。"
     assert response["actions"][0]["name"] == "run_read_only_command"
     assert response["actions"][0]["args"] == {"command": "weather query"}
     assert len(model.calls) == 1
@@ -322,9 +322,42 @@ def test_snapshot_status_guard_does_not_block_locate_requests(tmp_path) -> None:
 
     response = harness.run_turn(_turn("最近村庄坐标在哪里？", "req-locate-structure"))
 
-    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["messages"][0]["content"] == "正在查询。"
     assert response["actions"][0]["args"] == {"command": "locate structure minecraft:village_plains"}
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-locate-structure")] == ["run_read_only_command"]
+
+
+def test_read_only_locate_common_invalid_targets_are_canonicalized(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-locate",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "locate structure minecraft:village"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            )
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("找村庄", "req-locate-village"))
+
+    assert response["messages"][0]["content"] == "正在查询。"
+    assert response["actions"][0]["args"] == {"command": "locate structure #minecraft:village"}
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-locate-village")] == ["run_read_only_command"]
 
 
 def test_exact_read_only_command_is_scheduled_after_model_tool_call(tmp_path) -> None:
@@ -355,7 +388,7 @@ def test_exact_read_only_command_is_scheduled_after_model_tool_call(tmp_path) ->
 
     response = harness.run_turn(_turn("/TIME   QUERY   DAY", "req-exact-time"))
 
-    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["messages"][0]["content"] == "正在查询。"
     assert response["actions"][0]["name"] == "run_read_only_command"
     assert response["actions"][0]["args"] == {"command": "time query day"}
     assert len(model.calls) == 1
@@ -569,7 +602,7 @@ def test_memory_write_request_does_not_block_model_tool_with_local_classifier(tm
 
     response = harness.run_turn(_turn("请记住：我的基地在樱花林旁边", "req-memory-command-block"))
 
-    assert response["messages"][0]["content"] == "我会执行这个只读查询。"
+    assert response["messages"][0]["content"] == "正在查询。"
     assert response["actions"][0]["name"] == "run_read_only_command"
     assert response["actions"][0]["args"] == {"command": "locate biome minecraft:cherry_grove"}
     assert len(model.calls) == 1
@@ -737,6 +770,26 @@ def test_write_command_advice_is_replaced_before_chat_response(tmp_path) -> None
 
     assert "/setblock" not in response["messages"][0]["content"]
     assert "不能执行" in response["messages"][0]["content"]
+    assert len(model.calls) == 1
+
+
+def test_time_set_workaround_is_replaced_before_chat_response(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "我不能执行，但你可以自己输入 /time set day。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, _memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("把时间设成白天", "req-time-set-repair"))
+
+    assert "time set" not in response["messages"][0]["content"]
+    assert "不能执行或提供写入世界的命令" in response["messages"][0]["content"]
     assert len(model.calls) == 1
 
 

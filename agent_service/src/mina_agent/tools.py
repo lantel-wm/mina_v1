@@ -30,6 +30,18 @@ PRIVATE_FABRIC_TOOLS = {
 
 READ_ONLY_TIME_QUERIES = {"daytime", "gametime", "day"}
 READ_ONLY_LOCATE_TARGET = re.compile(r"^[a-z0-9_:.\-/#]+$")
+READ_ONLY_STRUCTURE_ALIASES = {
+    "village": "#minecraft:village",
+    "minecraft:village": "#minecraft:village",
+    "#village": "#minecraft:village",
+    "#minecraft:villages": "#minecraft:village",
+    "villages": "#minecraft:village",
+    "minecraft:villages": "#minecraft:village",
+    "end_portal": "minecraft:stronghold",
+    "minecraft:end_portal": "minecraft:stronghold",
+    "end_portal_room": "minecraft:stronghold",
+    "minecraft:end_portal_room": "minecraft:stronghold",
+}
 
 MINECRAFT_WRITE_COMMANDS = {
     "advancement",
@@ -151,7 +163,8 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
                     "Run a tightly constrained read-only Minecraft command and show its output to the requester. "
                     "Use this when the player message is exactly or mainly an allowed command form, even if the same value appears in context. "
                     "Allowed forms: seed; time query daytime|gametime|day; weather query; list [uuids]; "
-                    "locate structure <identifier>; locate biome <identifier>."
+                    "locate structure <identifier-or-tag>; locate biome <identifier>. "
+                    "Use locate structure #minecraft:village for villages and locate structure minecraft:stronghold for end portal/stronghold searches."
                 ),
                 "strict": True,
                 "parameters": _schema({"command": {"type": "string"}}, ["command"]),
@@ -295,7 +308,7 @@ class ToolRunner:
                         "ok": False,
                         "error": (
                             "Only read-only commands are allowed: seed; time query daytime|gametime|day; "
-                            "weather query; list [uuids]; locate structure <identifier>; locate biome <identifier>."
+                            "weather query; list [uuids]; locate structure <identifier-or-tag>; locate biome <identifier>."
                         ),
                     },
                     ensure_ascii=False,
@@ -517,9 +530,25 @@ def is_read_only_command(command: str) -> bool:
 def normalize_read_only_command(command: str) -> str | None:
     normalized = _strip_slash(command).lower()
     parts = normalized.split()
+    if len(parts) == 3 and parts[0] == "locate" and parts[1] in {"structure", "biome"}:
+        target = _canonical_locate_target(parts[1], parts[2])
+        if target is None:
+            return None
+        parts = [parts[0], parts[1], target]
     if _is_read_only_command_parts(parts):
         return " ".join(parts)
     return None
+
+
+def _canonical_locate_target(kind: str, target: str) -> str | None:
+    normalized = str(target or "").strip().lower()
+    if not READ_ONLY_LOCATE_TARGET.fullmatch(normalized):
+        return None
+    if kind == "structure":
+        return READ_ONLY_STRUCTURE_ALIASES.get(normalized, normalized)
+    if kind == "biome" and ":" not in normalized and not normalized.startswith("#"):
+        return "minecraft:" + normalized
+    return normalized
 
 
 def _is_read_only_command_parts(parts: list[str]) -> bool:

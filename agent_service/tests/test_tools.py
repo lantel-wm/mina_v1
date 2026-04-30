@@ -124,6 +124,10 @@ def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:
     assert not is_read_only_command("locate structure minecraft:village; stop")
     assert normalize_read_only_command("/TIME   QUERY   DAY") == "time query day"
     assert normalize_read_only_command("/TIME   QUERY   GAMETIME") == "time query gametime"
+    assert normalize_read_only_command("locate structure minecraft:village") == "locate structure #minecraft:village"
+    assert normalize_read_only_command("locate structure village") == "locate structure #minecraft:village"
+    assert normalize_read_only_command("locate structure minecraft:end_portal") == "locate structure minecraft:stronghold"
+    assert normalize_read_only_command("locate biome plains") == "locate biome minecraft:plains"
 
 
 def test_run_read_only_command_schedules_fabric_action(tmp_path) -> None:

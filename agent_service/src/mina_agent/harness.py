@@ -358,7 +358,7 @@ def _model_response_summary(message: dict[str, Any]) -> dict[str, Any]:
 
 def _action_ack(tool_name: str) -> str:
     if tool_name == "run_read_only_command":
-        return "我会执行这个只读查询。"
+        return "正在查询。"
     return "我开始执行。"
 
 

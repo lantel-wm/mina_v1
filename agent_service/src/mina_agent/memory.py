@@ -402,7 +402,7 @@ class MemoryStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                select role, content, created_at from conversations
+                select request_id, role, content, created_at from conversations
                 where player_id = ?
                 order by id desc
                 limit ?

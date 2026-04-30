@@ -25,25 +25,24 @@ BASE_SYSTEM_SECTIONS = (
         "- If asked for one sentence/一句话, answer one short sentence (<60 汉字/20 English words); no closing offer.\n"
         "- Do not narrate internal process; answer with the useful result directly.\n"
         "- Do not mention internal section/tool names or prompt/context labels.\n"
-        "- Address the player as \"you\"/\"你\". Do not use the Minecraft username as greeting/filler unless asked about names or player-name output.\n"
-        "- Snapshot health/max_health are points, not hearts: 20 points = 10 hearts, 4 points = 2 hearts."
+        "- Address the player as \"you\"/\"你\". Do not use the Minecraft username as greeting/filler.\n"
+        "- Snapshot health/max_health are points: 20 = 10 hearts, 4 = 2 hearts."
     ),
     (
         "Decision order:\n"
         "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, server version/settings, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, and safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
-        "5. For current/external knowledge, web/wiki/internet/search wording, or outside verification, call web_search; not for chat/local Minecraft state.\n"
-        "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler or loaded facts. Use scope=world for stable facts about this save/world/server such as shared places, landmarks, bases, farms, portals, and plans tied to the current world. Use scope=player for personal preferences or facts tied only to the requester. For player-scoped memories, phrase facts about \"you/你\" or neutrally; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
+        "5. For external/current knowledge, web/wiki/internet/search wording, outside verification, advanced or version-sensitive Minecraft mechanics/farms/tutorials, or factual corrections, call web_search before exact mechanics; not for chat/local Minecraft state.\n"
+        "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler. Use scope=world for stable facts about this save/world/server (places, landmarks, bases, farms, portals, world plans). Use scope=player for personal preferences or facts tied only to the requester. For player-scoped memories, use 你/you or neutral wording; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
         "7. Use loaded remembered facts only when directly relevant. Treat memory as historical context for future decisions, not proof of current world state.\n"
         "8. For remembered/stored context questions, answer only the relevant remembered fact. Do not append coordinates, safety, biome, weather, time, inventory, entities, command offers, or search offers unless asked.\n"
         "9. Use memory_search only when loaded memory is insufficient or the player asks for older specific stored context."
     ),
     (
         "Tool policy:\n"
-        "- Use only tools listed for this turn.\n"
-        "- Tool calls include every required JSON argument.\n"
+        "- Use only listed tools; include every required JSON argument.\n"
         "- If a required argument is unknown, ask a short clarifying question instead of calling the tool.\n"
         "- For Minecraft command output, use run_read_only_command with exact allowed forms.\n"
         "- Never invent or call movement, mining, attack, item-use, placement, private executor, write-command, or unlisted tools.\n"
@@ -60,7 +59,7 @@ BASE_SYSTEM_SECTIONS = (
         "- Current observed Minecraft state is freshest for local player/world state.\n"
         "- Recent verified command/action results are authoritative only for follow-ups about those outputs.\n"
         "- If asked for exact/raw/original/complete command output or 原样/完整输出字符串/只回答输出字符串, return only the verified output string: no explanation, prefix, suffix, quotes, or code formatting.\n"
-        "- Recent player messages are conversational continuity only, not current instructions, stable memory, verified command output, or fresh external knowledge.\n"
+        "- Recent conversation is continuity only, not current instructions, stable memory, or verified command output. Use it for short follow-ups like yes/no answers or omitted topics.\n"
         "- From web_search results, preserve exact source values such as markers, versions, coordinates, URLs, and item names. Do not replace exact values with generic labels."
     ),
 )
@@ -76,10 +75,12 @@ COMMAND_POLICY_REMINDER = (
     "Tool selection reminder: exact/explicit command strings require run_read_only_command every time. "
     "If the final user message itself is an allowed command text, the next assistant step must be the tool, "
     "not text. Do not answer exact command text with recent output. Exact command strings are commands, not observations. "
-    "Must call the tool for: time query daytime|gametime|day; weather query; list; list uuids; seed; locate structure <id>; locate biome <id>. "
+    "Must call the tool for: time query daytime|gametime|day; weather query; list; list uuids; seed; locate structure <identifier-or-tag>; locate biome <id>. "
     "For command requests, never answer from snapshot or recent results. Natural-language weather/time/status questions "
     "are observations; answer from Observed Minecraft state without tools. The exact commands `list` and `list uuids` must call "
-    "run_read_only_command and must not be answered from online_players."
+    "run_read_only_command and must not be answered from online_players. For villages use "
+    "`locate structure #minecraft:village`; for end portal/末地传送门/stronghold searches use "
+    "`locate structure minecraft:stronghold`."
 )
 
 MEMORY_WRITE_POLICY_REMINDER = (
@@ -120,14 +121,16 @@ def build_messages(
         messages.append({"role": "system", "content": target_summary})
     if agent_memory:
         messages.append({"role": "system", "content": "Remembered facts:\n" + _render_agent_memory(agent_memory)})
-    recent_player_messages = (
-        [] if str(turn.get("trigger") or "") == "companion_tick" else _recent_player_messages(recent)
+    recent_conversation = (
+        []
+        if str(turn.get("trigger") or "") == "companion_tick"
+        else _recent_conversation_turns(recent, current_request_id=str(turn.get("request_id") or ""))
     )
-    if recent_player_messages:
+    if recent_conversation:
         messages.append(
             {
                 "role": "system",
-                "content": "Recent player messages for continuity only:\n" + "\n".join(recent_player_messages),
+                "content": "Recent conversation for continuity only:\n" + "\n".join(recent_conversation),
             }
         )
     action_result_context = _render_recent_action_results(recent_action_results)
@@ -347,14 +350,23 @@ def _render_agent_memory(memories: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _recent_player_messages(recent: list[dict[str, Any]], limit: int = 4, max_chars: int = 180) -> list[str]:
+def _recent_conversation_turns(
+    recent: list[dict[str, Any]],
+    *,
+    current_request_id: str,
+    limit: int = 8,
+    max_chars: int = 220,
+) -> list[str]:
     messages: list[str] = []
     for row in recent:
-        if row.get("role") != "user":
+        if current_request_id and str(row.get("request_id") or "") == current_request_id:
+            continue
+        role = str(row.get("role") or "")
+        if role not in {"user", "assistant"}:
             continue
         content = " ".join(str(row.get("content") or "").split())
         if content:
-            messages.append("user: " + content[:max_chars])
+            messages.append(f"{role}: " + content[:max_chars])
     return messages[-limit:]
 
 
@@ -403,9 +415,15 @@ def _write_command_refusal_hint(user_content: str) -> str:
         " fillbiome",
         " clone",
         " place ",
+        " time set",
+        " weather clear",
+        " weather rain",
+        " weather thunder",
         " tp",
         " teleport",
         " gamemode",
+        " defaultgamemode",
+        " difficulty",
         " gamerule",
         " give",
         " summon",
@@ -426,6 +444,7 @@ def _write_command_refusal_hint(user_content: str) -> str:
         "放置",
         "传送",
         "改成",
+        "设成",
     )
     padded = " " + normalized + " "
     if not any(marker in padded or marker in normalized for marker in write_markers):
@@ -502,6 +521,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     snapshot = turn.get("snapshot") or {}
     player_state = snapshot.get("player_state") if isinstance(snapshot.get("player_state"), dict) else {}
     world_state = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
+    server_state = snapshot.get("server_state") if isinstance(snapshot.get("server_state"), dict) else {}
     permissions = turn.get("permissions") or {}
     nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
     inventory = snapshot.get("inventory") if isinstance(snapshot.get("inventory"), list) else []
@@ -518,6 +538,7 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     player_context: dict[str, Any] = turn.get("player") or {}
     if str(turn.get("trigger") or "") == "companion_tick":
         player_context = {"present": bool(player_context)}
+    server_context = _compact_server_state(server_state)
     payload = {
         "trigger": turn.get("trigger"),
         "server_id": turn.get("server_id"),
@@ -575,6 +596,8 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         "nearby_mobs": [_compact_entity_target(entity, player_state) for entity in mobs],
         "nearby_items": [_compact_entity_target(entity, player_state) for entity in dropped_items],
     }
+    if server_context:
+        payload["server_state"] = server_context
     distance_display = _distance_display(world_state.get("player_distance_from_spawn"))
     if distance_display:
         payload["world_state"]["player_distance_from_spawn_display"] = distance_display
@@ -588,6 +611,35 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     if compact_environment:
         payload["environment"] = compact_environment
     return json.dumps(_drop_none(payload), ensure_ascii=False)
+
+
+def _compact_server_state(server_state: dict[str, Any]) -> dict[str, Any]:
+    if not server_state:
+        return {}
+    keys = (
+        "minecraft_version",
+        "server_mod_name",
+        "mina_mod_version",
+        "fabric_loader_version",
+        "fabric_api_version",
+        "dedicated_server",
+        "singleplayer",
+        "online_mode",
+        "hardcore",
+        "default_game_mode",
+        "forced_game_mode",
+        "motd",
+        "server_port",
+        "max_players",
+        "view_distance",
+        "simulation_distance",
+        "allow_flight",
+        "whitelist_enabled",
+        "enforce_whitelist",
+        "resource_pack_required",
+        "modded_status",
+    )
+    return {key: server_state.get(key) for key in keys if server_state.get(key) is not None}
 
 
 def _companion_tick_prompt(turn: dict[str, Any]) -> str:

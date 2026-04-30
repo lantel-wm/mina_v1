@@ -80,6 +80,16 @@ def test_policy_still_replaces_ambiguous_clear_command_advice() -> None:
     assert "不能执行或提供写入世界的命令" in review.content
 
 
+def test_policy_replaces_time_set_workaround() -> None:
+    policy = ResponsePolicyRuntime()
+
+    review = policy.review_final_content("我不能执行，但你可以自己输入 /time set day。", can_repair=True)
+
+    assert not review.needs_repair
+    assert "time set" not in review.content
+    assert "不能执行或提供写入世界的命令" in review.content
+
+
 def test_policy_normalizes_health_points_misread_as_hearts() -> None:
     snapshot = {"player_state": {"health": 4, "max_health": 20}}
 
