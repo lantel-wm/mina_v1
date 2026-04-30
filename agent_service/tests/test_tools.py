@@ -364,6 +364,8 @@ def test_web_search_returns_full_tool_content(tmp_path) -> None:
     assert payload["results"][0]["content"] == "content"
     assert payload["results"][0]["content_truncated"] is False
     assert payload["evidence_quality"] in {"low", "medium", "high", "none"}
+    assert isinstance(payload["matched_query_terms"], list)
+    assert isinstance(payload["missing_query_terms"], list)
 
 
 def test_web_search_preserves_top_level_answer_source_type(tmp_path) -> None:
@@ -416,6 +418,9 @@ def test_web_search_marks_low_relevance_missing_terms(tmp_path) -> None:
 
     assert payload["ok"] is True
     assert payload["evidence_quality"] == "low"
+    assert "刷石机" in payload["matched_query_terms"]
+    assert "1.21" in payload["matched_query_terms"]
+    assert payload["missing_query_terms"] == ["打包机"]
     assert payload["results"][0]["low_relevance"] is True
     assert "打包机" in payload["results"][0]["missing_query_terms"]
 
@@ -428,6 +433,9 @@ def test_web_search_matches_bilingual_minecraft_terms(tmp_path) -> None:
 
     assert payload["ok"] is True
     assert payload["evidence_quality"] == "high"
+    assert payload["missing_query_terms"] == []
+    assert "钻石矿" in payload["matched_query_terms"]
+    assert "生成高度" in payload["matched_query_terms"]
     assert payload["results"][0]["low_relevance"] is False
     assert "钻石矿" in payload["results"][0]["matched_query_terms"]
     assert "生成高度" in payload["results"][0]["matched_query_terms"]

@@ -118,7 +118,8 @@ def tool_specs(*, include_mcp: bool = False) -> list[dict[str, Any]]:
                 "description": (
                     "Search the web through the local SearXNG instance and return budgeted results. "
                     "Long snippets preserve both the beginning and tail when possible. "
-                    "Each result includes content_truncated so you can avoid overstating incomplete snippets."
+                    "Each result includes content_truncated so you can avoid overstating incomplete snippets. "
+                    "Use evidence_quality and top-level matched/missing query terms to calibrate uncertainty."
                 ),
                 "parameters": _schema(
                     {
@@ -257,6 +258,7 @@ class ToolRunner:
             return ToolResult(content=json.dumps({"ok": False, "error": f"web_search unavailable: {exc}"}, ensure_ascii=False))
         safe_results, filtered_results = _safe_web_search_results(results, max_results=max_results, query=query)
         evidence_quality = _web_search_evidence_quality(safe_results)
+        evidence_terms = _web_search_evidence_terms(safe_results)
         LOGGER.info("web_search result_count=%s safe_result_count=%s filtered_results=%s", len(results), len(safe_results), filtered_results)
         return ToolResult(
             content=json.dumps(
@@ -267,6 +269,8 @@ class ToolRunner:
                     "safe_result_count": len(safe_results),
                     "filtered_results": filtered_results,
                     "evidence_quality": evidence_quality,
+                    "matched_query_terms": evidence_terms["matched_query_terms"],
+                    "missing_query_terms": evidence_terms["missing_query_terms"],
                     "results": safe_results,
                 },
                 ensure_ascii=False,
@@ -584,6 +588,35 @@ def _web_search_evidence_quality(results: list[dict[str, Any]]) -> str:
     if strong >= max(1, len(results) // 2):
         return "high"
     return "medium"
+
+
+def _web_search_evidence_terms(results: list[dict[str, Any]]) -> dict[str, list[str]]:
+    matched_terms = _unique_result_terms(results, "matched_query_terms")
+    matched_set = set(matched_terms)
+    missing_terms = [
+        term
+        for term in _unique_result_terms(results, "missing_query_terms")
+        if term not in matched_set
+    ]
+    return {
+        "matched_query_terms": matched_terms,
+        "missing_query_terms": missing_terms,
+    }
+
+
+def _unique_result_terms(results: list[dict[str, Any]], key: str) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for result in results:
+        value = result.get(key)
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            term = str(item).strip()
+            if term and term not in seen:
+                seen.add(term)
+                terms.append(term)
+    return terms
 
 
 def _query_terms(query: str) -> list[str]:

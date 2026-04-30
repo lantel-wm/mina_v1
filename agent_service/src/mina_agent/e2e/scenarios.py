@@ -1726,7 +1726,9 @@ SCENARIO_DATA = [
             }
         ],
         "expected_tools": [
-            {"name": "web_search", "status": "ok", "args_contains": "刷石机", "result_contains": "Missing: 打包"},
+            {"name": "web_search", "status": "ok", "args_contains": "刷石机", "result_contains": '"evidence_quality": "low", "matched_query_terms"'},
+            {"name": "web_search", "status": "ok", "args_contains": "刷石机", "result_contains": '"missing_query_terms":'},
+            {"name": "web_search", "status": "ok", "args_contains": "刷石机", "result_contains": "打包机"},
         ],
         "forbidden_tools": [
             {"name": "run_read_only_command"},
