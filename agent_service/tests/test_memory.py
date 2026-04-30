@@ -3,7 +3,7 @@ from __future__ import annotations
 from mina_agent.memory import MemoryStore
 
 
-def test_memory_search_returns_conversations_and_events(tmp_path) -> None:
+def test_memory_search_returns_agent_memories_only(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
 
     memory.add_conversation("req-1", "player-1", "user", "我喜欢云杉木基地")
@@ -13,8 +13,9 @@ def test_memory_search_returns_conversations_and_events(tmp_path) -> None:
     results = memory.search("player-1", "基地", limit=5)
 
     assert any(result.get("kind") == "agent_memory" for result in results)
-    assert any(result.get("kind") == "conversation" for result in results)
-    assert any(result.get("kind") == "event" for result in results)
+    assert all(result.get("kind") == "agent_memory" for result in results)
+    assert not any("云杉木" in result.get("content", "") for result in results)
+    assert not any("河边" in result.get("content", "") for result in results)
 
 
 def test_agent_context_loads_scoped_memory_by_importance(tmp_path) -> None:
@@ -69,7 +70,7 @@ def test_action_tool_and_model_journals_round_trip(tmp_path) -> None:
     assert len(action_results) == 1
     assert "Seed: [12345]" in action_results[0]["payload_json"]
     search_results = memory.search("player-1", "12345", limit=5)
-    assert any(result["kind"] == "action_event" for result in search_results)
+    assert search_results == []
     model = memory.recent_model_calls("req-2")[0]
     assert model["model"] == "deepseek-v4-flash"
     assert "web_search" in model["tools_json"]

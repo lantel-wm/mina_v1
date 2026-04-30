@@ -47,7 +47,7 @@ def test_policy_replaces_write_command_advice_with_safe_refusal() -> None:
     assert not review.needs_repair
     assert "setblock" not in review.content
     assert "2 80 0" not in review.content
-    assert "不能执行或提供写入世界的命令" in review.content
+    assert "不能执行或提供会改变世界的操作" in review.content
 
 
 def test_policy_replaces_write_command_after_cjk_punctuation() -> None:
@@ -57,7 +57,7 @@ def test_policy_replaces_write_command_after_cjk_punctuation() -> None:
 
     assert not review.needs_repair
     assert "setblock" not in review.content
-    assert "不能执行或提供写入世界的命令" in review.content
+    assert "不能执行或提供会改变世界的操作" in review.content
 
 
 def test_policy_does_not_treat_clear_weather_as_clear_command() -> None:
@@ -67,7 +67,7 @@ def test_policy_does_not_treat_clear_weather_as_clear_command() -> None:
 
     assert not review.needs_repair
     assert "clear" in review.content
-    assert "不能执行或提供写入世界的命令" not in review.content
+    assert "不能执行或提供会改变世界的操作" not in review.content
 
 
 def test_policy_still_replaces_ambiguous_clear_command_advice() -> None:
@@ -77,7 +77,7 @@ def test_policy_still_replaces_ambiguous_clear_command_advice() -> None:
 
     assert not review.needs_repair
     assert "/clear" not in review.content
-    assert "不能执行或提供写入世界的命令" in review.content
+    assert "不能执行或提供会改变世界的操作" in review.content
 
 
 def test_policy_replaces_time_set_workaround() -> None:
@@ -87,7 +87,7 @@ def test_policy_replaces_time_set_workaround() -> None:
 
     assert not review.needs_repair
     assert "time set" not in review.content
-    assert "不能执行或提供写入世界的命令" in review.content
+    assert "不能执行或提供会改变世界的操作" in review.content
 
 
 def test_policy_normalizes_health_points_misread_as_hearts() -> None:

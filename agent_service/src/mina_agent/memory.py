@@ -411,6 +411,18 @@ class MemoryStore:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
+    def conversation_history(self, player_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                select request_id, role, content, created_at from conversations
+                where player_id = ?
+                order by id asc
+                """,
+                (player_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def agent_context(
         self,
         player_id: str,
@@ -450,24 +462,23 @@ class MemoryStore:
         with self._connect() as conn:
             try:
                 scope_placeholders = ",".join("?" for _ in agent_scope_keys)
-                agent_scope_predicate = ""
-                agent_scope_args: tuple[str, ...] = ()
                 if agent_scope_keys:
-                    agent_scope_predicate = f"or (kind = 'agent_memory' and scope_id in ({scope_placeholders}))"
-                    agent_scope_args = tuple(agent_scope_keys)
+                    fts_scope_predicate = f"and scope_id in ({scope_placeholders})"
+                    fts_scope_args: tuple[str, ...] = tuple(agent_scope_keys)
+                else:
+                    fts_scope_predicate = "and 0"
+                    fts_scope_args = ()
                 fts_rows = conn.execute(
                     f"""
                     select kind, label, content, bm25(memory_fts_v2) as score
                     from memory_fts_v2
                     where memory_fts_v2 match ?
-                      and (
-                        (kind in ('conversation', 'event') and scope_id = ?)
-                        {agent_scope_predicate}
-                      )
+                      and kind = 'agent_memory'
+                      {fts_scope_predicate}
                     order by score
                     limit ?
                     """,
-                    (_fts_query(query), player_id, *agent_scope_args, limit),
+                    (_fts_query(query), *fts_scope_args, limit),
                 ).fetchall()
             except sqlite3.OperationalError:
                 fts_rows = []
@@ -482,42 +493,7 @@ class MemoryStore:
                 """,
                 (*_scope_where_args(_agent_scope_filters(player_id, world_id)), pattern, limit),
             ).fetchall()
-            conversations = conn.execute(
-                """
-                select 'conversation' as kind, role as label, content, created_at
-                from conversations
-                where player_id = ? and content like ?
-                order by id desc
-                limit ?
-                """,
-                (player_id, pattern, limit),
-            ).fetchall()
-            events = conn.execute(
-                """
-                select 'event' as kind, event_type as label, payload_json as content, created_at
-                from events
-                where player_id = ? and payload_json like ?
-                order by importance desc, id desc
-                limit ?
-                """,
-                (player_id, pattern, limit),
-            ).fetchall()
-            action_events = conn.execute(
-                """
-                select 'action_event' as kind, ae.event_type as label, ae.payload_json as content, ae.created_at
-                from action_events ae
-                where ae.payload_json like ?
-                  and exists (
-                    select 1
-                    from conversations c
-                    where c.request_id = ae.request_id and c.player_id = ?
-                  )
-                order by ae.id desc
-                limit ?
-                """,
-                (pattern, player_id, limit),
-            ).fetchall()
-        merged = [dict(row) for row in fts_rows + agent_memories + conversations + events + action_events]
+        merged = [dict(row) for row in fts_rows + agent_memories]
         return merged[:limit]
 
 

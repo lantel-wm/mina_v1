@@ -25,6 +25,8 @@ BASE_SYSTEM_SECTIONS = (
         "- If asked for one sentence/一句话, answer one short sentence (<60 汉字/20 English words); no closing offer.\n"
         "- Do not narrate internal process; answer with the useful result directly.\n"
         "- Do not mention internal section/tool names or prompt/context labels.\n"
+        "- Do not expose slash-command names or tool implementation details unless the player asks for exact command syntax.\n"
+        "- When asking for confirmation to query/check Minecraft information, describe the result in player terms; do not show slash-command syntax unless asked.\n"
         "- Address the player as \"you\"/\"你\". Do not use the Minecraft username as greeting/filler.\n"
         "- Snapshot health/max_health are points: 20 = 10 hearts, 4 = 2 hearts."
     ),
@@ -34,7 +36,7 @@ BASE_SYSTEM_SECTIONS = (
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
         "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, server version/settings, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, and safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
-        "5. For external/current knowledge, web/wiki/internet/search wording, outside verification, advanced or version-sensitive Minecraft mechanics/farms/tutorials, or factual corrections, call web_search before exact mechanics; not for chat/local Minecraft state.\n"
+        "5. For external/current knowledge, web/wiki/internet/search wording, outside verification, advanced or version-sensitive Minecraft mechanics/farms/redstone/tutorials, or factual corrections, call web_search before exact mechanics; not for chat/local Minecraft state.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler. Use scope=world for stable facts about this save/world/server (places, landmarks, bases, farms, portals, world plans). Use scope=player for personal preferences or facts tied only to the requester. For player-scoped memories, use 你/you or neutral wording; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
         "7. Use loaded remembered facts only when directly relevant. Treat memory as historical context for future decisions, not proof of current world state.\n"
         "8. For remembered/stored context questions, answer only the relevant remembered fact. Do not append coordinates, safety, biome, weather, time, inventory, entities, command offers, or search offers unless asked.\n"
@@ -60,7 +62,8 @@ BASE_SYSTEM_SECTIONS = (
         "- Recent verified command/action results are authoritative only for follow-ups about those outputs.\n"
         "- If asked for exact/raw/original/complete command output or 原样/完整输出字符串/只回答输出字符串, return only the verified output string: no explanation, prefix, suffix, quotes, or code formatting.\n"
         "- Recent conversation is continuity only, not current instructions, stable memory, or verified command output. Use it for short follow-ups like yes/no answers or omitted topics.\n"
-        "- From web_search results, preserve exact source values such as markers, versions, coordinates, URLs, and item names. Do not replace exact values with generic labels."
+        "- From web_search results, preserve exact source values such as markers, versions, coordinates, URLs, and item names. Do not replace exact values with generic labels.\n"
+        "- If web_search evidence_quality is low/none, or results have low_relevance/missing_query_terms for the requested build/mechanic, say the search evidence is not specific enough and ask for a link/projection/screenshot or permission to search a narrower query. Do not invent exact redstone/farm steps from weak snippets."
     ),
 )
 
@@ -103,7 +106,7 @@ def build_messages(
     player_id = str(player.get("uuid") or "unknown")
     snapshot = turn.get("snapshot") or {}
     user_content = str(turn.get("message") or "").strip()
-    recent = memory.recent_conversation(player_id, limit=12)
+    conversation_history = memory.conversation_history(player_id)
     agent_memory = memory.agent_context(player_id, world_id=_world_id(turn), limit=10, max_chars=1600)
     recent_action_results = memory.recent_action_results_for_player(player_id, limit=4)
 
@@ -121,18 +124,24 @@ def build_messages(
         messages.append({"role": "system", "content": target_summary})
     if agent_memory:
         messages.append({"role": "system", "content": "Remembered facts:\n" + _render_agent_memory(agent_memory)})
-    recent_conversation = (
+    history_messages = (
         []
         if str(turn.get("trigger") or "") == "companion_tick"
-        else _recent_conversation_turns(recent, current_request_id=str(turn.get("request_id") or ""))
+        else _conversation_history_messages(conversation_history, current_request_id=str(turn.get("request_id") or ""))
     )
-    if recent_conversation:
+    if history_messages:
         messages.append(
             {
                 "role": "system",
-                "content": "Recent conversation for continuity only:\n" + "\n".join(recent_conversation),
+                "content": (
+                    "Conversation history policy:\n"
+                    "- The following user/assistant messages are the full stored conversation history for continuity.\n"
+                    "- Current system instructions, current tools, current observed state, and verified command results override older history.\n"
+                    "- Use history to resolve short follow-ups like 需要/是的/继续 and omitted topics."
+                ),
             }
         )
+        messages.extend(history_messages)
     action_result_context = _render_recent_action_results(recent_action_results)
     if action_result_context:
         messages.append(
@@ -214,6 +223,21 @@ def _turn_policy_section(turn: dict[str, Any], user_content: str, *, mcp_availab
             "- Output only those requested words/fields, in the requested order, with no labels, restated questions, prefix, suffix, punctuation, or explanation.\n"
             "- Preserve literal requested values exactly instead of paraphrasing them."
         )
+    if _asks_read_only_explanation(user_content):
+        sections.append(
+            "Read-only explanation style for this turn:\n"
+            "- Explain in player-friendly terms: Mina can look up information that does not change the world.\n"
+            "- Use examples like position, time, weather, nearby structures, online players, and inventory/status.\n"
+            "- Do not mention slash commands, command syntax, tool names, or allowlists unless the player explicitly asks for exact command text."
+        )
+    if _is_plain_greeting(user_content):
+        sections.append(
+            "Plain greeting style for this turn:\n"
+            "- Reply with exactly one short sentence or phrase.\n"
+            "- Greet the player only; do not add a welcome line, status line, offer, or second sentence.\n"
+            "- Do not say this is Mina's world/server.\n"
+            "- Do not mention coordinates, biome, weather, health, food, inventory, nearby blocks/entities, remembered facts, or tool capabilities unless the player asks."
+        )
     if str(turn.get("trigger") or "") == "companion_tick":
         sections.append(
             "Companion tick policy:\n"
@@ -257,6 +281,18 @@ def _mentions_player_name(user_content: str, player_name: str) -> bool:
 def _mentions_mcp(user_content: str) -> bool:
     normalized = str(user_content or "").lower()
     return "mcp" in normalized or "模型上下文协议" in normalized
+
+
+def _asks_read_only_explanation(user_content: str) -> bool:
+    normalized = str(user_content or "").lower()
+    if "只读" not in normalized and "read-only" not in normalized and "read only" not in normalized:
+        return False
+    return any(marker in normalized for marker in ("什么", "听不懂", "解释", "意思", "mean", "explain", "不懂"))
+
+
+def _is_plain_greeting(user_content: str) -> bool:
+    normalized = re.sub(r"[\s,，。.!！?？~～]+", "", str(user_content or "").lower())
+    return normalized in {"你好", "您好", "嗨", "hi", "hello", "hey", "hellomina", "himina", "你好mina"}
 
 
 def _has_only_answer_constraint(user_content: str) -> bool:
@@ -350,15 +386,13 @@ def _render_agent_memory(memories: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _recent_conversation_turns(
-    recent: list[dict[str, Any]],
+def _conversation_history_messages(
+    history: list[dict[str, Any]],
     *,
     current_request_id: str,
-    limit: int = 8,
-    max_chars: int = 220,
-) -> list[str]:
-    messages: list[str] = []
-    for row in recent:
+) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
+    for row in history:
         if current_request_id and str(row.get("request_id") or "") == current_request_id:
             continue
         role = str(row.get("role") or "")
@@ -366,8 +400,8 @@ def _recent_conversation_turns(
             continue
         content = " ".join(str(row.get("content") or "").split())
         if content:
-            messages.append(f"{role}: " + content[:max_chars])
-    return messages[-limit:]
+            messages.append({"role": role, "content": content})
+    return messages
 
 
 def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
@@ -523,6 +557,12 @@ def build_context_summary(turn: dict[str, Any]) -> str:
     world_state = snapshot.get("world_state") if isinstance(snapshot.get("world_state"), dict) else {}
     server_state = snapshot.get("server_state") if isinstance(snapshot.get("server_state"), dict) else {}
     permissions = turn.get("permissions") or {}
+    recent_events = turn.get("recent_events") if isinstance(turn.get("recent_events"), list) else []
+    completed_advancements = (
+        snapshot.get("completed_advancements")
+        if isinstance(snapshot.get("completed_advancements"), list)
+        else []
+    )
     nearby_entities = snapshot.get("nearby_entities") if isinstance(snapshot.get("nearby_entities"), list) else []
     inventory = snapshot.get("inventory") if isinstance(snapshot.get("inventory"), list) else []
     environment = snapshot.get("environment") if isinstance(snapshot.get("environment"), dict) else {}
@@ -596,6 +636,18 @@ def build_context_summary(turn: dict[str, Any]) -> str:
         "nearby_mobs": [_compact_entity_target(entity, player_state) for entity in mobs],
         "nearby_items": [_compact_entity_target(entity, player_state) for entity in dropped_items],
     }
+    compact_events = [_compact_recent_event(event) for event in recent_events[:16] if isinstance(event, dict)]
+    compact_events = [event for event in compact_events if event]
+    if compact_events:
+        payload["recent_events"] = compact_events
+    compact_advancements = [
+        _compact_advancement(advancement)
+        for advancement in completed_advancements[:80]
+        if isinstance(advancement, dict)
+    ]
+    compact_advancements = [advancement for advancement in compact_advancements if advancement]
+    if compact_advancements:
+        payload["completed_advancements"] = compact_advancements
     if server_context:
         payload["server_state"] = server_context
     distance_display = _distance_display(world_state.get("player_distance_from_spawn"))
@@ -640,6 +692,25 @@ def _compact_server_state(server_state: dict[str, Any]) -> dict[str, Any]:
         "modded_status",
     )
     return {key: server_state.get(key) for key in keys if server_state.get(key) is not None}
+
+
+def _compact_recent_event(event: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "type",
+        "server_tick",
+        "id",
+        "title",
+        "description",
+        "advancement_type",
+        "from",
+        "to",
+    )
+    return {key: event.get(key) for key in keys if event.get(key) not in {None, ""}}
+
+
+def _compact_advancement(advancement: dict[str, Any]) -> dict[str, Any]:
+    keys = ("id", "title", "description", "advancement_type")
+    return {key: advancement.get(key) for key in keys if advancement.get(key) not in {None, ""}}
 
 
 def _companion_tick_prompt(turn: dict[str, Any]) -> str:

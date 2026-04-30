@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-UNSAFE_WRITE_REFUSAL = "抱歉，我不能执行或提供写入世界的命令。我可以帮你查询只读信息，或说明当前方块和世界状态。"
+UNSAFE_WRITE_REFUSAL = "抱歉，我不能执行或提供会改变世界的操作。我可以帮你查看不会改变世界的信息，比如位置、时间、天气、附近结构和当前状态。"
 MEMORY_NOT_SAVED = "我还没有把这条信息保存进记忆。请再说一次要保存的内容。"
 
 

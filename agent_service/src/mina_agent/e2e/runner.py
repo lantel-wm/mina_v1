@@ -541,9 +541,9 @@ class E2ERunner:
             return False
         if expected.status and call.get("status") != expected.status:
             return False
-        if expected.args_contains and expected.args_contains not in str(call.get("args_json") or ""):
+        if expected.args_contains and not _json_blob_contains(call.get("args_json"), expected.args_contains):
             return False
-        if expected.result_contains and expected.result_contains not in str(call.get("result_json") or ""):
+        if expected.result_contains and not _json_blob_contains(call.get("result_json"), expected.result_contains):
             return False
         return True
 
@@ -1169,6 +1169,26 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
                 ),
             },
         ]
+    if "潜影贝" in normalized and "主世界" in normalized:
+        return [
+            {
+                "title": "Mina E2E Shulker Farm Overworld Fixture",
+                "url": "https://example.invalid/mina-e2e/shulker-overworld",
+                "content": (
+                    "MinaE2E-Shulker-Overworld-Possible. Some Minecraft Java 1.21 shulker farm tutorials "
+                    "transport a shulker from the End and place the processing module in the Overworld, "
+                    "so the safe answer is that an Overworld build can be possible depending on the design."
+                ),
+            }
+        ]
+    if "刷石机" in normalized and ("打包" in normalized or "打包机" in normalized):
+        return [
+            {
+                "title": "Mina E2E Cobblestone Generator Fixture",
+                "url": "https://example.invalid/mina-e2e/cobble-generator",
+                "content": "This fixture only covers cobblestone generators. Missing: 打包 建造 投影",
+            }
+        ]
     return [
         {
             "title": "Mina E2E Search Fixture",
@@ -1438,6 +1458,35 @@ def parse_payload_json(event: dict[str, Any]) -> dict[str, Any]:
             return {}
         return parsed if isinstance(parsed, dict) else {}
     return {}
+
+
+def _json_blob_contains(blob: Any, needle: str, *, _depth: int = 0) -> bool:
+    if not needle:
+        return True
+    if _depth > 6:
+        return False
+    if blob is None:
+        return False
+    raw = str(blob)
+    if needle in raw:
+        return True
+    if isinstance(blob, str):
+        try:
+            parsed = json.loads(blob)
+        except json.JSONDecodeError:
+            return False
+        return _json_blob_contains(parsed, needle, _depth=_depth + 1)
+    if isinstance(blob, dict):
+        try:
+            rendered = json.dumps(blob, ensure_ascii=False)
+        except TypeError:
+            rendered = raw
+        if needle in rendered:
+            return True
+        return any(_json_blob_contains(value, needle, _depth=_depth + 1) for value in blob.values())
+    if isinstance(blob, list):
+        return any(_json_blob_contains(value, needle, _depth=_depth + 1) for value in blob)
+    return False
 
 
 def scenario_artifact_payload(scenario: Scenario) -> dict[str, Any]:

@@ -229,6 +229,7 @@ public final class MinaTestCommands {
 			case "nearby_passive_mob" -> nearbyPassiveMob(source);
 			case "nearby_item_drop" -> nearbyItemDrop(source);
 			case "inventory_sample" -> inventorySample(source);
+			case "grant_eye_spy_advancement" -> grantEyeSpyAdvancement(source);
 			default -> {
 				source.sendFailure(Component.literal("Unknown Mina test world mutate operation: " + operation));
 				yield 0;
@@ -275,6 +276,17 @@ public final class MinaTestCommands {
 		requester.getFoodData().setSaturation(5.0F);
 		requester.setHealth(4.0F);
 		source.sendSuccess(() -> Component.literal("Mina test world mutate low_health complete."), false);
+		return 1;
+	}
+
+	private int grantEyeSpyAdvancement(CommandSourceStack source) {
+		ServerPlayer requester = source.getServer().getPlayerList().getPlayer(TEST_PLAYER);
+		if (requester == null) {
+			source.sendFailure(Component.literal("Test requester is not online."));
+			return 0;
+		}
+		run(source.getServer(), "advancement grant " + TEST_PLAYER + " only minecraft:story/follow_ender_eye");
+		source.sendSuccess(() -> Component.literal("Mina test world mutate grant_eye_spy_advancement complete."), false);
 		return 1;
 	}
 

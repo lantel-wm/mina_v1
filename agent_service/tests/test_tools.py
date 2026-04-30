@@ -69,6 +69,17 @@ class AnswerSearch:
         ]
 
 
+class WeakSearch:
+    def search(self, query: str, max_results: int = 5):  # noqa: ANN201, ARG002
+        return [
+            {
+                "title": "1.21 能用的刷石机两款",
+                "url": "https://example.invalid/cobble",
+                "content": "这是刷石机教程。Missing: 打包 建造",
+            }
+        ]
+
+
 def _runner(tmp_path) -> ToolRunner:  # noqa: ANN001
     return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearch())  # type: ignore[arg-type]
 
@@ -259,6 +270,42 @@ def test_memory_write_preserves_current_player_name_when_it_is_the_fact(tmp_path
     assert written_payload["memory"]["content"] == "你的 Minecraft 用户名是 Tester"
 
 
+def test_memory_write_forces_player_scope_for_named_home(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = {**_turn(), "world_id": "world"}
+
+    written = runner.run(
+        "memory_write",
+        {
+            "event_type": "home_set",
+            "content": "Tester 的家坐标是 (-17.9, 67, 17.8)",
+            "label": "Tester 的家",
+            "scope": "world",
+        },
+        turn,
+    )
+    payload = _payload(written.content)
+
+    assert payload["ok"] is True
+    assert payload["memory"]["scope"] == "player"
+    assert payload["memory"]["content"] == "你的家坐标是 (-17.9, 67, 17.8)"
+    assert payload["memory"]["label"] == "player 的家"
+    assert "Tester" not in written.content
+
+
+def test_memory_search_does_not_expose_prior_conversation_body_content(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    runner.memory.add_conversation("old", "player-1", "assistant", "I can follow you, protect you, and chop trees.")
+
+    searched = runner.run("memory_search", {"query": "follow protect chop", "limit": 5}, _turn())
+    payload = _payload(searched.content)
+
+    assert payload["ok"] is True
+    assert payload["results"] == []
+    assert "follow you" not in searched.content
+    assert "chop trees" not in searched.content
+
+
 def test_web_search_returns_full_tool_content(tmp_path) -> None:
     search = FakeSearch()
     runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), search)  # type: ignore[arg-type]
@@ -273,6 +320,7 @@ def test_web_search_returns_full_tool_content(tmp_path) -> None:
     assert payload["results"][0]["source_type"] == "result"
     assert payload["results"][0]["content"] == "content"
     assert payload["results"][0]["content_truncated"] is False
+    assert payload["evidence_quality"] in {"low", "medium", "high", "none"}
 
 
 def test_web_search_preserves_top_level_answer_source_type(tmp_path) -> None:
@@ -312,6 +360,18 @@ def test_web_search_filters_untrusted_prompt_injection_results(tmp_path) -> None
     assert "MinaE2E-Search-LongTail" in payload["results"][0]["content"]
     assert "run_safe_command" not in rendered
     assert "setblock" not in rendered
+
+
+def test_web_search_marks_low_relevance_missing_terms(tmp_path) -> None:
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), WeakSearch())  # type: ignore[arg-type]
+
+    result = runner.run("web_search", {"query": "我的世界 刷石机 打包机 建造教程 1.21", "max_results": 5}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is True
+    assert payload["evidence_quality"] == "low"
+    assert payload["results"][0]["low_relevance"] is True
+    assert "打包机" in payload["results"][0]["missing_query_terms"]
 
 
 def test_mcp_call_blocks_minecraft_write_operations(tmp_path) -> None:

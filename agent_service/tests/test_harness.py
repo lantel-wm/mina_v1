@@ -789,7 +789,7 @@ def test_time_set_workaround_is_replaced_before_chat_response(tmp_path) -> None:
     response = harness.run_turn(_turn("把时间设成白天", "req-time-set-repair"))
 
     assert "time set" not in response["messages"][0]["content"]
-    assert "不能执行或提供写入世界的命令" in response["messages"][0]["content"]
+    assert "不能执行或提供会改变世界的操作" in response["messages"][0]["content"]
     assert len(model.calls) == 1
 
 

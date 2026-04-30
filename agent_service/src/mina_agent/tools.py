@@ -241,7 +241,8 @@ class ToolRunner:
         except Exception as exc:  # noqa: BLE001 - tool calls must return model-visible errors.
             LOGGER.info("web_search unavailable query=%s error=%s", query, exc)
             return ToolResult(content=json.dumps({"ok": False, "error": f"web_search unavailable: {exc}"}, ensure_ascii=False))
-        safe_results, filtered_results = _safe_web_search_results(results, max_results=max_results)
+        safe_results, filtered_results = _safe_web_search_results(results, max_results=max_results, query=query)
+        evidence_quality = _web_search_evidence_quality(safe_results)
         LOGGER.info("web_search result_count=%s safe_result_count=%s filtered_results=%s", len(results), len(safe_results), filtered_results)
         return ToolResult(
             content=json.dumps(
@@ -251,6 +252,7 @@ class ToolRunner:
                     "result_count": len(results),
                     "safe_result_count": len(safe_results),
                     "filtered_results": filtered_results,
+                    "evidence_quality": evidence_quality,
                     "results": safe_results,
                 },
                 ensure_ascii=False,
@@ -276,8 +278,10 @@ class ToolRunner:
         scope = str(args.get("scope") or "player").strip().lower()
         if scope not in {"player", "world", "global"}:
             scope = "player"
-        scope_id = _memory_scope_id(scope, player_id, turn)
         label = str(args.get("label") or event_type or "note")
+        if _should_force_player_memory_scope(scope, event_type, label, content, _player_name(turn)):
+            scope = "player"
+        scope_id = _memory_scope_id(scope, player_id, turn)
         if scope == "player":
             player_name = _player_name(turn)
             content = _sanitize_player_memory_content(content, player_name)
@@ -374,9 +378,6 @@ def _world_id(turn: dict[str, Any]) -> str | None:
 def _model_visible_memory_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     kind_labels = {
         "agent_memory": "remembered_fact",
-        "conversation": "prior_message",
-        "event": "stored_event",
-        "action_event": "verified_command_result",
     }
     visible: list[dict[str, Any]] = []
     for result in results:
@@ -416,6 +417,37 @@ def _sanitize_player_memory_label(label: str, player_name: str) -> str:
     return re.sub(rf"(?i)@?{re.escape(name)}", "player", text).strip()
 
 
+def _should_force_player_memory_scope(scope: str, event_type: str, label: str, content: str, player_name: str) -> bool:
+    if scope == "player":
+        return False
+    haystack = " ".join(str(part or "") for part in (event_type, label, content)).lower()
+    if not haystack:
+        return False
+    name = str(player_name or "").strip().lower()
+    if "home" in haystack or "家" in haystack or "home_set" in haystack:
+        return True
+    personal_markers = (
+        "我的",
+        "我家",
+        "你的",
+        "你家",
+        "my ",
+        "my_",
+        "your ",
+        "your_",
+    )
+    place_markers = ("基地", "base", "home", "家")
+    if any(marker in haystack for marker in personal_markers) and any(marker in haystack for marker in place_markers):
+        return True
+    if name and name in haystack and not _username_itself_is_memory_fact(haystack):
+        return True
+    return False
+
+
+def _username_itself_is_memory_fact(value: str) -> bool:
+    return any(marker in value for marker in ("用户名", "username", "user name", "minecraft name"))
+
+
 def _looks_like_minecraft_write(tool: str, arguments: dict[str, Any]) -> bool:
     haystack = tool + " " + json.dumps(arguments, ensure_ascii=False)
     for token in _command_tokens(haystack):
@@ -448,12 +480,13 @@ def _bounded_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, parsed))
 
 
-def _safe_web_search_results(results: Any, *, max_results: int) -> tuple[list[dict[str, Any]], int]:
+def _safe_web_search_results(results: Any, *, max_results: int, query: str = "") -> tuple[list[dict[str, Any]], int]:
     if not isinstance(results, list):
         return [], 0
     safe_results: list[dict[str, Any]] = []
     filtered_results = 0
     content_budget = WEB_SEARCH_TOTAL_CONTENT_LIMIT
+    query_terms = _query_terms(query)
     for source_index, item in enumerate(results, start=1):
         if not isinstance(item, dict):
             filtered_results += 1
@@ -470,6 +503,7 @@ def _safe_web_search_results(results: Any, *, max_results: int) -> tuple[list[di
         per_result_limit = min(WEB_SEARCH_CONTENT_LIMIT, max(0, content_budget))
         content, content_truncated = _excerpt_with_flag(raw_content, per_result_limit)
         content_budget -= len(content)
+        relevance = _search_result_relevance(query_terms, title, content)
         safe_results.append(
             {
                 "source_index": source_index,
@@ -478,11 +512,87 @@ def _safe_web_search_results(results: Any, *, max_results: int) -> tuple[list[di
                 "url": url,
                 "content": content,
                 "content_truncated": content_truncated,
+                **relevance,
             }
         )
         if len(safe_results) >= max_results:
             break
     return safe_results, filtered_results
+
+
+def _web_search_evidence_quality(results: list[dict[str, Any]]) -> str:
+    if not results:
+        return "none"
+    strong = 0
+    weak = 0
+    for result in results:
+        if result.get("low_relevance") is True:
+            weak += 1
+            continue
+        matched = result.get("matched_query_terms")
+        if isinstance(matched, list) and len(matched) >= 2:
+            strong += 1
+        else:
+            weak += 1
+    if strong == 0:
+        return "low"
+    if strong >= max(1, len(results) // 2):
+        return "high"
+    return "medium"
+
+
+def _query_terms(query: str) -> list[str]:
+    raw_terms = [term.strip().lower() for term in re.split(r"\s+", str(query or "")) if term.strip()]
+    terms: list[str] = []
+    ignored = {
+        "minecraft",
+        "我的世界",
+        "mc",
+        "教程",
+        "建造",
+        "方法",
+        "怎么",
+        "如何",
+        "当前",
+        "版本",
+    }
+    for term in raw_terms:
+        normalized = re.sub(r"^[\"'“”‘’]+|[\"'“”‘’]+$", "", term)
+        if not normalized or normalized in ignored:
+            continue
+        if normalized not in terms:
+            terms.append(normalized)
+    return terms[:8]
+
+
+def _search_result_relevance(query_terms: list[str], title: str, content: str) -> dict[str, Any]:
+    haystack = f"{title}\n{content}".lower()
+    matched = [term for term in query_terms if term in haystack]
+    missing = [term for term in query_terms if term not in haystack]
+    missing_markers = _missing_marker_terms(haystack)
+    marker_matches = [
+        term
+        for term in query_terms
+        if any(marker in term or term in marker for marker in missing_markers)
+    ]
+    if marker_matches:
+        missing = sorted(set(missing + marker_matches))
+    low_relevance = bool(marker_matches) or (bool(query_terms) and not matched)
+    return {
+        "matched_query_terms": matched,
+        "missing_query_terms": missing,
+        "low_relevance": low_relevance,
+    }
+
+
+def _missing_marker_terms(value: str) -> list[str]:
+    markers: list[str] = []
+    for match in re.finditer(r"missing\s*[:：]\s*([^\n。；;]+)", value, flags=re.IGNORECASE):
+        for term in re.split(r"[\s,，|/]+", match.group(1)):
+            cleaned = term.strip().lower()
+            if cleaned:
+                markers.append(cleaned)
+    return markers
 
 
 def _unsafe_web_search_text(value: str) -> bool:

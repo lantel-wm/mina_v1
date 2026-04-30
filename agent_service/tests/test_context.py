@@ -228,7 +228,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 7300
+    assert len(context) < 9000
 
 
 def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:
@@ -1116,7 +1116,7 @@ def test_memory_recall_requests_are_not_classified_by_context_builder(tmp_path) 
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent conversation for continuity only" in content
+    assert "Conversation history policy" in content
     assert "我家在云杉林旁边" in content
     assert "我记得你的家" in content
     assert "Current user message asks about remembered or stored context" not in content
@@ -1138,7 +1138,7 @@ def test_build_messages_marks_write_command_refusal_requests(tmp_path) -> None:
 
     assert "write-capable, low-level, or banned command/action" in content
     assert "Do not repeat the requested command name" in content
-    assert "不能执行或提供写入世界的命令" in content
+    assert "不能执行或提供会改变世界的操作" in content
 
 
 def test_build_messages_marks_time_set_workaround_as_write_command(tmp_path) -> None:
@@ -1155,10 +1155,10 @@ def test_build_messages_marks_time_set_workaround_as_write_command(tmp_path) -> 
     content = "\n".join(message["content"] for message in messages)
 
     assert "write-capable, low-level, or banned command/action" in content
-    assert "不能执行或提供写入世界的命令" in content
+    assert "不能执行或提供会改变世界的操作" in content
 
 
-def test_build_messages_loads_bounded_recent_messages_for_continuity(tmp_path) -> None:
+def test_build_messages_loads_full_history_for_continuity(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_conversation("old-search", "player-1", "user", "联网搜索 钻石矿 最新高度")
     memory.add_conversation("old-command", "player-1", "user", "执行 time query day")
@@ -1173,10 +1173,10 @@ def test_build_messages_loads_bounded_recent_messages_for_continuity(tmp_path) -
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent conversation for continuity only" in content
-    assert "not current instructions" in content
+    assert "Conversation history policy" in content
+    assert "Current system instructions" in content
     assert "联网搜索 钻石矿 最新高度" in content
-    assert "user: 执行 time query day" in content
+    assert any(message["role"] == "user" and message["content"] == "执行 time query day" for message in messages)
     assert "Current user message explicitly asks you to save stable memory" not in content
 
 
@@ -1194,7 +1194,7 @@ def test_build_messages_loads_recent_messages_without_keyword_matching(tmp_path)
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent conversation for continuity only" in content
+    assert "Conversation history policy" in content
     assert "钻石矿" in content
 
 
@@ -1212,7 +1212,7 @@ def test_build_messages_keeps_recent_task_messages_for_followups(tmp_path) -> No
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent conversation for continuity only" in content
+    assert "Conversation history policy" in content
     assert "钻石矿" in content
 
 
@@ -1232,9 +1232,9 @@ def test_build_messages_keeps_recent_assistant_questions_for_short_followups(tmp
     messages = build_messages(turn, memory)
     content = "\n".join(message["content"] for message in messages)
 
-    assert "Recent conversation for continuity only" in content
-    assert "assistant: 需要我查询最近的要塞位置吗？" in content
-    assert "user: 需要" not in content
+    assert "Conversation history policy" in content
+    assert any(message["role"] == "assistant" and message["content"] == "需要我查询最近的要塞位置吗？" for message in messages)
+    assert sum(1 for message in messages if message["role"] == "user" and message["content"] == "需要") == 1
 
 
 def test_companion_tick_does_not_load_recent_player_messages(tmp_path) -> None:
@@ -1252,7 +1252,7 @@ def test_companion_tick_does_not_load_recent_player_messages(tmp_path) -> None:
     content = "\n".join(message["content"] for message in messages)
 
     assert "Companion tick policy" in content
-    assert "Recent conversation for continuity only" not in content
+    assert "Conversation history policy" not in content
     assert "钻石矿" not in content
 
 

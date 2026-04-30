@@ -3,6 +3,9 @@ package com.mina.game;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mina.config.MinaConfig;
+import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.advancements.AdvancementProgress;
+import net.minecraft.advancements.DisplayInfo;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -24,9 +27,16 @@ import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class MinaSnapshotter {
+	private final Map<UUID, ObservationState> knownObservationState = new ConcurrentHashMap<>();
+
 	public JsonObject createTurnPayload(
 		MinecraftServer server,
 		ServerPlayer player,
@@ -44,7 +54,7 @@ public final class MinaSnapshotter {
 		payload.add("player", player(player, server, config));
 		payload.add("permissions", permissions(player, server, config));
 		payload.add("snapshot", snapshot(server, player, config));
-		payload.add("recent_events", new JsonArray());
+		payload.add("recent_events", recentEvents(server, player));
 		return payload;
 	}
 
@@ -58,7 +68,112 @@ public final class MinaSnapshotter {
 		snapshot.add("nearby_entities", nearbyEntities(level, player, config));
 		snapshot.add("nearby_blocks", nearbyBlocks(level, player));
 		snapshot.add("environment", environment(level, player));
+		snapshot.add("completed_advancements", completedAdvancements(server, player, 80));
 		return snapshot;
+	}
+
+	private JsonArray recentEvents(MinecraftServer server, ServerPlayer player) {
+		ObservationState current = observeState(server, player);
+		ObservationState previous = knownObservationState.put(player.getUUID(), current);
+		JsonArray events = new JsonArray();
+		if (previous == null) {
+			return events;
+		}
+		if (!current.dimension.equals(previous.dimension)) {
+			JsonObject event = baseEvent(server, "dimension_changed");
+			event.addProperty("from", previous.dimension);
+			event.addProperty("to", current.dimension);
+			events.add(event);
+		}
+		if (!current.gameMode.equals(previous.gameMode)) {
+			JsonObject event = baseEvent(server, "game_mode_changed");
+			event.addProperty("from", previous.gameMode);
+			event.addProperty("to", current.gameMode);
+			events.add(event);
+		}
+		int advancementEvents = 0;
+		for (AdvancementSnapshot advancement : current.advancements) {
+			if (previous.advancementIds.contains(advancement.id())) {
+				continue;
+			}
+			JsonObject event = baseEvent(server, "advancement_completed");
+			event.addProperty("id", advancement.id());
+			event.addProperty("title", advancement.title());
+			event.addProperty("description", advancement.description());
+			event.addProperty("advancement_type", advancement.type());
+			events.add(event);
+			advancementEvents++;
+			if (advancementEvents >= 20) {
+				break;
+			}
+		}
+		return events;
+	}
+
+	private ObservationState observeState(MinecraftServer server, ServerPlayer player) {
+		List<AdvancementSnapshot> advancements = completedAdvancementSnapshots(server, player, 256);
+		Set<String> ids = new HashSet<>();
+		for (AdvancementSnapshot advancement : advancements) {
+			ids.add(advancement.id());
+		}
+		return new ObservationState(
+			player.level().dimension().identifier().toString(),
+			player.gameMode().getName(),
+			advancements,
+			ids
+		);
+	}
+
+	private JsonObject baseEvent(MinecraftServer server, String type) {
+		JsonObject event = new JsonObject();
+		event.addProperty("type", type);
+		event.addProperty("server_tick", server.getTickCount());
+		return event;
+	}
+
+	private JsonArray completedAdvancements(MinecraftServer server, ServerPlayer player, int limit) {
+		JsonArray array = new JsonArray();
+		for (AdvancementSnapshot advancement : completedAdvancementSnapshots(server, player, limit)) {
+			JsonObject json = new JsonObject();
+			json.addProperty("id", advancement.id());
+			json.addProperty("title", advancement.title());
+			json.addProperty("description", advancement.description());
+			json.addProperty("advancement_type", advancement.type());
+			array.add(json);
+		}
+		return array;
+	}
+
+	private List<AdvancementSnapshot> completedAdvancementSnapshots(MinecraftServer server, ServerPlayer player, int limit) {
+		List<AdvancementSnapshot> completed = new ArrayList<>();
+		for (AdvancementHolder holder : server.getAdvancements().getAllAdvancements()) {
+			AdvancementProgress progress = player.getAdvancements().getOrStartProgress(holder);
+			if (!progress.isDone()) {
+				continue;
+			}
+			completed.add(advancementSnapshot(holder));
+			if (completed.size() >= limit) {
+				break;
+			}
+		}
+		completed.sort(Comparator.comparing(AdvancementSnapshot::id));
+		return completed;
+	}
+
+	private AdvancementSnapshot advancementSnapshot(AdvancementHolder holder) {
+		String id = holder.id().toString();
+		String title = id;
+		String description = "";
+		String type = "";
+		if (holder.value().display().isPresent()) {
+			DisplayInfo display = holder.value().display().get();
+			title = display.getTitle().getString();
+			description = display.getDescription().getString();
+			type = display.getType().name().toLowerCase();
+		} else if (holder.value().name().isPresent()) {
+			title = holder.value().name().get().getString();
+		}
+		return new AdvancementSnapshot(id, title, description, type);
 	}
 
 	private JsonObject player(ServerPlayer player, MinecraftServer server, MinaConfig config) {
@@ -397,5 +512,16 @@ public final class MinaSnapshotter {
 
 	private static double round(double value) {
 		return Math.round(value * 100.0D) / 100.0D;
+	}
+
+	private record AdvancementSnapshot(String id, String title, String description, String type) {
+	}
+
+	private record ObservationState(
+		String dimension,
+		String gameMode,
+		List<AdvancementSnapshot> advancements,
+		Set<String> advancementIds
+	) {
 	}
 }

@@ -240,6 +240,29 @@ def test_assert_actions_rejects_forbidden_write_action(tmp_path, monkeypatch) ->
         runner._assert_actions(scenario)  # noqa: SLF001
 
 
+def test_tool_matcher_searches_nested_tool_result_content() -> None:
+    call = {
+        "tool_name": "memory_write",
+        "status": "ok",
+        "args_json": json.dumps({"scope": "world"}),
+        "result_json": json.dumps(
+            {
+                "content": json.dumps(
+                    {"ok": True, "memory": {"scope": "player", "label": "家"}},
+                    ensure_ascii=False,
+                ),
+                "actions": [],
+            },
+            ensure_ascii=False,
+        ),
+    }
+
+    assert e2e_runner.E2ERunner._matches_tool_call(  # noqa: SLF001
+        call,
+        ToolExpectation(name="memory_write", status="ok", result_contains='"scope": "player"'),
+    )
+
+
 def test_assert_actions_matches_action_result_payload(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="action-result",
