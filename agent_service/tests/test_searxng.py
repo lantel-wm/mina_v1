@@ -90,6 +90,61 @@ def test_searxng_preserves_result_snippet_without_client_side_clipping(monkeypat
     assert results[0]["content"].endswith("MinaE2E-Search-Deep-Tail")
 
 
+def test_searxng_returns_error_on_connection_failure(monkeypatch) -> None:
+    class FakeOpener:
+        def open(self, request, timeout: float):  # noqa: ANN001, ANN201, ARG002
+            raise ConnectionRefusedError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: FakeOpener())
+    client = SearxngClient("http://127.0.0.1:8888")
+
+    results = client.search("test", max_results=5)
+
+    assert len(results) == 1
+    assert results[0]["ok"] == "false"
+    assert "connection error" in results[0]["error"]
+
+
+def test_searxng_returns_error_on_timeout(monkeypatch) -> None:
+    class FakeOpener:
+        def open(self, request, timeout: float):  # noqa: ANN001, ANN201, ARG002
+            raise TimeoutError("timed out")
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: FakeOpener())
+    client = SearxngClient("http://127.0.0.1:8888")
+
+    results = client.search("test", max_results=5)
+
+    assert len(results) == 1
+    assert results[0]["ok"] == "false"
+    assert "timeout" in results[0]["error"]
+
+
+def test_searxng_returns_error_on_invalid_json(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+        def read(self) -> bytes:
+            return b"<html>Internal Server Error</html>"
+
+    class FakeOpener:
+        def open(self, request, timeout: float):  # noqa: ANN001, ANN201, ARG002
+            return FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: FakeOpener())
+    client = SearxngClient("http://127.0.0.1:8888")
+
+    results = client.search("test", max_results=5)
+
+    assert len(results) == 1
+    assert results[0]["ok"] == "false"
+    assert "invalid response" in results[0]["error"]
+
+
 def test_searxng_preserves_top_level_answers_before_results(monkeypatch) -> None:
     class FakeResponse:
         def __enter__(self):

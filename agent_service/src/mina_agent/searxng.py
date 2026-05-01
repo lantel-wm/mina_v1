@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.parse
 import urllib.request
 from typing import Any
+
+LOGGER = logging.getLogger("mina_agent.searxng")
 
 
 class SearxngClient:
@@ -27,8 +30,20 @@ class SearxngClient:
         params = urllib.parse.urlencode({"q": query, "format": "json"})
         url = f"{self.base_url}/search?{params}"
         request = urllib.request.Request(url, headers={"User-Agent": "mina-agent/0.1"})
-        with self._opener.open(request, timeout=timeout_seconds) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        try:
+            with self._opener.open(request, timeout=timeout_seconds) as response:
+                raw = response.read().decode("utf-8")
+        except TimeoutError:
+            LOGGER.info("searxng timeout query=%s url=%s", query, url)
+            return [{"ok": "false", "error": f"search timeout after {timeout_seconds}s"}]
+        except OSError as exc:
+            LOGGER.info("searxng connection error query=%s error=%s", query, exc)
+            return [{"ok": "false", "error": f"search connection error: {exc}"}]
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            LOGGER.info("searxng invalid json query=%s error=%s", query, exc)
+            return [{"ok": "false", "error": f"search returned invalid response: {exc}"}]
         seen: set[str] = set()
         results: list[dict[str, str]] = []
         for answer_index, answer in enumerate(_search_answers(payload), start=1):

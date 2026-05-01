@@ -453,3 +453,32 @@ def test_mcp_call_blocks_minecraft_write_operations(tmp_path) -> None:
 
     assert payload["ok"] is False
     assert "Minecraft write operations" in payload["error"]
+
+
+class ErrorSearch:
+    def search(self, query: str, max_results: int = 5):  # noqa: ANN201, ARG002
+        return [{"ok": "false", "error": "search connection error: ConnectionRefusedError"}]
+
+
+def test_web_search_returns_error_from_searxng_failure(tmp_path) -> None:
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), ErrorSearch())  # type: ignore[arg-type]
+
+    result = runner.run("web_search", {"query": "test", "max_results": 5}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is False
+    assert "connection error" in payload["error"]
+
+
+def test_web_search_returns_error_from_searxng_timeout(tmp_path) -> None:
+    class TimeoutSearch:
+        def search(self, query: str, max_results: int = 5):  # noqa: ANN201, ARG002
+            return [{"ok": "false", "error": "search timeout after 8.0s"}]
+
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), TimeoutSearch())  # type: ignore[arg-type]
+
+    result = runner.run("web_search", {"query": "test", "max_results": 5}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is False
+    assert "timeout" in payload["error"]
