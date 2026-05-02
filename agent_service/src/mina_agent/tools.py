@@ -96,6 +96,7 @@ WEB_SEARCH_TOTAL_CONTENT_LIMIT = 8000
 WEB_SEARCH_TITLE_LIMIT = 220
 MINECRAFT_QUERY_ALIASES = {
     "钻石矿": ("diamond ore", "diamond"),
+    "钻石矿石": ("diamond ore", "diamond"),
     "生成高度": ("generation height", "spawn height", "height", "y-level"),
     "高度": ("height", "y-level"),
     "最佳层数": ("best level", "best y-level", "y-level", "height"),
@@ -257,10 +258,10 @@ class ToolRunner:
         except Exception as exc:  # noqa: BLE001 - tool calls must return model-visible errors.
             LOGGER.info("web_search unavailable query=%s error=%s", query, exc)
             return ToolResult(content=json.dumps({"ok": False, "error": f"web_search unavailable: {exc}"}, ensure_ascii=False))
-        if results and isinstance(results[0], dict) and results[0].get("ok") == "false":
-            error_msg = results[0].get("error", "search failed")
-            LOGGER.info("web_search error query=%s error=%s", query, error_msg)
-            return ToolResult(content=json.dumps({"ok": False, "error": error_msg}, ensure_ascii=False))
+        searxng_error = _extract_searxng_error(results)
+        if searxng_error:
+            LOGGER.info("web_search error query=%s error=%s", query, searxng_error)
+            return ToolResult(content=json.dumps({"ok": False, "error": searxng_error}, ensure_ascii=False))
         safe_results, filtered_results = _safe_web_search_results(results, max_results=max_results, query=query)
         evidence_quality = _web_search_evidence_quality(safe_results)
         evidence_terms = _web_search_evidence_terms(safe_results)
@@ -690,6 +691,17 @@ def _missing_marker_terms(value: str) -> list[str]:
             if cleaned:
                 markers.append(cleaned)
     return markers
+
+
+def _extract_searxng_error(results: Any) -> str | None:
+    if not isinstance(results, list) or not results:
+        return None
+    first_result = results[0]
+    if not isinstance(first_result, dict):
+        return None
+    if first_result.get("ok") == "false":
+        return str(first_result.get("error", "search failed"))
+    return None
 
 
 def _unsafe_web_search_text(value: str) -> bool:

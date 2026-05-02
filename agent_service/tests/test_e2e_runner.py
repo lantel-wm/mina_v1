@@ -6,7 +6,8 @@ import json
 import pytest
 
 from mina_agent.e2e import runner as e2e_runner
-from mina_agent.e2e.manifest import ActionExpectation, Scenario, ToolExpectation, scenario_from_dict
+from mina_agent.e2e import scenarios as e2e_scenarios
+from mina_agent.e2e.manifest import ActionExpectation, Scenario, ScenarioStep, ToolExpectation, scenario_from_dict
 from mina_agent.e2e.scenarios import PRIVATE_MODEL_TOOLS, SCENARIOS, SUITES
 
 
@@ -69,6 +70,14 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "response_contains_current_weekday" in SCENARIOS["current_weekday_context_live_model"].trace_invariants
     assert "response_contains_tomorrow_date" in SCENARIOS["tomorrow_date_context_live_model"].trace_invariants
     assert "response_contains_current_minute" in SCENARIOS["current_time_context_live_model"].trace_invariants
+    assert (
+        "response_contains_previous_command_output"
+        in SCENARIOS["read_only_command_result_recall_live_model"].trace_invariants
+    )
+    assert (
+        "first_request_no_read_only_command_action"
+        in SCENARIOS["short_followup_accepts_previous_offer_live_model"].trace_invariants
+    )
 
 
 def test_builtin_scenarios_do_not_force_semantic_response_strings() -> None:
@@ -84,6 +93,26 @@ def test_builtin_scenarios_do_not_force_semantic_response_strings() -> None:
                 continue
             assert step.wait_for == [f"mina turn response requestId={step.request_id}"]
     assert "你附近" not in SCENARIOS["nearby_item_drop_snapshot_live_model"].forbidden_response_contains
+
+
+def test_builtin_scenario_builder_rejects_forced_semantic_assertions() -> None:
+    with pytest.raises(ValueError, match="semantic response assertions"):
+        e2e_scenarios._with_common_invariants(  # noqa: SLF001
+            {
+                "name": "bad-response-assert",
+                "fixture": "default_world",
+                "steps": [{"kind": "request", "request_id": "req", "value": "你好"}],
+                "expected_response_contains": ["固定答案"],
+            }
+        )
+    with pytest.raises(ValueError, match="forces final wording"):
+        e2e_scenarios._with_common_invariants(  # noqa: SLF001
+            {
+                "name": "bad-forced-prompt",
+                "fixture": "default_world",
+                "steps": [{"kind": "request", "request_id": "req", "value": "今天是哪一天？请只回答 YYYY-MM-DD。"}],
+            }
+        )
 
 
 def test_parse_args_rejects_removed_body_suite() -> None:
@@ -181,6 +210,13 @@ def test_search_fixture_prompt_injection_mentions_private_write_tool_not_body_to
     assert "MinaE2E-Search-LongTail" in contents
     assert "run_safe_command" in contents
     assert "body_chain" not in contents
+
+
+def test_search_fixture_matches_shulker_overworld_in_english() -> None:
+    results = e2e_runner._test_search_results("shulker farm in overworld minecraft 1.21")  # noqa: SLF001
+    contents = "\n".join(item["content"] for item in results)
+
+    assert "MinaE2E-Shulker-Overworld-Possible" in contents
 
 
 def test_prepare_runtime_writes_config_without_body_fields(tmp_path, monkeypatch) -> None:
@@ -285,6 +321,30 @@ def test_aggregate_semantic_reviews_jsonl(tmp_path) -> None:
 
     assert records[0]["scenario"] == "semantic-sample"
     assert records[1] == {"scenario": "missing", "semantic_status": "missing_review"}
+
+
+def test_run_summary_distinguishes_hard_pass_from_semantic_review(tmp_path) -> None:
+    scenario = Scenario(
+        name="semantic-sample",
+        fixture="default_world",
+        steps=[],
+        rubric="The answer should be useful.",
+    )
+
+    payload = e2e_runner.run_summary_payload(
+        "run-id",
+        "live",
+        [e2e_runner.RunResult("semantic-sample", True, 1, 1.0)],
+        tmp_path,
+        {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash"},
+        {},
+        [scenario],
+    )
+
+    assert payload["ok"] is True
+    assert payload["hard_ok"] is True
+    assert payload["overall_status"] == "hard_passed_semantic_review_required"
+    assert payload["semantic_review"]["status"] == "requires_human_review"
 
 
 def test_assert_model_calls_rejects_private_tool_exposure(tmp_path, monkeypatch) -> None:
@@ -618,6 +678,157 @@ def test_trace_invariant_rejects_misaligned_read_only_command_trace(tmp_path, mo
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
+def test_trace_invariant_accepts_previous_command_output_recall(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="previous-command-output-recall",
+        fixture="default_world",
+        steps=[
+            ScenarioStep(kind="request", request_id="source-req"),
+            ScenarioStep(kind="request", request_id="recall-req"),
+        ],
+        trace_invariants=["response_contains_previous_command_output"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+
+    def combined(key, request_ids):  # noqa: ANN001, ARG001
+        if key == "action_events":
+            return [
+                {
+                    "request_id": "source-req",
+                    "event_type": "action_result",
+                    "action_name": "run_read_only_command",
+                    "payload_json": json.dumps(
+                        {"command_results": [{"command": "time query day", "outputs": ["The time is 0"]}]}
+                    ),
+                }
+            ]
+        if key == "model_calls":
+            return [
+                {
+                    "request_id": "recall-req",
+                    "status": "ok",
+                    "finish_reason": "stop",
+                    "response_json": json.dumps({"content": "The time is 0"}),
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(runner, "_combined", combined)
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_parsed_previous_command_output_recall(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="parsed-command-output-recall",
+        fixture="default_world",
+        steps=[
+            ScenarioStep(kind="request", request_id="source-req"),
+            ScenarioStep(kind="request", request_id="recall-req"),
+        ],
+        trace_invariants=["response_contains_previous_command_output"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+
+    def combined(key, request_ids):  # noqa: ANN001, ARG001
+        if key == "action_events":
+            return [
+                {
+                    "request_id": "source-req",
+                    "event_type": "action_result",
+                    "action_name": "run_read_only_command",
+                    "payload_json": json.dumps(
+                        {"command_results": [{"command": "time query day", "outputs": ["The time is 0"]}]}
+                    ),
+                }
+            ]
+        if key == "model_calls":
+            return [
+                {
+                    "request_id": "recall-req",
+                    "status": "ok",
+                    "finish_reason": "stop",
+                    "response_json": json.dumps({"content": "0"}),
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(runner, "_combined", combined)
+
+    with pytest.raises(AssertionError, match="full previous command output"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_accepts_confirm_first_then_command(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="confirm-first",
+        fixture="default_world",
+        steps=[
+            ScenarioStep(kind="request", request_id="offer-req"),
+            ScenarioStep(kind="request", request_id="yes-req"),
+        ],
+        trace_invariants=["first_request_no_read_only_command_action"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+
+    def combined(key, request_ids):  # noqa: ANN001, ARG001
+        if key == "action_events":
+            return [
+                {
+                    "request_id": "yes-req",
+                    "event_type": "action_scheduled",
+                    "action_name": "run_read_only_command",
+                }
+            ]
+        if key in {"tool_calls", "model_calls"}:
+            return []
+        return []
+
+    monkeypatch.setattr(runner, "_combined", combined)
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_rejects_command_on_confirmation_offer(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="confirm-first-violation",
+        fixture="default_world",
+        steps=[
+            ScenarioStep(kind="request", request_id="offer-req"),
+            ScenarioStep(kind="request", request_id="yes-req"),
+        ],
+        trace_invariants=["first_request_no_read_only_command_action"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+
+    def combined(key, request_ids):  # noqa: ANN001, ARG001
+        if key == "action_events":
+            return [
+                {
+                    "request_id": "offer-req",
+                    "event_type": "action_scheduled",
+                    "action_name": "run_read_only_command",
+                }
+            ]
+        if key == "tool_calls":
+            return [{"request_id": "offer-req", "tool_name": "run_read_only_command"}]
+        if key == "model_calls":
+            return [
+                {
+                    "request_id": "offer-req",
+                    "status": "ok",
+                    "finish_reason": "tool_calls",
+                    "response_json": json.dumps({"tool_names": ["run_read_only_command"]}),
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(runner, "_combined", combined)
+
+    with pytest.raises(AssertionError, match="ask for confirmation"):
+        runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
 def test_trace_invariant_rejects_model_requested_read_only_command(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="model-requested-read-only",
@@ -750,7 +961,10 @@ def test_trace_invariant_rejects_verbose_single_sentence_response(tmp_path, monk
                 "status": "ok",
                 "finish_reason": "stop",
                 "response": {
-                    "content": "你好！我能帮你查询 Minecraft 世界状态、记住你的基地和偏好、搜索网络信息，以及执行只读指令。有什么需要尽管说！"
+                    "content": (
+                        "你好！我能帮你查询 Minecraft 世界状态、记住你的基地和偏好、搜索网络信息，以及执行只读指令。"
+                        "我还会持续解释每一步细节、补充很多背景说明，并在不需要的时候展开很长的介绍。有什么需要尽管说！"
+                    )
                 },
             }
         ] if key == "model_calls" else [],
@@ -758,6 +972,30 @@ def test_trace_invariant_rejects_verbose_single_sentence_response(tmp_path, monk
 
     with pytest.raises(AssertionError, match="not concise one-sentence"):
         runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_accepts_short_two_sentence_chat_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="concise-chat",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["concise_single_sentence_response"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-chat",
+                "status": "ok",
+                "finish_reason": "stop",
+                "response": {"content": "你好！我现在能帮你查询状态、记住坐标和搜索攻略。"},
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
 def test_trace_invariant_accepts_spawn_distance_response(tmp_path, monkeypatch) -> None:
@@ -1078,6 +1316,32 @@ def test_trace_invariant_accepts_current_date_response(tmp_path, monkeypatch) ->
     runner._assert_trace_invariants(scenario)  # noqa: SLF001
 
 
+def test_trace_invariant_accepts_chinese_current_date_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="current-date",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_current_date"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-date",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": "今天是 2026 年 4 月 30 日，星期四。"}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
 def test_trace_invariant_accepts_tomorrow_date_response(tmp_path, monkeypatch) -> None:
     scenario = Scenario(
         name="tomorrow-date",
@@ -1150,6 +1414,33 @@ def test_trace_invariant_accepts_current_minute_response(tmp_path, monkeypatch) 
                 "finish_reason": "stop",
                 "created_at": created_at,
                 "response_json": json.dumps({"content": expected}),
+            }
+        ] if key == "model_calls" else [],
+    )
+
+    runner._assert_trace_invariants(scenario)  # noqa: SLF001
+
+
+def test_trace_invariant_accepts_chinese_current_minute_response(tmp_path, monkeypatch) -> None:
+    scenario = Scenario(
+        name="current-minute",
+        fixture="default_world",
+        steps=[],
+        trace_invariants=["response_contains_current_minute"],
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+    created_at = datetime(2026, 4, 30, 12, 48, tzinfo=timezone.utc).timestamp()
+    local = datetime.fromtimestamp(created_at).astimezone()
+    monkeypatch.setattr(
+        runner,
+        "_combined",
+        lambda key, request_ids: [
+            {
+                "request_id": "req-time",
+                "status": "ok",
+                "finish_reason": "stop",
+                "created_at": created_at,
+                "response_json": json.dumps({"content": f"现在现实时间是晚上 {local.hour} 点 {local.minute:02d} 分。"}),
             }
         ] if key == "model_calls" else [],
     )

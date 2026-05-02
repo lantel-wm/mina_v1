@@ -428,16 +428,16 @@ def test_web_search_marks_low_relevance_missing_terms(tmp_path) -> None:
 def test_web_search_matches_bilingual_minecraft_terms(tmp_path) -> None:
     runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), BilingualMinecraftSearch())  # type: ignore[arg-type]
 
-    result = runner.run("web_search", {"query": "我的世界 钻石矿 最新生成高度 最佳层数 1.21", "max_results": 5}, _turn())
+    result = runner.run("web_search", {"query": "我的世界 钻石矿石 最新生成高度 最佳层数 1.21", "max_results": 5}, _turn())
     payload = _payload(result.content)
 
     assert payload["ok"] is True
     assert payload["evidence_quality"] == "high"
     assert payload["missing_query_terms"] == []
-    assert "钻石矿" in payload["matched_query_terms"]
+    assert "钻石矿石" in payload["matched_query_terms"]
     assert "生成高度" in payload["matched_query_terms"]
     assert payload["results"][0]["low_relevance"] is False
-    assert "钻石矿" in payload["results"][0]["matched_query_terms"]
+    assert "钻石矿石" in payload["results"][0]["matched_query_terms"]
     assert "生成高度" in payload["results"][0]["matched_query_terms"]
     assert "最佳层数" in payload["results"][0]["matched_query_terms"]
     assert "1.21" in payload["results"][0]["matched_query_terms"]

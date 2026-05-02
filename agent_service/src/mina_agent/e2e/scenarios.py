@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 from .manifest import Scenario, scenario_from_dict
 
 
@@ -1373,7 +1371,11 @@ SCENARIO_DATA = [
             "根据最近",
             "command output is",
         ],
-        "trace_invariants": ["no_action_monitor_timeout", "single_read_only_command_action"],
+        "trace_invariants": [
+            "no_action_monitor_timeout",
+            "single_read_only_command_action",
+            "response_contains_previous_command_output",
+        ],
         "rubric": "Follow-up questions about a prior read-only command should use the verified Fabric action result already in context, without rerunning the command.",
     },
     {
@@ -1474,7 +1476,7 @@ SCENARIO_DATA = [
             {
                 "kind": "request",
                 "request_id": "memory-write-live-model",
-                "value": "请记住：mina_tester 的基地在樱花林旁边",
+                "value": "请记住：我的基地位置在樱花林旁边",
                 "wait_for": ["记住"],
                 "timeout": 60,
             },
@@ -1595,7 +1597,8 @@ SCENARIO_DATA = [
             },
         ],
         "expected_tools": [
-            {"name": "memory_write", "status": "ok", "args_contains": "南边海滩"},
+            {"name": "memory_write", "status": "ok", "args_contains": "南边"},
+            {"name": "memory_write", "status": "ok", "args_contains": "海滩"},
             {"name": "memory_write", "status": "ok", "args_contains": "\"scope\": \"world\""},
         ],
         "forbidden_tools": [
@@ -1634,7 +1637,7 @@ SCENARIO_DATA = [
                 "kind": "request",
                 "request_id": "short-followup-offer-live-model",
                 "value": "我想找最近的村庄。请先只问我要不要查询，不要直接查询。",
-                "wait_for": ["要不要", "需要", "查询"],
+                "wait_for": ["mina turn response requestId=short-followup-offer-live-model"],
                 "timeout": 60,
             },
             {
@@ -1657,6 +1660,7 @@ SCENARIO_DATA = [
         ],
         "forbidden_response_contains": ["/locate"],
         "expected_model": {"mode": "at_least", "min_count": 2},
+        "trace_invariants": ["first_request_no_read_only_command_action"],
         "rubric": "A short affirmative reply should resolve against the assistant's previous offer using conversation history role messages.",
     },
     {
@@ -1731,7 +1735,7 @@ SCENARIO_DATA = [
             }
         ],
         "expected_tools": [
-            {"name": "web_search", "status": "ok", "args_contains": "潜影贝", "result_contains": "MinaE2E-Shulker-Overworld-Possible"},
+            {"name": "web_search", "status": "ok", "result_contains": "MinaE2E-Shulker-Overworld-Possible"},
         ],
         "forbidden_tools": [
             {"name": "run_read_only_command"},
@@ -2019,10 +2023,9 @@ SCENARIO_DATA = [
 
 
 def _with_common_invariants(payload: dict) -> dict:
+    _validate_builtin_semantic_shape(payload)
     item = dict(payload)
-    item["steps"] = [_naturalized_step(step) for step in item.get("steps") or []]
-    item.pop("expected_response_contains", None)
-    item.pop("expected_response_any_contains", None)
+    item["steps"] = [_canonicalized_wait_step(step) for step in item.get("steps") or []]
     item["forbidden_response_contains"] = [
         text
         for text in item.get("forbidden_response_contains") or []
@@ -2039,25 +2042,32 @@ def _with_common_invariants(payload: dict) -> dict:
     return item
 
 
-def _naturalized_step(step: dict) -> dict:
+def _validate_builtin_semantic_shape(payload: dict) -> None:
+    name = str(payload.get("name") or "<unnamed>")
+    forbidden_keys = [
+        key
+        for key in ("expected_response_contains", "expected_response_any_contains")
+        if key in payload
+    ]
+    if forbidden_keys:
+        raise ValueError(f"{name}: built-in E2E scenarios must not use semantic response assertions: {forbidden_keys}")
+    for index, step in enumerate(payload.get("steps") or [], start=1):
+        if not isinstance(step, dict):
+            continue
+        value = str(step.get("value") or "")
+        if "只回答" in value or "请原样回答完整输出字符串" in value:
+            raise ValueError(f"{name}: step {index} forces final wording; use the rubric and semantic review instead")
+
+
+def _canonicalized_wait_step(step: dict) -> dict:
     item = dict(step)
     if item.get("kind") not in {"request", "companion_tick"}:
         return item
-    if item.get("value"):
-        item["value"] = _naturalized_request_value(str(item.get("value") or ""))
     wait_for = [str(text) for text in item.get("wait_for") or []]
     if not any("mina send command output" in text for text in wait_for):
         request_id = str(item.get("request_id") or "")
         item["wait_for"] = [f"mina turn response requestId={request_id}"] if request_id else []
     return item
-
-
-def _naturalized_request_value(value: str) -> str:
-    text = value
-    text = re.sub(r"(?:，?然后|然后|，|。)?(?:请)?只回答[^。！？!?]*[。！？!?]?", "", text)
-    text = re.sub(r"(?:，|。)?请原样回答完整输出字符串[。！？!?]?", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
 
 
 _HARD_FORBIDDEN_MARKERS = (

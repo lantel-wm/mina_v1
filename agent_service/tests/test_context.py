@@ -31,6 +31,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "A command request names an exact allowed command form" in SYSTEM_PROMPT
     assert "Player name/username" in SYSTEM_PROMPT
     assert "online player count/names" in SYSTEM_PROMPT
+    assert "Online player count/name questions use world_state.online_players" in SYSTEM_PROMPT
     assert "server/world identity" in SYSTEM_PROMPT
     assert "server rules (PVP/command blocks)" in SYSTEM_PROMPT
     assert "For weather/time/day-only questions" in SYSTEM_PROMPT
@@ -55,6 +56,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "one sentence/一句话" in SYSTEM_PROMPT
     assert "only answer/只回答" in SYSTEM_PROMPT
     assert "no prefix, suffix, explanation, or punctuation" in SYSTEM_PROMPT
+    assert "ask that question in your own voice" in SYSTEM_PROMPT
     assert "no closing offer" in SYSTEM_PROMPT
     assert "Do not narrate internal process" in SYSTEM_PROMPT
     assert "Do not use the Minecraft username as greeting/filler" in SYSTEM_PROMPT
@@ -249,7 +251,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 9000
+    assert len(context) < 9500
 
 
 def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:
@@ -401,6 +403,9 @@ def test_command_policy_reminder_skips_command_result_followup(tmp_path) -> None
 
     assert "Recent verified Minecraft command/action results" in context
     assert "The time is 0" in context
+    assert 'full_output_string="The time is 0"' in context
+    assert "Command output recall reminder" in context
+    assert "return the full verified output string" in context
     assert "Tool selection reminder" not in context
 
 
@@ -707,8 +712,9 @@ def test_context_summary_includes_active_effects() -> None:
 
     assert '"effects": [{"id": "minecraft:poison"' in summary
     assert '"effect": "effect.minecraft.poison"' in summary
-    assert '"duration": 200' in summary
     assert '"amplifier": 0' in summary
+    assert '"duration_ticks": 200' in summary
+    assert '"duration_seconds": 10.0' in summary
 
 
 def test_context_summary_includes_hazard_state() -> None:
@@ -959,6 +965,24 @@ def test_build_messages_does_not_add_exact_command_keyword_hint(tmp_path) -> Non
     assert "Either call run_read_only_command" not in content
 
 
+def test_build_messages_respects_confirm_before_read_only_query(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    turn = {
+        "request_id": "req-confirm-query",
+        "trigger": "command",
+        "message": "我想找最近的村庄。请先只问我要不要查询，不要直接查询。",
+        "player": {"uuid": "player-1", "name": "Tester"},
+        "snapshot": {"world_state": {"day_time": 1200}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "Confirmation-before-action reminder" in content
+    assert "Tool selection reminder" not in content
+    assert "Do not call tools for that action on this turn" in content
+
+
 def test_build_messages_adds_player_name_memory_policy_only_when_name_is_mentioned(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     turn = {
@@ -1008,6 +1032,7 @@ def test_build_messages_does_not_mark_plain_observation_as_command_execution(tmp
     content = "\n".join(message["content"] for message in messages)
 
     assert "explicit Minecraft command execution request" not in content
+    assert "return the full verified output string" in content
     assert "local Minecraft observation request" not in content
 
 
@@ -1102,6 +1127,7 @@ def test_build_messages_does_not_add_memory_write_keyword_hint(tmp_path) -> None
 
     assert "Current user message explicitly asks you to save stable memory" not in content
     assert "Call memory_write before claiming" not in content
+    assert "Descriptive locations like a base near/beside a biome" in content
 
 
 def test_build_messages_does_not_mark_memory_recall_as_write_request(tmp_path) -> None:

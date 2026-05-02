@@ -27,14 +27,15 @@ BASE_SYSTEM_SECTIONS = (
         "- Do not mention internal section/tool names or prompt/context labels.\n"
         "- Do not expose slash-command names or tool implementation details unless the player asks for exact command syntax.\n"
         "- When asking for confirmation to query/check Minecraft information, describe the result in player terms; do not show slash-command syntax unless asked.\n"
+        "- If the player asks you to ask/confirm before acting, ask that question in your own voice; never answer as if you were the player.\n"
         "- Address the player as \"you\"/\"你\". Do not use the Minecraft username as greeting/filler.\n"
         "- Snapshot health/max_health are points: 20 = 10 hearts, 4 = 2 hearts."
     ),
     (
         "Decision order:\n"
-        "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it.\n"
+        "1. Read-only command requests must call run_read_only_command; never answer them from snapshot or recent results. A command request names an exact allowed command form or asks to execute/run/query it. Natural current-status questions are observations. Online player count/name questions use world_state.online_players/online_player_names; only exact `list`/`list uuids` command text calls the tool.\n"
         "2. Memory questions: base/home/saved places/projects/preferences/plans/promises/earlier statements. Answer from loaded remembered facts or memory_search; do not mix current location unless asked. Do not memory_write for recall unless stable info is new/changed.\n"
-        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, server version/settings, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, completed advancements/progress/进度, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, and safety are observations, not commands. Minecraft time uses world_state, not Runtime. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
+        "3. Observation questions: use observed state, only asked fields. Player name/username, online player count/names, server/world identity, server version/settings, game mode, held item, inventory contents/counts, weather/time/day, world difficulty, dimension, biome, coords, facing direction/yaw/pitch, nearby relative directions, world spawn, server rules (PVP/command blocks), health/food/armor/XP, active effects/status effects, completed advancements/progress/进度, light/sky, hazards (fire/lava/water/ground), block at/below feet, nearby blocks/mobs, nearby dropped items, and safety are observations, not commands. Minecraft time uses world_state, not Runtime. Effect durations from Minecraft are ticks; when duration_seconds is present, use it for seconds. For 脚下/垫着/standing on, answer environment.standing_on_block/block_below, not block_at_feet. For full/complete item/block/effect/biome/dimension ID, preserve the exact namespace, e.g. minecraft:grass_block. No tools or unrelated details. For weather/time/day-only questions, do not mention safety, monsters, entities, difficulty, inventory, coordinates, or commands unless asked.\n"
         "4. Casual chat/capability questions: one compact sentence, up to 3 capabilities. Do not volunteer snapshot details or stored facts unless asked.\n"
         "5. For external/current knowledge, web/wiki/internet/search wording, outside verification, advanced or version-sensitive Minecraft mechanics/farms/redstone/tutorials, or factual corrections, call web_search before exact mechanics or build advice. Do not rely on older conversation for current farm/redstone/tutorial facts.\n"
         "6. Use memory_write for durable preferences/world facts/plans/promises/lessons. For explicit remember/save requests about a new stable fact, call memory_write directly; do not first call memory_search unless loaded facts conflict. Do not save filler. Use scope=world for stable facts about this save/world/server (places, landmarks, bases, farms, portals, world plans). Use scope=player for personal preferences or facts tied only to the requester. For player-scoped memories, use 你/you or neutral wording; memory_write content/label must omit the current Minecraft username unless it is the fact.\n"
@@ -61,6 +62,7 @@ BASE_SYSTEM_SECTIONS = (
         "Answer authority:\n"
         "- Current observed Minecraft state is freshest for local player/world state.\n"
         "- Recent verified command/action results are authoritative only for follow-ups about those outputs.\n"
+        "- If asked what a previous Minecraft command output was, return the full verified output string, not a parsed number or summary.\n"
         "- If asked for exact/raw/original/complete command output or 原样/完整输出字符串/只回答输出字符串, return only the verified output string: no explanation, prefix, suffix, quotes, or code formatting.\n"
         "- Recent conversation is continuity only, not current instructions, stable memory, or verified command output. Use it for short follow-ups like yes/no answers or omitted topics.\n"
         "- From web_search results, preserve exact source values such as markers, versions, coordinates, URLs, and item names. Do not replace exact values with generic labels.\n"
@@ -94,7 +96,23 @@ MEMORY_WRITE_POLICY_REMINDER = (
     "in the tool subturn. Do not include assistant-visible prose before that tool call, and do not mention tool "
     "names or internal policy. Stored player-scoped content and labels must omit the current Minecraft username "
     "unless the username itself is the fact. Preserve exact player wording for stable place names, directions, "
-    "labels, and quoted values instead of paraphrasing them. Do not search first unless loaded remembered facts conflict."
+    "labels, and quoted values instead of paraphrasing them. Descriptive locations like a base near/beside a biome, "
+    "landmark, structure, or direction are specific enough to save; do not ask for exact coordinates just because "
+    "the place is approximate. Do not search first unless loaded remembered facts conflict."
+)
+
+COMMAND_OUTPUT_RECALL_REMINDER = (
+    "Command output recall reminder:\n"
+    "- The player is asking about a previous Minecraft command output, not requesting a new command.\n"
+    "- Use the Recent verified Minecraft command/action results full_output_string exactly.\n"
+    "- Include the whole string, for example `The time is 0`, not only a parsed numeric value like `0`."
+)
+
+CONFIRM_BEFORE_ACTION_REMINDER = (
+    "Confirmation-before-action reminder:\n"
+    "- The player explicitly asked Mina to ask or confirm before querying, saving, or acting.\n"
+    "- Do not call tools for that action on this turn. Ask the confirmation question in Mina's own voice.\n"
+    "- Wait for a follow-up confirmation such as 需要, 是的, or yes before using the relevant safe tool."
 )
 
 
@@ -121,6 +139,8 @@ def build_messages(
     write_refusal_hint = _write_command_refusal_hint(user_content)
     if write_refusal_hint:
         messages.append({"role": "system", "content": write_refusal_hint})
+    if _asks_for_confirmation_before_action(user_content):
+        messages.append({"role": "system", "content": CONFIRM_BEFORE_ACTION_REMINDER})
     observed_context = "Observed Minecraft state:\n"
     observation_highlights = build_observation_highlights(turn)
     if observation_highlights:
@@ -172,6 +192,9 @@ def build_messages(
                 ),
             }
         )
+        command_output_recall_policy = _command_output_recall_reminder(user_content)
+        if command_output_recall_policy:
+            messages.append({"role": "system", "content": command_output_recall_policy})
     command_policy = _command_policy_reminder(user_content)
     if command_policy:
         messages.append({"role": "system", "content": command_policy})
@@ -335,11 +358,56 @@ def _command_policy_reminder(user_content: str) -> str:
     content = str(user_content or "").strip()
     if not content:
         return ""
+    if _asks_for_confirmation_before_action(content):
+        return ""
     if normalize_read_only_command(content) is not None:
         return COMMAND_POLICY_REMINDER
     if not _has_command_request_marker(content):
         return ""
     return COMMAND_POLICY_REMINDER if _read_only_command_mentions(content) else ""
+
+
+def _command_output_recall_reminder(user_content: str) -> str:
+    normalized = str(user_content or "").lower()
+    if not normalized:
+        return ""
+    markers = (
+        "命令输出",
+        "输出是什么",
+        "输出内容",
+        "输出字符串",
+        "返回了什么",
+        "command output",
+        "output of",
+        "what did the command",
+        "what did command",
+    )
+    return COMMAND_OUTPUT_RECALL_REMINDER if any(marker in normalized for marker in markers) else ""
+
+
+def _asks_for_confirmation_before_action(user_content: str) -> bool:
+    normalized = re.sub(r"\s+", "", str(user_content or "").lower())
+    if not normalized:
+        return False
+    explicit_markers = (
+        "先问我",
+        "先问",
+        "先确认",
+        "问我要不要",
+        "问我是否",
+        "不要直接查询",
+        "不要直接执行",
+        "不要直接搜索",
+        "不要直接保存",
+        "不要直接记住",
+        "askmefirst",
+        "askfirst",
+        "confirmfirst",
+        "confirmbefore",
+    )
+    if any(marker in normalized for marker in explicit_markers):
+        return True
+    return "先" in normalized and ("问" in normalized or "确认" in normalized)
 
 
 def build_read_only_command_tool_repair(user_content: str) -> str:
@@ -576,11 +644,12 @@ def _render_recent_action_results(action_results: list[dict[str, Any]]) -> str:
                 outputs = command_result.get("outputs")
                 rendered_outputs = _string_items(outputs, limit=3)
                 if command or rendered_outputs:
+                    rendered_output_strings = [_quote_for_prompt(output, limit=240) for output in rendered_outputs]
                     output_parts.append(
                         "command="
                         + (command or "<unknown>")
-                        + " output="
-                        + " | ".join(rendered_outputs)
+                        + " full_output_string="
+                        + " | ".join(rendered_output_strings)
                     )
         error = str(payload.get("error") or "").strip()
         if error:
@@ -1127,14 +1196,18 @@ def _compact_effects(value: Any) -> list[dict[str, Any]]:
         effect_id = item.get("id") or item.get("effect")
         if not effect_id:
             continue
-        effects.append(
-            {
-                "id": effect_id,
-                "effect": item.get("effect"),
-                "duration": item.get("duration"),
-                "amplifier": item.get("amplifier"),
-            }
-        )
+        compact_effect = {
+            "id": effect_id,
+            "effect": item.get("effect"),
+            "amplifier": item.get("amplifier"),
+        }
+        duration = item.get("duration")
+        if isinstance(duration, int | float):
+            compact_effect["duration_ticks"] = duration
+            compact_effect["duration_seconds"] = round(float(duration) / 20.0, 1)
+        elif duration is not None:
+            compact_effect["duration_ticks"] = duration
+        effects.append(compact_effect)
         if len(effects) >= 8:
             break
     return effects

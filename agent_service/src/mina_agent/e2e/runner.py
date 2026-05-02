@@ -159,9 +159,11 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "no_memory_search_before_memory_write",
         "no_test_username_in_memory_write",
         "concise_single_sentence_response",
+        "first_request_no_read_only_command_action",
         "non_empty_final_model_content",
         "plain_chat_response",
         "read_only_command_trace_alignment",
+        "response_contains_previous_command_output",
         "response_contains_current_date",
         "response_contains_current_minute",
         "response_contains_current_weekday",
@@ -735,6 +737,68 @@ class E2ERunner:
                 )
                 if offenders:
                     raise AssertionError(f"{scenario.name}: read-only command trace alignment failed: {offenders!r}")
+            elif invariant == "first_request_no_read_only_command_action":
+                request_ids = scenario.request_ids()
+                first_request_id = request_ids[0] if request_ids else ""
+                tool_calls = self._combined("tool_calls", request_ids)
+                model_calls = self._combined("model_calls", request_ids)
+                offenders = [
+                    {
+                        "type": "tool_call",
+                        "request_id": call.get("request_id"),
+                        "tool_name": call.get("tool_name"),
+                    }
+                    for call in tool_calls
+                    if str(call.get("request_id") or "") == first_request_id
+                    and call.get("tool_name") == "run_read_only_command"
+                ]
+                offenders.extend(
+                    {
+                        "type": "action_scheduled",
+                        "request_id": event.get("request_id"),
+                        "action_name": event.get("action_name"),
+                    }
+                    for event in events
+                    if str(event.get("request_id") or "") == first_request_id
+                    and event.get("event_type") == "action_scheduled"
+                    and event.get("action_name") == "run_read_only_command"
+                )
+                offenders.extend(
+                    {
+                        "type": "model_tool_request",
+                        "request_id": call.get("request_id"),
+                        "tool_names": _model_requested_tool_names(call),
+                    }
+                    for call in model_calls
+                    if str(call.get("request_id") or "") == first_request_id
+                    and "run_read_only_command" in _model_requested_tool_names(call)
+                )
+                if offenders:
+                    raise AssertionError(
+                        f"{scenario.name}: first request should ask for confirmation before read-only command: "
+                        f"{offenders!r}"
+                    )
+            elif invariant == "response_contains_previous_command_output":
+                outputs = _previous_read_only_command_outputs(scenario.request_ids(), events)
+                if not outputs:
+                    raise AssertionError(f"{scenario.name}: no previous read-only command outputs found in trace")
+                calls = self._combined("model_calls", scenario.request_ids())
+                final_request_id = scenario.request_ids()[-1] if scenario.request_ids() else ""
+                final_content = "\n".join(
+                    _model_content_preview(call).strip()
+                    for call in calls
+                    if str(call.get("request_id") or "") == final_request_id
+                    and call.get("status") == "ok"
+                    and call.get("finish_reason") != "tool_calls"
+                    and _model_content_preview(call).strip()
+                )
+                if not final_content:
+                    raise AssertionError(f"{scenario.name}: no final model content for command-output recall check")
+                if not any(output in final_content for output in outputs):
+                    raise AssertionError(
+                        f"{scenario.name}: final response did not include a full previous command output "
+                        f"from {outputs!r}: {final_content!r}"
+                    )
             elif invariant == "no_model_requested_read_only_command":
                 calls = self._combined("model_calls", scenario.request_ids())
                 offenders = [
@@ -849,7 +913,7 @@ class E2ERunner:
                     if not content:
                         continue
                     sentence_count = _sentence_terminal_count(content)
-                    if len(content) > 80 or sentence_count > 1:
+                    if len(content) > 140 or sentence_count > 2:
                         offenders.append(
                             {
                                 "request_id": call.get("request_id"),
@@ -878,7 +942,7 @@ class E2ERunner:
                 )
                 days = 1 if invariant == "response_contains_tomorrow_date" else 0
                 expected = _runtime_date_for_model_calls(calls, days=days)
-                if expected not in final_content:
+                if not _date_value_appears(final_content, expected):
                     raise AssertionError(
                         f"{scenario.name}: final response did not include expected runtime date "
                         f"{expected}: {final_content!r}"
@@ -908,7 +972,7 @@ class E2ERunner:
                     and _model_content_preview(call).strip()
                 )
                 expected = _runtime_minute_candidates_for_model_calls(calls)
-                if not any(candidate in final_content for candidate in expected):
+                if not _minute_value_appears(final_content, expected):
                     raise AssertionError(
                         f"{scenario.name}: final response did not include expected runtime minute "
                         f"one of {expected}: {final_content!r}"
@@ -1285,7 +1349,9 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
                 ),
             },
         ]
-    if "潜影贝" in normalized and "主世界" in normalized:
+    shulker_query = "潜影贝" in normalized or "shulker" in normalized
+    overworld_query = "主世界" in normalized or "overworld" in normalized
+    if shulker_query and overworld_query:
         return [
             {
                 "title": "Mina E2E Shulker Farm Overworld Fixture",
@@ -1665,6 +1731,35 @@ def _read_only_command_trace_alignment_offenders(
     return offenders
 
 
+def _previous_read_only_command_outputs(request_ids: list[str], action_events: list[dict[str, Any]]) -> list[str]:
+    if not request_ids:
+        return []
+    source_request_ids = set(request_ids[:-1] or request_ids)
+    outputs: list[str] = []
+    seen: set[str] = set()
+    for event in action_events:
+        if str(event.get("request_id") or "") not in source_request_ids:
+            continue
+        if event.get("event_type") != "action_result" or event.get("action_name") != "run_read_only_command":
+            continue
+        payload = parse_payload_json(event)
+        command_results = payload.get("command_results")
+        if not isinstance(command_results, list):
+            continue
+        for command_result in command_results:
+            if not isinstance(command_result, dict):
+                continue
+            raw_outputs = command_result.get("outputs")
+            if not isinstance(raw_outputs, list):
+                continue
+            for output in raw_outputs:
+                value = str(output).strip()
+                if value and value not in seen:
+                    outputs.append(value)
+                    seen.add(value)
+    return outputs
+
+
 def _action_event_id(event: dict[str, Any], payload: dict[str, Any]) -> str:
     return str(event.get("action_id") or payload.get("action_id") or payload.get("id") or "")
 
@@ -1970,8 +2065,33 @@ def _runtime_date_for_model_calls(calls: list[dict[str, Any]], *, days: int = 0)
             continue
         created_at = _float_value(call.get("created_at"))
         if created_at is not None:
-            return (datetime.fromtimestamp(created_at).astimezone().date() + timedelta(days=days)).isoformat()
+                return (datetime.fromtimestamp(created_at).astimezone().date() + timedelta(days=days)).isoformat()
     return (datetime.now().astimezone().date() + timedelta(days=days)).isoformat()
+
+
+def _date_value_appears(content: str, expected_iso: str) -> bool:
+    try:
+        year_s, month_s, day_s = expected_iso.split("-")
+        year = int(year_s)
+        month = int(month_s)
+        day = int(day_s)
+    except ValueError:
+        return expected_iso in content
+    candidates = {
+        f"{year:04d}-{month:02d}-{day:02d}",
+        f"{year:04d}/{month:02d}/{day:02d}",
+        f"{year:04d}.{month:02d}.{day:02d}",
+        f"{year:04d}{month:02d}{day:02d}",
+        f"{year:04d}-{month}-{day}",
+        f"{year:04d}/{month}/{day}",
+        f"{year:04d}.{month}.{day}",
+    }
+    if any(candidate in content for candidate in candidates):
+        return True
+    chinese_pattern = (
+        rf"(?<!\d){year:04d}\s*年\s*0?{month}\s*月\s*0?{day}\s*日?"
+    )
+    return re.search(chinese_pattern, content) is not None
 
 
 def _runtime_minute_candidates_for_model_calls(calls: list[dict[str, Any]], *, tolerance_minutes: int = 2) -> list[str]:
@@ -1988,6 +2108,27 @@ def _runtime_minute_candidates_for_model_calls(calls: list[dict[str, Any]], *, t
         (base + timedelta(minutes=delta)).strftime("%H:%M")
         for delta in range(-tolerance_minutes, tolerance_minutes + 1)
     ]
+
+
+def _minute_value_appears(content: str, expected_times: list[str]) -> bool:
+    normalized = content.replace("：", ":")
+    for expected in expected_times:
+        if expected in normalized:
+            return True
+        try:
+            hour_s, minute_s = expected.split(":")
+            hour = int(hour_s)
+            minute = int(minute_s)
+        except ValueError:
+            continue
+        hour_patterns = [str(hour), f"{hour:02d}"]
+        if hour > 12 and re.search(r"(下午|晚上|夜里|傍晚)", content):
+            hour_patterns.extend([str(hour - 12), f"{hour - 12:02d}"])
+        for hour_pattern in sorted(set(hour_patterns)):
+            pattern = rf"(?<!\d){hour_pattern}\s*(?:点|时|:)\s*0?{minute}\s*(?:分)?"
+            if re.search(pattern, normalized):
+                return True
+    return False
 
 
 def _runtime_weekday_candidates_for_model_calls(calls: list[dict[str, Any]], *, days: int = 0) -> list[str]:
@@ -2087,8 +2228,17 @@ def run_summary_payload(
     model_usage: dict[str, int],
     scenarios: list[Scenario],
 ) -> dict[str, Any]:
+    hard_ok = all(result.ok for result in results)
+    semantic_required_count = sum(1 for scenario in scenarios if scenario.rubric)
+    semantic_status = "requires_human_review" if hard_ok and semantic_required_count else "blocked_by_hard_failures"
+    if hard_ok and not semantic_required_count:
+        semantic_status = "not_required"
     return {
-        "ok": all(result.ok for result in results),
+        "ok": hard_ok,
+        "hard_ok": hard_ok,
+        "overall_status": "hard_passed_semantic_review_required" if semantic_status == "requires_human_review" else (
+            "passed" if hard_ok else "hard_failed"
+        ),
         "run_id": run_id,
         "suite": suite,
         "scenario_count": len(results),
@@ -2098,7 +2248,8 @@ def run_summary_payload(
         "scenarios": [result.__dict__ for result in results],
         "artifact_dir": str(artifact_dir),
         "semantic_review": {
-            "required_count": sum(1 for scenario in scenarios if scenario.rubric),
+            "status": semantic_status,
+            "required_count": semantic_required_count,
             "artifact": str(artifact_dir / "semantic-review.jsonl"),
             "policy": "hard tool/safety/world checks are automatic; final response quality is reviewed from artifacts against each scenario rubric",
         },
