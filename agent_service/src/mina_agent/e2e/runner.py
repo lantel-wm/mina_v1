@@ -67,6 +67,10 @@ class RunResult:
     error: str = ""
 
 
+class E2EInfrastructureError(RuntimeError):
+    """Raised when the harness/sidecar infrastructure is unhealthy."""
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv_defaults()
     args = parse_args(argv)
@@ -94,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         server_port=args.server_port,
         timeout=args.timeout,
         searxng_url=args.searxng_url,
+        isolate_scenarios=not args.shared_sidecar,
     )
     results = runner.run()
     summary = run_summary_payload(run_id, args.suite, results, artifact_dir, live_model, runner.model_usage, selected)
@@ -112,6 +117,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--searxng-url", default="")
+    parser.add_argument(
+        "--shared-sidecar",
+        action="store_true",
+        help="Use one sidecar and SQLite DB for the whole run. Default isolates each scenario.",
+    )
     parser.add_argument("--list-scenarios", action="store_true", help="Print selected scenario metadata without running E2E.")
     parser.add_argument(
         "--require-live-model",
@@ -234,6 +244,7 @@ class E2ERunner:
         server_port: int,
         timeout: float,
         searxng_url: str,
+        isolate_scenarios: bool = True,
     ):
         self.scenarios = scenarios
         self.artifact_dir = artifact_dir
@@ -241,6 +252,7 @@ class E2ERunner:
         self.server_port = server_port
         self.timeout = timeout
         self.searxng_url = searxng_url
+        self.isolate_scenarios = isolate_scenarios
         self.sidecar: subprocess.Popen[str] | None = None
         self.server: subprocess.Popen[str] | None = None
         self.server_output: ProcessOutput | None = None
@@ -255,26 +267,69 @@ class E2ERunner:
         if not searxng_url:
             self.search_fixture = SearxngFixtureServer()
             searxng_url = self.search_fixture.start()
-        self.sidecar = start_sidecar(self.port, self.artifact_dir, searxng_url)
-        self.sidecar_output = ProcessOutput(self.sidecar, self.artifact_dir / "sidecar-stdout.log", echo=False)
-        self.sidecar_output.start()
         try:
-            wait_http(f"http://127.0.0.1:{self.port}/healthz", timeout=30, proc=self.sidecar)
+            if not self.isolate_scenarios:
+                self._start_sidecar(self.artifact_dir, searxng_url)
             self.server = start_server(self.artifact_dir)
             self.server_output = ProcessOutput(self.server, self.artifact_dir / "server.log", echo=True)
             self.server_output.start()
             self.server_output.wait_for("Done", timeout=self.timeout)
             for scenario in self.scenarios:
-                results.append(self._run_with_retries(scenario))
+                try:
+                    if self.isolate_scenarios:
+                        self._start_sidecar(self.artifact_dir / scenario.name, searxng_url)
+                    results.append(self._run_with_retries(scenario))
+                except E2EInfrastructureError as exc:
+                    results.append(
+                        RunResult(
+                            scenario=scenario.name,
+                            ok=False,
+                            attempts=1,
+                            duration_seconds=0.0,
+                            error=f"infrastructure failure: {exc}",
+                        )
+                    )
+                    break
+                finally:
+                    if self.isolate_scenarios:
+                        self._stop_sidecar()
             self._write_run_artifacts()
             return results
         finally:
             if self.server is not None:
                 stop_process(self.server, command="stop")
-            if self.sidecar is not None:
-                stop_process(self.sidecar)
+            self._stop_sidecar()
             if self.search_fixture is not None:
                 self.search_fixture.stop()
+
+    def _start_sidecar(self, sidecar_artifact_dir: Path, searxng_url: str) -> None:
+        self._stop_sidecar()
+        sidecar_artifact_dir.mkdir(parents=True, exist_ok=True)
+        self.sidecar = start_sidecar(
+            self.port,
+            sidecar_artifact_dir,
+            searxng_url,
+            db_path=sidecar_artifact_dir / "mina-live.sqlite3",
+            log_path=sidecar_artifact_dir / "sidecar.log",
+        )
+        self.sidecar_output = ProcessOutput(self.sidecar, sidecar_artifact_dir / "sidecar-stdout.log", echo=False)
+        self.sidecar_output.start()
+        wait_http(f"http://127.0.0.1:{self.port}/healthz", timeout=30, proc=self.sidecar)
+        self._check_sidecar_health()
+
+    def _stop_sidecar(self) -> None:
+        if self.sidecar is not None:
+            stop_process(self.sidecar)
+        self.sidecar = None
+        self.sidecar_output = None
+
+    def _check_sidecar_health(self) -> None:
+        try:
+            health = read_json(f"http://127.0.0.1:{self.port}/healthz", timeout=5)
+        except OSError as exc:
+            raise E2EInfrastructureError(f"sidecar health endpoint failed: {exc}") from exc
+        if not health.get("ok"):
+            raise E2EInfrastructureError("sidecar unhealthy: " + json.dumps(health, ensure_ascii=False))
 
     def _run_with_retries(self, scenario: Scenario) -> RunResult:
         last_error = ""
@@ -288,6 +343,18 @@ class E2ERunner:
                     attempts=attempt,
                     duration_seconds=round(time.monotonic() - started_at, 3),
                 )
+            except E2EInfrastructureError as exc:
+                self._record_harness_event(
+                    scenario.name,
+                    "scenario_infrastructure_failed",
+                    {
+                        "attempt": attempt,
+                        "error": str(exc),
+                        "duration_seconds": round(time.monotonic() - started_at, 3),
+                    },
+                )
+                self._write_failure_snapshot(scenario, str(exc))
+                raise
             except Exception as exc:  # noqa: BLE001 - runner must preserve scenario failure in summary.
                 last_error = str(exc)
                 will_retry = attempt <= scenario.retry
@@ -324,6 +391,7 @@ class E2ERunner:
         assert self.server is not None
         assert self.server_output is not None
         started_at = time.monotonic()
+        self._check_sidecar_health()
         print(f"[mina-e2e] scenario start: {scenario.name}")
         self._record_harness_event(scenario.name, "scenario_start", {"fixture": scenario.fixture})
         self._send_server_command(scenario.name, f"mina-test fixture reset {scenario.fixture}")
@@ -454,6 +522,7 @@ class E2ERunner:
             timeout=timeout,
         )
         if not line:
+            self._check_sidecar_health()
             raise TimeoutError(f"{context} did not receive mina turn response for requestId={request_id}")
         self._record_harness_event(
             scenario_name,
@@ -927,7 +996,10 @@ class E2ERunner:
     def _combined(self, key: str, request_ids: list[str]) -> list[dict[str, Any]]:
         combined: list[dict[str, Any]] = []
         for request_id in request_ids:
-            trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
+            try:
+                trace = read_json(f"http://127.0.0.1:{self.port}/v1/traces/{request_id}", timeout=5)
+            except OSError as exc:
+                raise E2EInfrastructureError(f"sidecar trace endpoint failed for {request_id}: {exc}") from exc
             items = trace.get(key) or []
             combined.extend(item for item in items if isinstance(item, dict))
         return combined
@@ -985,14 +1057,20 @@ class E2ERunner:
         )
 
     def _write_run_artifacts(self) -> None:
-        all_tool_calls = read_json(f"http://127.0.0.1:{self.port}/v1/tool-calls", timeout=5)
-        all_action_events = read_json(f"http://127.0.0.1:{self.port}/v1/action-events", timeout=5)
-        all_model_calls = read_json(f"http://127.0.0.1:{self.port}/v1/model-calls", timeout=5)
-        payload = {
-            "tool_calls": compact_summary_tool_calls(all_tool_calls.get("tool_calls", [])),
-            "action_events": compact_summary_action_events(all_action_events.get("events", [])),
-            "model_calls": compact_summary_model_calls(all_model_calls.get("model_calls", [])),
-        }
+        if self.isolate_scenarios:
+            payload = self._run_artifacts_from_scenario_files()
+        else:
+            try:
+                all_tool_calls = read_json(f"http://127.0.0.1:{self.port}/v1/tool-calls", timeout=5)
+                all_action_events = read_json(f"http://127.0.0.1:{self.port}/v1/action-events", timeout=5)
+                all_model_calls = read_json(f"http://127.0.0.1:{self.port}/v1/model-calls", timeout=5)
+                payload = {
+                    "tool_calls": compact_summary_tool_calls(all_tool_calls.get("tool_calls", [])),
+                    "action_events": compact_summary_action_events(all_action_events.get("events", [])),
+                    "model_calls": compact_summary_model_calls(all_model_calls.get("model_calls", [])),
+                }
+            except OSError:
+                payload = self._run_artifacts_from_scenario_files()
         self.model_usage = model_usage_summary(payload["model_calls"])
         payload["model_usage"] = self.model_usage
         (self.artifact_dir / "trace-summary.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1002,6 +1080,28 @@ class E2ERunner:
         )
         aggregate_run_trace_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
         aggregate_scenario_summaries_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
+
+    def _run_artifacts_from_scenario_files(self) -> dict[str, list[dict[str, Any]]]:
+        payload: dict[str, list[dict[str, Any]]] = {"tool_calls": [], "action_events": [], "model_calls": []}
+        for scenario in self.scenarios:
+            trace_path = self.artifact_dir / scenario.name / "trace.jsonl"
+            if not trace_path.exists():
+                continue
+            for line in trace_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                event_type = record.get("event_type")
+                if event_type == "tool_call":
+                    payload["tool_calls"].append(record)
+                elif event_type == "model_call":
+                    payload["model_calls"].append(record)
+                elif event_type in {"action_scheduled", "action_result"}:
+                    payload["action_events"].append(record)
+        return payload
 
     def _write_failure_snapshot(self, scenario: Scenario, error: str) -> None:
         failure_dir = self.artifact_dir / scenario.name
@@ -1266,12 +1366,19 @@ def prepare_runtime(port: int, server_port: int) -> None:
     download_kotlin(SERVER_DIR / "mods")
 
 
-def start_sidecar(port: int, artifact_dir: Path, searxng_url: str) -> subprocess.Popen[str]:
+def start_sidecar(
+    port: int,
+    artifact_dir: Path,
+    searxng_url: str,
+    *,
+    db_path: Path | None = None,
+    log_path: Path | None = None,
+) -> subprocess.Popen[str]:
     pythonpath = str(ROOT / "agent_service" / "src")
     env = {
         **os.environ,
-        "MINA_DB_PATH": str(artifact_dir / "mina-live.sqlite3"),
-        "MINA_LOG_PATH": str(artifact_dir / "sidecar.log"),
+        "MINA_DB_PATH": str(db_path or artifact_dir / "mina-live.sqlite3"),
+        "MINA_LOG_PATH": str(log_path or artifact_dir / "sidecar.log"),
         "MINA_MCP_CONFIG_PATH": str(artifact_dir / "mcp.empty.json"),
         "MINA_SEARXNG_URL": searxng_url.rstrip("/"),
         "PYTHONPATH": pythonpath + os.pathsep + os.environ.get("PYTHONPATH", ""),
@@ -1875,6 +1982,7 @@ def write_run_manifest(artifact_dir: Path, args: argparse.Namespace, scenarios: 
             "timeout_seconds": args.timeout,
             "skip_build": bool(args.skip_build),
             "external_searxng": bool(args.searxng_url),
+            "scenario_isolation": not bool(args.shared_sidecar),
         },
         "deepseek": live_model,
         "scenarios": [scenario_artifact_payload(scenario) for scenario in scenarios],

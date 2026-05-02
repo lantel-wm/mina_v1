@@ -151,6 +151,8 @@ def test_healthz_exposes_session_queue_state(tmp_path) -> None:
 
     response = healthz()
 
+    assert response["ok"] is True
+    assert response["db"]["ok"] is True
     assert response["session_queue"]["session_count"] == 0
     assert response["session_queue"]["sessions"] == {}
 

@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from .config import Settings
-from .context import build_messages
+from .context import build_messages, build_read_only_command_tool_repair
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .policy import ResponsePolicyRuntime, is_tool_error, normalize_health_unit_claims, strip_player_name_address
@@ -100,6 +100,16 @@ class AgentHarness:
                     state.usage,
                 )
                 if response.finish_reason != "tool_calls" or not tool_calls:
+                    command_tool_repair = build_read_only_command_tool_repair(message)
+                    if (
+                        command_tool_repair
+                        and state.command_tool_repairs < 1
+                        and subturn < self.settings.max_tool_turns
+                    ):
+                        state.command_tool_repairs += 1
+                        state.messages.append({"role": "system", "content": command_tool_repair})
+                        self._debug("turn repair request_id=%s reason=read_only_command_without_tool", request_id)
+                        continue
                     review = policy.review_final_content(
                         str(assistant_message.get("content") or ""),
                         can_repair=subturn < self.settings.max_tool_turns,

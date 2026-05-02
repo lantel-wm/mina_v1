@@ -342,6 +342,18 @@ def _command_policy_reminder(user_content: str) -> str:
     return COMMAND_POLICY_REMINDER if _read_only_command_mentions(content) else ""
 
 
+def build_read_only_command_tool_repair(user_content: str) -> str:
+    if not _command_policy_reminder(user_content):
+        return ""
+    return (
+        "Tool call repair:\n"
+        "- The previous assistant draft answered a read-only Minecraft command request without a tool call.\n"
+        "- Discard that draft. In the next assistant message, call run_read_only_command for the command requested by the final user message.\n"
+        "- Do not answer with text like 正在查询 unless the tool call is present in the same assistant message.\n"
+        "- Do not answer from snapshot, recent command results, or conversation history."
+    )
+
+
 def _has_command_request_marker(content: str) -> bool:
     normalized = str(content or "").lower()
     return any(

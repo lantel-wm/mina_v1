@@ -191,8 +191,33 @@ def test_write_run_manifest_has_no_body_runner_flags(tmp_path) -> None:
     payload = json.loads((tmp_path / "run_manifest.json").read_text(encoding="utf-8"))
 
     assert payload["runner"]["port"] == 19000
+    assert payload["runner"]["scenario_isolation"] is True
     assert "disable_body" not in payload["runner"]
     assert "enable_body_fixtures" not in payload["runner"]
+
+
+def test_run_artifacts_can_be_aggregated_from_isolated_scenario_files(tmp_path) -> None:
+    scenario = Scenario(name="sample", fixture="default_world", steps=[])
+    scenario_dir = tmp_path / "sample"
+    scenario_dir.mkdir()
+    records = [
+        {"event_type": "model_call", "status": "ok", "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}},
+        {"event_type": "tool_call", "tool_name": "run_read_only_command", "status": "ok"},
+        {"event_type": "action_scheduled", "action_name": "run_read_only_command"},
+        {"event_type": "action_result", "action_name": "run_read_only_command"},
+        {"event_type": "server_output_line", "payload": {"line": "ignored"}},
+    ]
+    (scenario_dir / "trace.jsonl").write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    runner = e2e_runner.E2ERunner([scenario], tmp_path, 19000, 25566, 30, "")
+
+    payload = runner._run_artifacts_from_scenario_files()  # noqa: SLF001
+
+    assert [item["event_type"] for item in payload["model_calls"]] == ["model_call"]
+    assert [item["event_type"] for item in payload["tool_calls"]] == ["tool_call"]
+    assert [item["event_type"] for item in payload["action_events"]] == ["action_scheduled", "action_result"]
 
 
 def test_assert_model_calls_rejects_private_tool_exposure(tmp_path, monkeypatch) -> None:

@@ -17,6 +17,7 @@ class TurnRuntimeState:
     actions: list[JsonDict] = field(default_factory=list)
     usage: JsonDict = field(default_factory=dict)
     invalid_tool_results: int = 0
+    command_tool_repairs: int = 0
 
     def append_model_message(self, message: JsonDict) -> None:
         self.messages.append(message)

@@ -15,9 +15,28 @@ class MemoryStore:
         self._init_schema()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def health(self) -> dict[str, Any]:
+        try:
+            with self._connect() as conn:
+                conn.execute("select 1").fetchone()
+                tables = {
+                    str(row[0])
+                    for row in conn.execute(
+                        "select name from sqlite_master where type = 'table' and name in "
+                        "('players', 'conversations', 'tool_calls', 'model_calls', 'action_events')"
+                    )
+                }
+            missing = sorted({"players", "conversations", "tool_calls", "model_calls", "action_events"} - tables)
+            if missing:
+                return {"ok": False, "path": str(self.path), "error": "missing tables: " + ", ".join(missing)}
+            return {"ok": True, "path": str(self.path)}
+        except sqlite3.Error as exc:
+            return {"ok": False, "path": str(self.path), "error": str(exc)}
 
     def _init_schema(self) -> None:
         with self._connect() as conn:

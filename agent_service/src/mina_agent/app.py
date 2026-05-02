@@ -38,14 +38,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
+        memory_health = memory.health()
         return {
-            "ok": True,
+            "ok": bool(memory_health.get("ok")),
             "service": "mina-agent-service",
             "uptime_seconds": round(time.time() - started_at, 3),
             "model": resolved.model,
             "deepseek_configured": deepseek.configured(),
             "thinking": resolved.thinking,
             "db_path": str(resolved.db_path),
+            "db": memory_health,
             "log_path": str(resolved.log_path),
             "searxng": searxng.health(),
             "mcp": mcp.health(),

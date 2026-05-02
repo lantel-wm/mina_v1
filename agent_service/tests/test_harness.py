@@ -219,7 +219,48 @@ def test_read_only_command_is_scheduled_after_model_tool_call(tmp_path) -> None:
     assert [call["tool_name"] for call in calls] == ["run_read_only_command"]
 
 
-def test_read_only_command_model_miss_is_not_repaired_by_local_route(tmp_path) -> None:
+def test_read_only_command_model_miss_gets_llm_repair_prompt(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "正在查询。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-time",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "time query day"}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, _search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("执行 time query day", "req-time-repair"))
+
+    assert response["messages"][0]["content"] == "正在查询。"
+    assert response["actions"][0]["name"] == "run_read_only_command"
+    assert len(model.calls) == 2
+    assert any("Tool call repair" in message["content"] for message in model.calls[1]["messages"])
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-time-repair")] == ["run_read_only_command"]
+
+
+def test_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
@@ -227,22 +268,7 @@ def test_read_only_command_model_miss_is_not_repaired_by_local_route(tmp_path) -
                 finish_reason="stop",
                 usage={},
                 raw={},
-            )
-        ]
-    )
-    harness, memory, _model, _search = _harness(tmp_path, model)
-
-    response = harness.run_turn(_turn("执行 time query day", "req-time-repair"))
-
-    assert response["messages"][0]["content"] == "当前是第 0 天。"
-    assert response.get("actions", []) == []
-    assert len(model.calls) == 1
-    assert memory.recent_tool_calls("req-time-repair") == []
-
-
-def test_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:
-    model = FakeDeepSeek(
-        [
+            ),
             DeepSeekResponse(
                 message={"role": "assistant", "content": "当前是第 0 天。"},
                 finish_reason="stop",
@@ -259,7 +285,7 @@ def test_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:
     assert response["messages"][0]["content"] == "当前是第 0 天。"
     assert response.get("actions", []) == []
     assert "read_only_command_tool_missing" not in response["debug"]
-    assert len(model.calls) == 1
+    assert len(model.calls) == 2
     assert memory.recent_tool_calls("req-time-no-tool") == []
 
 
