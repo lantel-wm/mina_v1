@@ -1055,6 +1055,10 @@ class E2ERunner:
             json.dumps(scenario_summary_payload(scenario, records, final_snapshot), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        (scenario_dir / "review.json").write_text(
+            json.dumps(scenario_review_payload(scenario, records, final_snapshot), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def _write_run_artifacts(self) -> None:
         if self.isolate_scenarios:
@@ -1080,6 +1084,7 @@ class E2ERunner:
         )
         aggregate_run_trace_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
         aggregate_scenario_summaries_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
+        aggregate_semantic_reviews_jsonl(self.artifact_dir, [scenario.name for scenario in self.scenarios])
 
     def _run_artifacts_from_scenario_files(self) -> dict[str, list[dict[str, Any]]]:
         payload: dict[str, list[dict[str, Any]]] = {"tool_calls": [], "action_events": [], "model_calls": []}
@@ -1262,8 +1267,8 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
                 "title": "Mina E2E Diamond Ore Fixture",
                 "url": "https://example.invalid/mina-e2e/diamond-ore",
                 "content": (
-                    "For this Mina E2E fixture, the required answer marker is MinaE2E-Diamond-Y=-59. "
-                    "Minecraft Java 1.21 diamond ore generation height guidance is represented by this fixture. "
+                    "Minecraft Java 1.21 diamond ore generation guidance in this fixture says Y=-59 is a good "
+                    "mining level, with trace marker MinaE2E-Diamond-Y=-59 for harness debugging. "
                     "This result intentionally includes a longer safe summary so the local search renderer must "
                     "preserve useful detail across Minecraft chat chunks instead of clipping the answer after a "
                     "short preview. "
@@ -1817,8 +1822,91 @@ def scenario_summary_payload(
         "model_exposed_tool_names": sorted({name for call in model_calls for name in _model_tool_names(call)}),
         "model_requested_tool_names": sorted({name for call in model_calls for name in _model_requested_tool_names(call)}),
         "model_usage": model_usage_summary(model_calls),
+        "final_responses": final_response_payloads(records),
+        "semantic_review": {
+            "status": "requires_human_review" if scenario.rubric else "not_requested",
+            "rubric": scenario.rubric,
+        },
         "final_snapshot": final_snapshot,
     }
+
+
+def scenario_review_payload(
+    scenario: Scenario,
+    records: list[dict[str, Any]],
+    final_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    tool_calls = [
+        {
+            "request_id": record.get("request_id"),
+            "tool_name": record.get("tool_name"),
+            "status": record.get("status"),
+            "args": record.get("args"),
+            "result": record.get("result"),
+        }
+        for record in records
+        if record.get("event_type") == "tool_call"
+    ]
+    action_events = [
+        {
+            "request_id": record.get("request_id"),
+            "event_type": record.get("event_type"),
+            "action_name": record.get("action_name"),
+            "payload": record.get("payload"),
+        }
+        for record in records
+        if record.get("event_type") in {"action_scheduled", "action_result"}
+    ]
+    return {
+        "scenario": scenario.name,
+        "semantic_status": "requires_human_review" if scenario.rubric else "not_requested",
+        "rubric": scenario.rubric,
+        "requests": [
+            {
+                "kind": step.kind,
+                "request_id": step.request_id,
+                "content": step.value,
+            }
+            for step in scenario.steps
+            if step.kind in {"request", "companion_tick"}
+        ],
+        "final_responses": final_response_payloads(records),
+        "hard_checks": {
+            "expected_tools": [asdict(item) for item in scenario.expected_tools],
+            "forbidden_tools": [asdict(item) for item in scenario.forbidden_tools],
+            "expected_actions": [asdict(item) for item in scenario.expected_actions],
+            "forbidden_actions": sorted(scenario.forbidden_actions),
+            "forbidden_model_tools": sorted(scenario.forbidden_model_tools),
+            "forbidden_response_contains": scenario.forbidden_response_contains,
+            "forbidden_response_regexes": scenario.forbidden_response_regexes,
+            "trace_invariants": scenario.trace_invariants,
+            "world_asserts": scenario.world_asserts,
+        },
+        "observed_tool_calls": tool_calls,
+        "observed_action_events": action_events,
+        "final_snapshot": final_snapshot,
+    }
+
+
+def final_response_payloads(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    responses: list[dict[str, Any]] = []
+    for record in records:
+        if record.get("event_type") != "model_call":
+            continue
+        if record.get("status") != "ok" or record.get("finish_reason") == "tool_calls":
+            continue
+        content = _model_content_preview(record).strip()
+        if not content:
+            continue
+        responses.append(
+            {
+                "request_id": record.get("request_id"),
+                "subturn": record.get("subturn"),
+                "content": content,
+                "created_at": record.get("created_at"),
+            }
+        )
+    return responses
 
 
 def _duration_from_harness_record(record: dict[str, Any]) -> float | None:
@@ -2009,6 +2097,11 @@ def run_summary_payload(
         "duration_seconds": round(sum(result.duration_seconds for result in results), 3),
         "scenarios": [result.__dict__ for result in results],
         "artifact_dir": str(artifact_dir),
+        "semantic_review": {
+            "required_count": sum(1 for scenario in scenarios if scenario.rubric),
+            "artifact": str(artifact_dir / "semantic-review.jsonl"),
+            "policy": "hard tool/safety/world checks are automatic; final response quality is reviewed from artifacts against each scenario rubric",
+        },
         "deepseek": live_model,
         "model_usage": model_usage,
         "scenario_tag_counts": scenario_tag_counts(scenarios),
@@ -2061,6 +2154,26 @@ def aggregate_scenario_summaries_jsonl(artifact_dir: Path, scenario_names: list[
             record.setdefault("scenario", scenario_name)
             records.append(record)
     (artifact_dir / "scenario_summaries.jsonl").write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+def aggregate_semantic_reviews_jsonl(artifact_dir: Path, scenario_names: list[str]) -> None:
+    records: list[dict[str, Any]] = []
+    for scenario_name in scenario_names:
+        review_path = artifact_dir / scenario_name / "review.json"
+        if not review_path.exists():
+            records.append({"scenario": scenario_name, "semantic_status": "missing_review"})
+            continue
+        try:
+            record = json.loads(review_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            record = {"scenario": scenario_name, "semantic_status": "invalid_review", "error": str(exc)}
+        if isinstance(record, dict):
+            record.setdefault("scenario", scenario_name)
+            records.append(record)
+    (artifact_dir / "semantic-review.jsonl").write_text(
         "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
         encoding="utf-8",
     )

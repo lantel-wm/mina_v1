@@ -120,7 +120,9 @@ The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KE
 
 By default, the live E2E runner isolates sidecar state per scenario: one headless Fabric server is shared for the run, but each scenario gets a fresh sidecar process and SQLite DB. This keeps ordinary live suite failures focused on the scenario under test instead of on accumulated conversation history. Use `--shared-sidecar` only for deliberate long-session/context-growth pressure testing.
 
-Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `run_manifest.json`, root `summary.json`, `trace-summary.json`, root `trace.jsonl`, `scenario_summaries.jsonl`, and `server.log`. Per-scenario directories contain `sidecar.log`, `sidecar-stdout.log`, `mina-live.sqlite3`, `manifest.json`, `summary.json`, `final_snapshot.json`, `trace.json`, `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/traces/{request_id}`, and `/healthz` for focused debugging; `/healthz` includes SQLite DB availability so harness infrastructure failures can fail fast.
+Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `run_manifest.json`, root `summary.json`, `trace-summary.json`, root `trace.jsonl`, `scenario_summaries.jsonl`, `semantic-review.jsonl`, and `server.log`. Per-scenario directories contain `sidecar.log`, `sidecar-stdout.log`, `mina-live.sqlite3`, `manifest.json`, `summary.json`, `review.json`, `final_snapshot.json`, `trace.json`, `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/traces/{request_id}`, and `/healthz` for focused debugging; `/healthz` includes SQLite DB availability so harness infrastructure failures can fail fast.
+
+Built-in live E2E scenarios should stay close to real player interaction. They must not force Mina's final wording through `expected_response_contains`, `expected_response_any_contains`, or player prompts like "only answer the exact marker/string". Automatic assertions are reserved for hard facts that should be mechanically checkable: tool selection, forbidden tools/actions, command/action trace alignment, world assertions, infrastructure health, and safety/private-label leaks. Final answer quality is reviewed from each scenario's `rubric`, `review.json`, and the root `semantic-review.jsonl` after the run.
 
 Declarative scenario schema highlights:
 
@@ -128,7 +130,7 @@ Declarative scenario schema highlights:
 - Supported fixture names: `default_world` and `tree_world`.
 - Supported step kinds: `request`, `companion_tick`, `world_mutate`, and `assert`.
 - `request` and `companion_tick` steps require a unique `request_id`; `/v1/traces/{request_id}` is the trace join key.
-- Trace and response assertions: `expected_tools`, `forbidden_tools`, `expected_actions`, `forbidden_actions`, `forbidden_model_tools`, `expected_model`, `expected_response_contains`, and `forbidden_response_contains`.
+- Hard trace assertions: `expected_tools`, `forbidden_tools`, `expected_actions`, `forbidden_actions`, `forbidden_model_tools`, `expected_model`, `forbidden_response_contains`, `forbidden_response_regexes`, `trace_invariants`, and `world_asserts`.
 - `assert` steps and world assertions run `/mina-test assert <name>`; use explicit `assert` steps when a condition must hold before a model request.
 - Built-in safe world assertions include `target_log_present`, `upper_log_present`, `low_health`, and `no_nearby_entities`.
 - Fixture reset disables natural mob spawning and clears non-player entities so snapshot E2E contexts stay deterministic; scenario-specific entities must be added through explicit `world_mutate` steps.

@@ -71,6 +71,21 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     assert "response_contains_current_minute" in SCENARIOS["current_time_context_live_model"].trace_invariants
 
 
+def test_builtin_scenarios_do_not_force_semantic_response_strings() -> None:
+    assert all(not scenario.expected_response_contains for scenario in SCENARIOS.values())
+    assert all(not scenario.expected_response_any_contains for scenario in SCENARIOS.values())
+    for scenario in SCENARIOS.values():
+        for step in scenario.steps:
+            if step.kind not in {"request", "companion_tick"}:
+                continue
+            assert "只回答" not in step.value
+            assert "请原样回答完整输出字符串" not in step.value
+            if any("mina send command output" in item for item in step.wait_for):
+                continue
+            assert step.wait_for == [f"mina turn response requestId={step.request_id}"]
+    assert "你附近" not in SCENARIOS["nearby_item_drop_snapshot_live_model"].forbidden_response_contains
+
+
 def test_parse_args_rejects_removed_body_suite() -> None:
     with pytest.raises(SystemExit):
         e2e_runner.parse_args(["--suite", "body"])
@@ -218,6 +233,58 @@ def test_run_artifacts_can_be_aggregated_from_isolated_scenario_files(tmp_path) 
     assert [item["event_type"] for item in payload["model_calls"]] == ["model_call"]
     assert [item["event_type"] for item in payload["tool_calls"]] == ["tool_call"]
     assert [item["event_type"] for item in payload["action_events"]] == ["action_scheduled", "action_result"]
+
+
+def test_scenario_review_payload_keeps_real_response_for_human_judgment() -> None:
+    scenario = Scenario(
+        name="semantic-sample",
+        fixture="default_world",
+        steps=[],
+        rubric="The answer should mention the current position.",
+    )
+    records = [
+        {
+            "event_type": "model_call",
+            "request_id": "req-1",
+            "subturn": 1,
+            "status": "ok",
+            "finish_reason": "stop",
+            "response": {"content": "你现在在 X=0.5, Y=80, Z=-2.5。"},
+        },
+        {
+            "event_type": "tool_call",
+            "request_id": "req-1",
+            "tool_name": "web_search",
+            "status": "ok",
+            "args": {"query": "x"},
+            "result": {"ok": True},
+        },
+    ]
+
+    payload = e2e_runner.scenario_review_payload(scenario, records, {"ok": True})
+
+    assert payload["semantic_status"] == "requires_human_review"
+    assert payload["rubric"] == "The answer should mention the current position."
+    assert payload["final_responses"][0]["content"] == "你现在在 X=0.5, Y=80, Z=-2.5。"
+    assert payload["observed_tool_calls"][0]["tool_name"] == "web_search"
+
+
+def test_aggregate_semantic_reviews_jsonl(tmp_path) -> None:
+    scenario_dir = tmp_path / "semantic-sample"
+    scenario_dir.mkdir()
+    (scenario_dir / "review.json").write_text(
+        json.dumps({"scenario": "semantic-sample", "semantic_status": "requires_human_review"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    e2e_runner.aggregate_semantic_reviews_jsonl(tmp_path, ["semantic-sample", "missing"])  # noqa: SLF001
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "semantic-review.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert records[0]["scenario"] == "semantic-sample"
+    assert records[1] == {"scenario": "missing", "semantic_status": "missing_review"}
 
 
 def test_assert_model_calls_rejects_private_tool_exposure(tmp_path, monkeypatch) -> None:
