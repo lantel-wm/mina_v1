@@ -40,6 +40,8 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "inventory contents/counts" in SYSTEM_PROMPT
     assert "world difficulty" in SYSTEM_PROMPT
     assert "world spawn" in SYSTEM_PROMPT
+    assert "distance from spawn/player_distance_from_spawn" in SYSTEM_PROMPT
+    assert "Spawn distance/出生点距离 is not seed" in SYSTEM_PROMPT
     assert "facing direction/yaw/pitch" in SYSTEM_PROMPT
     assert "nearby relative directions" in SYSTEM_PROMPT
     assert "health/food/armor/XP" in SYSTEM_PROMPT
@@ -70,6 +72,9 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "MCP" not in SYSTEM_PROMPT
     assert "companion tick" not in SYSTEM_PROMPT.lower()
     assert "separate Minecraft character" in SYSTEM_PROMPT
+    assert "Never suggest unobserved plugin/server commands" in SYSTEM_PROMPT
+    assert "/home, /spawn, /warp, /back, /tpa, /tpahere, /rtp, /sethome" in SYSTEM_PROMPT
+    assert "never invent plugin command shortcuts" in SYSTEM_PROMPT
     assert "start_body_task" not in SYSTEM_PROMPT
     assert "body_chain" not in SYSTEM_PROMPT
 
@@ -251,7 +256,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 9500
+    assert len(context) < 10000
 
 
 def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:

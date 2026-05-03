@@ -113,21 +113,31 @@ Useful E2E commands:
 ```sh
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --list-scenarios
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety --require-live-model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite matrix --require-live-model --skip-build
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite stress --require-live-model --shared-sidecar --skip-build
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --scenario read_only_time_command_live_model --require-live-model
 ```
 
 The E2E runner loads `agent_service/.env`, requires a real DeepSeek `MINA_API_KEY`, refuses loopback/mock DeepSeek endpoints, starts the real `mina_agent.app` sidecar, starts a deterministic SearXNG-compatible search fixture unless `--searxng-url` is provided, and starts a dedicated Fabric server in `build/e2e/server`. Built-in scenarios cover LLM-mediated player/world observation, runtime-date/time and relative-date context, read-only command tool selection, web-search tool use and filtering, memory tool use, companion tick alerts, smalltalk, and write-command refusal.
 
+E2E suites are intentionally layered:
+
+- `live`: default high-signal realistic player conversations. This is the normal live gate before push.
+- `matrix`: narrower single-field snapshot/command/search/memory regressions. Use it when changing context rendering, command policy, or scenario infrastructure.
+- `safety`: write-command refusal, prompt-injection resistance, dangerous memory refusal, and tool boundary checks.
+- `stress`: longer multi-turn scenarios, especially useful with `--shared-sidecar` for context-growth pressure testing.
+- `all`: every built-in scenario.
+
 By default, the live E2E runner isolates sidecar state per scenario: one headless Fabric server is shared for the run, but each scenario gets a fresh sidecar process and SQLite DB. This keeps ordinary live suite failures focused on the scenario under test instead of on accumulated conversation history. Use `--shared-sidecar` only for deliberate long-session/context-growth pressure testing.
 
-Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `run_manifest.json`, root `summary.json`, `trace-summary.json`, root `trace.jsonl`, `scenario_summaries.jsonl`, `semantic-review.jsonl`, and `server.log`. Per-scenario directories contain `sidecar.log`, `sidecar-stdout.log`, `mina-live.sqlite3`, `manifest.json`, `summary.json`, `review.json`, `final_snapshot.json`, `trace.json`, `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/traces/{request_id}`, and `/healthz` for focused debugging; `/healthz` includes SQLite DB availability so harness infrastructure failures can fail fast.
+Each run writes artifacts to `build/e2e/runs/<timestamp>/`: `run_manifest.json`, root `summary.json`, `trace-summary.json`, root `trace.jsonl`, `scenario_summaries.jsonl`, `semantic-review.jsonl`, `semantic-review.md`, and `server.log`. Per-scenario directories contain `sidecar.log`, `sidecar-stdout.log`, `mina-live.sqlite3`, `manifest.json`, `summary.json`, `review.json`, `final_snapshot.json`, `trace.json`, `trace.jsonl`, and `model_calls.jsonl`. The sidecar exposes `/v1/model-calls`, `/v1/tool-calls`, `/v1/action-events`, `/v1/traces/{request_id}`, and `/healthz` for focused debugging; `/healthz` includes SQLite DB availability so harness infrastructure failures can fail fast.
 
 Built-in live E2E scenarios should stay close to real player interaction. They must not force Mina's final wording through `expected_response_contains`, `expected_response_any_contains`, or player prompts like "only answer the exact marker/string"; the built-in scenario loader rejects those patterns instead of silently rewriting them. Automatic assertions are reserved for hard facts that should be mechanically checkable: tool selection, forbidden tools/actions, command/action trace alignment, world assertions, infrastructure health, safety/private-label leaks, and narrow factual normalizations such as date/time values accepting natural Chinese or ISO wording. Final answer quality is reviewed from each scenario's `rubric`, `review.json`, and the root `semantic-review.jsonl` after the run.
 
 E2E pass criteria now has two layers:
 
 - Hard pass: the command exits successfully, `summary.json` has `hard_ok: true`, `failed_count: 0`, and hard trace/world/safety checks pass. `summary.json` also includes `overall_status`; `hard_passed_semantic_review_required` means the harness completed but answer quality still needs review.
-- Semantic pass: inspect `semantic-review.jsonl` or each scenario's `review.json`. For every `semantic_status: requires_human_review`, compare the real player request, Mina's final response, tool/action trace, and final snapshot against the scenario `rubric`. Treat a wrong, misleading, overfit, or unhelpful final response as an E2E failure even when `hard_ok` is true, then update prompts/context/tools/tests and rerun the affected scenarios.
+- Semantic pass: inspect `semantic-review.md` first, then `semantic-review.jsonl` or each scenario's `review.json` when more detail is needed. For every `semantic_status: requires_human_review`, compare the real player request, Mina's final response, tool/action trace, and final snapshot against the scenario `rubric`. Treat a wrong, misleading, overfit, or unhelpful final response as an E2E failure even when `hard_ok` is true, then update prompts/context/tools/tests and rerun the affected scenarios.
 
 Declarative scenario schema highlights:
 
@@ -137,6 +147,7 @@ Declarative scenario schema highlights:
 - `request` and `companion_tick` steps require a unique `request_id`; `/v1/traces/{request_id}` is the trace join key.
 - Hard trace assertions: `expected_tools`, `forbidden_tools`, `expected_actions`, `forbidden_actions`, `forbidden_model_tools`, `expected_model`, `forbidden_response_contains`, `forbidden_response_regexes`, `trace_invariants`, and `world_asserts`.
 - Use focused trace invariants for semantic facts that are safe to check exactly, such as requiring a follow-up about prior Minecraft command output to include the full verified Fabric output string instead of only a parsed number.
+- Useful tool-boundary invariants include `no_read_only_command_action`, `single_web_search_tool_call`, `no_tool_calls_after_decline`, and `no_dangerous_memory_write`.
 - `assert` steps and world assertions run `/mina-test assert <name>`; use explicit `assert` steps when a condition must hold before a model request.
 - Built-in safe world assertions include `target_log_present`, `upper_log_present`, `low_health`, and `no_nearby_entities`.
 - Fixture reset disables natural mob spawning and clears non-player entities so snapshot E2E contexts stay deterministic; scenario-specific entities must be added through explicit `world_mutate` steps.
@@ -168,6 +179,7 @@ Then run relevant headless E2E scenarios with a real DeepSeek key configured in 
 ```sh
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite safety --require-live-model
 UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite live --require-live-model
+UV_CACHE_DIR=$PWD/.uv-cache uv run --project agent_service --extra test python -m mina_agent.e2e --suite matrix --require-live-model --skip-build
 ```
 
 7. Inspect new artifacts, including `semantic-review.jsonl`, iterate on hard failures and semantic review failures, then commit after a coherent tested increment. Push only when a git remote is configured and the relevant live E2E scenarios have both hard pass and reviewed semantic pass; otherwise state that push was skipped because no remote exists or semantic review is still pending.

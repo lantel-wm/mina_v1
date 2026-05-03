@@ -80,6 +80,21 @@ def test_specific_agent_memory_label_replaces_stale_fact(tmp_path) -> None:
     assert second["updated_existing"] is True
 
 
+def test_equivalent_base_location_labels_replace_stale_fact(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    first = memory.add_agent_memory("player", "player-1", "基地位置", "你的基地在樱花林旁边", importance=2)
+    second = memory.add_agent_memory("player", "player-1", "base_location", "你的基地在沙漠神殿旁边", importance=4)
+
+    loaded = memory.agent_context("player-1", limit=10)
+    rendered = "\n".join(item["content"] for item in loaded)
+
+    assert "你的基地在沙漠神殿旁边" in rendered
+    assert "你的基地在樱花林旁边" not in rendered
+    assert first["operation"] == "inserted"
+    assert second["operation"] == "replaced"
+    assert second["updated_existing"] is True
+
+
 def test_generic_agent_memory_label_remains_append_only(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.add_agent_memory("player", "player-1", "note", "你喜欢云杉木基地", importance=3)

@@ -659,6 +659,14 @@ def _normalize_scope(scope: str) -> str:
 
 def _normalize_label(label: str) -> str:
     value = str(label or "note").strip().lower()
+    canonical = {
+        "base location": "base_location",
+        "base-location": "base_location",
+        "基地位置": "base_location",
+        "基地坐标": "base_location",
+    }.get(value)
+    if canonical:
+        value = canonical
     return value[:80] if value else "note"
 
 
