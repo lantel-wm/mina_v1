@@ -7,12 +7,8 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 final class MinaChat {
-	private static final int CHAT_COLUMN_LIMIT = 58;
-	private static final Pattern NUMBERED_ITEM_BOUNDARY = Pattern.compile("\\s+(?=\\d+[.．、]\\s*[^0-9\\s])");
-
 	private MinaChat() {
 	}
 
@@ -131,80 +127,12 @@ final class MinaChat {
 
 	private static List<String> chatChunks(String content) {
 		List<String> chunks = new ArrayList<>();
-		String normalized = NUMBERED_ITEM_BOUNDARY.matcher(content).replaceAll("\n");
-		for (String rawLine : normalized.split("\\R", -1)) {
+		for (String rawLine : content.split("\\R", -1)) {
 			String line = rawLine.strip();
-			if (line.isBlank()) {
-				continue;
-			}
-			while (displayWidth(line) > CHAT_COLUMN_LIMIT) {
-				int split = bestSplit(line, CHAT_COLUMN_LIMIT);
-				chunks.add(line.substring(0, split).strip());
-				line = line.substring(split).strip();
-			}
 			if (!line.isBlank()) {
 				chunks.add(line);
 			}
 		}
 		return chunks;
-	}
-
-	private static int bestSplit(String line, int limit) {
-		int width = 0;
-		int fallback = 0;
-		int preferred = 0;
-		for (int offset = 0; offset < line.length();) {
-			int codePoint = line.codePointAt(offset);
-			int next = offset + Character.charCount(codePoint);
-			width += characterWidth(codePoint);
-			if (width > limit) {
-				if (preferred > 0) {
-					return preferred;
-				}
-				return fallback > 0 ? fallback : next;
-			}
-			fallback = next;
-			if (isBreakCharacter(codePoint)) {
-				preferred = next;
-			}
-			offset = next;
-		}
-		return line.length();
-	}
-
-	private static int displayWidth(String value) {
-		int width = 0;
-		for (int offset = 0; offset < value.length();) {
-			int codePoint = value.codePointAt(offset);
-			width += characterWidth(codePoint);
-			offset += Character.charCount(codePoint);
-		}
-		return width;
-	}
-
-	private static int characterWidth(int codePoint) {
-		Character.UnicodeBlock block = Character.UnicodeBlock.of(codePoint);
-		if (block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
-			|| block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
-			|| block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
-			|| block == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS
-			|| block == Character.UnicodeBlock.HIRAGANA
-			|| block == Character.UnicodeBlock.KATAKANA
-			|| block == Character.UnicodeBlock.HANGUL_SYLLABLES) {
-			return 2;
-		}
-		return 1;
-	}
-
-	private static boolean isBreakCharacter(int codePoint) {
-		return Character.isWhitespace(codePoint)
-			|| codePoint == '，'
-			|| codePoint == ','
-			|| codePoint == '。'
-			|| codePoint == '.'
-			|| codePoint == '；'
-			|| codePoint == ';'
-			|| codePoint == '：'
-			|| codePoint == ':';
 	}
 }
