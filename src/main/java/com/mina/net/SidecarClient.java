@@ -7,6 +7,7 @@ import com.mina.config.MinaConfig;
 
 import java.io.Closeable;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -35,6 +36,18 @@ public final class SidecarClient implements Closeable {
 			.uri(URI.create(config.sidecarBaseUrl + "/healthz"))
 			.version(HttpClient.Version.HTTP_1_1)
 			.timeout(Duration.ofMillis(config.sidecarTimeoutMs))
+			.GET()
+			.build();
+		return client.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+			.thenApply(SidecarClient::parseResponse);
+	}
+
+	public CompletableFuture<JsonObject> progress(MinaConfig config, String requestId, int after) {
+		String encoded = URLEncoder.encode(requestId == null ? "" : requestId, StandardCharsets.UTF_8);
+		HttpRequest request = HttpRequest.newBuilder()
+			.uri(URI.create(config.sidecarBaseUrl + "/v1/progress/" + encoded + "?after=" + Math.max(0, after)))
+			.version(HttpClient.Version.HTTP_1_1)
+			.timeout(Duration.ofMillis(Math.min(config.sidecarTimeoutMs, 3000)))
 			.GET()
 			.build();
 		return client.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))

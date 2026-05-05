@@ -7,9 +7,11 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 final class MinaChat {
-	private static final int CHAT_CHUNK_LIMIT = 240;
+	private static final int CHAT_COLUMN_LIMIT = 58;
+	private static final Pattern NUMBERED_ITEM_BOUNDARY = Pattern.compile("\\s+(?=\\d+[.．、]\\s*[^0-9\\s])");
 
 	private MinaChat() {
 	}
@@ -45,6 +47,14 @@ final class MinaChat {
 		send(player, prefix, ChatFormatting.GRAY, content);
 	}
 
+	static void sendProgress(ServerPlayer player, String content) {
+		var prefix = Component.empty()
+			.append(Component.literal("[").withStyle(ChatFormatting.DARK_GRAY))
+			.append(Component.literal("Mina").withStyle(ChatFormatting.DARK_AQUA))
+			.append(Component.literal("] ").withStyle(ChatFormatting.DARK_GRAY));
+		send(player, prefix, content, ChatFormatting.DARK_AQUA, ChatFormatting.ITALIC);
+	}
+
 	static void sendError(ServerPlayer player, String content) {
 		send(player, errorPrefix(), ChatFormatting.RED, content);
 	}
@@ -77,8 +87,10 @@ final class MinaChat {
 		if (player == null || content == null || content.isBlank()) {
 			return;
 		}
+		boolean first = true;
 		for (String chunk : chatChunks(content)) {
-			player.sendSystemMessage(line(prefix, chunk, bodyStyles));
+			player.sendSystemMessage(line(first ? prefix : continuationPrefix(), chunk, bodyStyles));
+			first = false;
 		}
 	}
 
@@ -86,8 +98,10 @@ final class MinaChat {
 		if (server == null || content == null || content.isBlank()) {
 			return;
 		}
+		boolean first = true;
 		for (String chunk : chatChunks(content)) {
-			server.getPlayerList().broadcastSystemMessage(line(prefix, chunk, bodyStyle), false);
+			server.getPlayerList().broadcastSystemMessage(line(first ? prefix : continuationPrefix(), chunk, bodyStyle), false);
+			first = false;
 		}
 	}
 
@@ -111,15 +125,20 @@ final class MinaChat {
 			.append(Component.literal("] ").withStyle(ChatFormatting.DARK_GRAY));
 	}
 
+	private static Component continuationPrefix() {
+		return Component.literal("      ").withStyle(ChatFormatting.DARK_GRAY);
+	}
+
 	private static List<String> chatChunks(String content) {
 		List<String> chunks = new ArrayList<>();
-		for (String rawLine : content.split("\\R", -1)) {
+		String normalized = NUMBERED_ITEM_BOUNDARY.matcher(content).replaceAll("\n");
+		for (String rawLine : normalized.split("\\R", -1)) {
 			String line = rawLine.strip();
 			if (line.isBlank()) {
 				continue;
 			}
-			while (line.length() > CHAT_CHUNK_LIMIT) {
-				int split = bestSplit(line, CHAT_CHUNK_LIMIT);
+			while (displayWidth(line) > CHAT_COLUMN_LIMIT) {
+				int split = bestSplit(line, CHAT_COLUMN_LIMIT);
 				chunks.add(line.substring(0, split).strip());
 				line = line.substring(split).strip();
 			}
@@ -131,13 +150,61 @@ final class MinaChat {
 	}
 
 	private static int bestSplit(String line, int limit) {
-		int split = Math.min(limit, line.length());
-		for (int index = split; index > Math.max(0, split - 40); index--) {
-			char current = line.charAt(index - 1);
-			if (Character.isWhitespace(current) || current == '，' || current == ',' || current == '。' || current == '.') {
-				return index;
+		int width = 0;
+		int fallback = 0;
+		int preferred = 0;
+		for (int offset = 0; offset < line.length();) {
+			int codePoint = line.codePointAt(offset);
+			int next = offset + Character.charCount(codePoint);
+			width += characterWidth(codePoint);
+			if (width > limit) {
+				if (preferred > 0) {
+					return preferred;
+				}
+				return fallback > 0 ? fallback : next;
 			}
+			fallback = next;
+			if (isBreakCharacter(codePoint)) {
+				preferred = next;
+			}
+			offset = next;
 		}
-		return split;
+		return line.length();
+	}
+
+	private static int displayWidth(String value) {
+		int width = 0;
+		for (int offset = 0; offset < value.length();) {
+			int codePoint = value.codePointAt(offset);
+			width += characterWidth(codePoint);
+			offset += Character.charCount(codePoint);
+		}
+		return width;
+	}
+
+	private static int characterWidth(int codePoint) {
+		Character.UnicodeBlock block = Character.UnicodeBlock.of(codePoint);
+		if (block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+			|| block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+			|| block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
+			|| block == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS
+			|| block == Character.UnicodeBlock.HIRAGANA
+			|| block == Character.UnicodeBlock.KATAKANA
+			|| block == Character.UnicodeBlock.HANGUL_SYLLABLES) {
+			return 2;
+		}
+		return 1;
+	}
+
+	private static boolean isBreakCharacter(int codePoint) {
+		return Character.isWhitespace(codePoint)
+			|| codePoint == '，'
+			|| codePoint == ','
+			|| codePoint == '。'
+			|| codePoint == '.'
+			|| codePoint == '；'
+			|| codePoint == ';'
+			|| codePoint == '：'
+			|| codePoint == ':';
 	}
 }

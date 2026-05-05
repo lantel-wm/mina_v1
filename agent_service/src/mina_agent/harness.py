@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from .config import Settings
 from .context import build_messages, build_read_only_command_tool_repair
@@ -20,11 +20,19 @@ LOGGER = logging.getLogger("mina_agent.harness")
 
 
 class AgentHarness:
-    def __init__(self, settings: Settings, memory: MemoryStore, deepseek: DeepSeekClient, tools: ToolRunner):
+    def __init__(
+        self,
+        settings: Settings,
+        memory: MemoryStore,
+        deepseek: DeepSeekClient,
+        tools: ToolRunner,
+        progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+    ):
         self.settings = settings
         self.memory = memory
         self.deepseek = deepseek
         self.tools = tools
+        self.progress_callback = progress_callback
 
     def run_turn(self, turn: dict[str, Any]) -> dict[str, Any]:
         request_id = str(turn.get("request_id") or "")
@@ -181,8 +189,10 @@ class AgentHarness:
                         _log_preview(json.dumps(args, ensure_ascii=False), 1200),
                     )
                     if _should_defer_action_tool(name, tool_calls):
+                        self._emit_tool_progress(request_id, name, args)
                         result = _deferred_action_tool_result(name)
                     else:
+                        self._emit_tool_progress(request_id, name, args)
                         result = self.tools.run(name, args, turn)
                     result_actions = state.collect_result_actions(result)
                     if result_actions:
@@ -251,6 +261,18 @@ class AgentHarness:
         if self.settings.debug_tool_calls:
             LOGGER.info(message, *args)
 
+    def _emit_tool_progress(self, request_id: str, tool_name: str, args: dict[str, Any]) -> None:
+        if not self.progress_callback:
+            return
+        self.progress_callback(
+            request_id,
+            {
+                "kind": "tool_start",
+                "tool_name": tool_name,
+                "message": _tool_progress_message(tool_name, args),
+            },
+        )
+
 
 def _parse_args(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
@@ -272,6 +294,41 @@ def _result_actions(result: Any) -> list[dict[str, Any]]:
     if isinstance(result_actions, list):
         actions.extend(action for action in result_actions if isinstance(action, dict))
     return actions
+
+
+def _tool_progress_message(tool_name: str, args: dict[str, Any]) -> str:
+    query = _progress_preview(str(args.get("query") or "").strip())
+    item = _progress_preview(str(args.get("item") or "").strip())
+    if tool_name == "web_search":
+        return f"正在联网搜索：{query}" if query else "正在联网搜索..."
+    if tool_name == "minecraft_wiki_search":
+        return f"正在查 Minecraft 资料：{query}" if query else "正在查 Minecraft 资料..."
+    if tool_name in {"web_fetch", "read_url"}:
+        return "正在读取网页..."
+    if tool_name == "read_minecraft_state":
+        return "正在读取世界状态..."
+    if tool_name == "run_read_only_command":
+        command = str(args.get("command") or "").strip()
+        return f"正在查询 Minecraft：/{command}" if command else "正在查询 Minecraft..."
+    if tool_name == "memory_search":
+        return "正在查记忆..."
+    if tool_name == "memory_write":
+        return "正在保存记忆..."
+    if tool_name == "coordinate_math":
+        return "正在计算坐标..."
+    if tool_name == "recipe_lookup":
+        return f"正在查配方：{item}" if item else "正在查配方..."
+    if tool_name == "item_lookup":
+        return f"正在查物品：{item}" if item else "正在查物品..."
+    if tool_name == "mcp_call":
+        return "正在调用外部工具..."
+    return "正在调用工具..."
+
+
+def _progress_preview(value: str, limit: int = 48) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + "..."
 
 
 def _should_defer_action_tool(tool_name: str, tool_calls: list[dict[str, Any]]) -> bool:

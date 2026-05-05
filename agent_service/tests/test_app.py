@@ -59,6 +59,21 @@ def test_app_exposes_tool_and_model_call_journals(tmp_path, monkeypatch) -> None
     assert "run_read_only_command" in recorded_model_calls[0]["tools_json"]
 
 
+def test_app_exposes_tool_progress_events(tmp_path, monkeypatch) -> None:
+    app = _app_with_read_only_model(tmp_path, monkeypatch, "time query daytime")
+    turn = _route(app, "/v1/turn")
+    progress = _route(app, "/v1/progress/{request_id}")
+
+    response = asyncio.run(turn(_turn("查询时间", "req-progress")))
+
+    assert response["progress_events"][0]["tool_name"] == "run_read_only_command"
+    assert "正在查询 Minecraft" in response["progress_events"][0]["message"]
+    stored = progress(request_id="req-progress", after=0)
+    assert stored["completed"] is True
+    assert stored["events"][0]["seq"] == 1
+    assert progress(request_id="req-progress", after=1)["events"] == []
+
+
 def test_action_results_are_loaded_into_next_turn_context(tmp_path, monkeypatch) -> None:
     fake = _FakeDeepSeek(
         [

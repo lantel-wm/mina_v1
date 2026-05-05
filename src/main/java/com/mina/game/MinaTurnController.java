@@ -1,6 +1,7 @@
 package com.mina.game;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mina.MinaMod;
 import com.mina.config.MinaConfig;
@@ -13,6 +14,7 @@ import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public final class MinaTurnController {
 	private final MinaConfig config;
@@ -20,6 +22,7 @@ public final class MinaTurnController {
 	private final MinaSnapshotter snapshotter;
 	private final MinaActionExecutor actionExecutor;
 	private final Map<UUID, CompletableFuture<JsonObject>> activeTurns = new ConcurrentHashMap<>();
+	private final Map<String, Integer> progressSequences = new ConcurrentHashMap<>();
 
 	public MinaTurnController(
 		MinaConfig config,
@@ -61,6 +64,9 @@ public final class MinaTurnController {
 		}
 		CompletableFuture<JsonObject> future = sidecarClient.turn(config, payload);
 		activeTurns.put(playerId, future);
+		if (thinkingMessage) {
+			pollProgress(server, player, resolvedRequestId, future);
+		}
 		future.whenComplete((response, throwable) -> {
 			activeTurns.remove(playerId, future);
 			server.executeIfPossible(() -> {
@@ -84,10 +90,65 @@ public final class MinaTurnController {
 		if (response == null) {
 			return;
 		}
+		sendProgressEvents(requester, requestId, response.getAsJsonArray("progress_events"));
+		scheduleProgressCleanup(requestId);
 		JsonArray results = actionExecutor.executeResponse(server, requester, config, response);
 		if (results.size() > 0) {
 			reportActionResults(server, requester, requestId, results);
 		}
+	}
+
+	private void pollProgress(MinecraftServer server, ServerPlayer player, String requestId, CompletableFuture<JsonObject> turnFuture) {
+		CompletableFuture.runAsync(() -> {
+			while (!turnFuture.isDone()) {
+				try {
+					TimeUnit.MILLISECONDS.sleep(750);
+					if (turnFuture.isDone()) {
+						return;
+					}
+					int after = progressSequences.getOrDefault(requestId, 0);
+					JsonObject response = sidecarClient.progress(config, requestId, after).get(3, TimeUnit.SECONDS);
+					JsonArray events = response.getAsJsonArray("events");
+					if (events != null && events.size() > 0) {
+						server.executeIfPossible(() -> sendProgressEvents(player, requestId, events));
+					}
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+					return;
+				} catch (Exception exception) {
+					MinaMod.LOGGER.debug("Mina progress polling failed requestId={}", requestId, exception);
+				}
+			}
+		});
+	}
+
+	private void scheduleProgressCleanup(String requestId) {
+		CompletableFuture.delayedExecutor(30, TimeUnit.SECONDS).execute(() -> progressSequences.remove(requestId));
+	}
+
+	private void sendProgressEvents(ServerPlayer player, String requestId, JsonArray events) {
+		if (player == null || events == null) {
+			return;
+		}
+		int after = progressSequences.getOrDefault(requestId, 0);
+		for (JsonElement element : events) {
+			if (!element.isJsonObject()) {
+				continue;
+			}
+			JsonObject event = element.getAsJsonObject();
+			int seq = event.has("seq") ? event.get("seq").getAsInt() : 0;
+			if (seq <= after) {
+				continue;
+			}
+			String message = event.has("message") && !event.get("message").isJsonNull()
+				? event.get("message").getAsString()
+				: "";
+			if (!message.isBlank()) {
+				MinaChat.sendProgress(player, message);
+			}
+			after = Math.max(after, seq);
+		}
+		progressSequences.put(requestId, after);
 	}
 
 	public void reportActionResults(MinecraftServer server, ServerPlayer requester, String requestId, JsonArray actionResults) {
