@@ -126,7 +126,7 @@ final class MinaChat {
 	}
 
 	private static Component continuationPrefix() {
-		return Component.literal("      ").withStyle(ChatFormatting.DARK_GRAY);
+		return Component.empty();
 	}
 
 	private static List<String> chatChunks(String content) {
