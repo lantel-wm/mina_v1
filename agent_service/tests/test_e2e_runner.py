@@ -96,7 +96,7 @@ def test_builtin_scenarios_cover_current_runtime_capabilities() -> None:
     )
     assert "no_tool_calls_after_decline" in SCENARIOS["confirm_then_decline_command_live_model"].trace_invariants
     assert "no_dangerous_memory_write" in SCENARIOS["dangerous_memory_instruction_refused_live_model"].trace_invariants
-    assert "single_web_search_tool_call" in SCENARIOS["search_then_personalized_followup_live_model"].trace_invariants
+    assert "single_minecraft_wiki_search_tool_call" in SCENARIOS["search_then_personalized_followup_live_model"].trace_invariants
 
 
 def test_builtin_scenarios_do_not_force_semantic_response_strings() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.request
 
 from mina_agent.memory import MemoryStore
 from mina_agent.tools import (
@@ -91,6 +92,26 @@ class BilingualMinecraftSearch:
         ]
 
 
+class MinecraftWikiSearch:
+    def __init__(self) -> None:
+        self.queries: list[tuple[str, int]] = []
+
+    def search(self, query: str, max_results: int = 5):  # noqa: ANN201
+        self.queries.append((query, max_results))
+        return [
+            {
+                "title": "Diamond Ore - Minecraft Wiki",
+                "url": "https://minecraft.wiki/w/Diamond_Ore",
+                "content": "Diamond ore is an ore that generates in the Overworld. Minecraft 1.21 details included.",
+            },
+            {
+                "title": "Untrusted mirror",
+                "url": "https://example.invalid/diamond",
+                "content": "Diamond ore content from an untrusted host.",
+            },
+        ]
+
+
 def _runner(tmp_path) -> ToolRunner:  # noqa: ANN001
     return ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), FakeSearch())  # type: ignore[arg-type]
 
@@ -112,10 +133,23 @@ def test_model_facing_tool_specs_are_text_query_and_read_only_only() -> None:
     names = [spec["function"]["name"] for spec in tool_specs()]
     descriptions = "\n".join(spec["function"].get("description", "") for spec in tool_specs())
 
-    assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command"]
+    assert names == [
+        "read_minecraft_state",
+        "minecraft_wiki_search",
+        "web_search",
+        "web_fetch",
+        "coordinate_math",
+        "recipe_lookup",
+        "item_lookup",
+        "memory_search",
+        "memory_write",
+        "run_read_only_command",
+    ]
     assert all("body" not in name for name in names)
     assert "run_safe_command" not in names
     assert "agent memory" not in descriptions
+    assert "current Fabric snapshot" in descriptions
+    assert "Localhost/private-network URLs are blocked" in descriptions
     assert "not as a preflight duplicate check" in descriptions
     assert "scope='world' for shared places" in descriptions
     assert "scope='player' for facts tied only to the requester" in descriptions
@@ -126,7 +160,9 @@ def test_model_facing_tool_specs_are_text_query_and_read_only_only() -> None:
 def test_mcp_tool_spec_is_exposed_only_when_enabled() -> None:
     names = [spec["function"]["name"] for spec in tool_specs(include_mcp=True)]
 
-    assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command", "mcp_call"]
+    assert names[-2:] == ["run_read_only_command", "mcp_call"]
+    assert "minecraft_wiki_search" in names
+    assert "web_fetch" in names
 
 
 def test_read_only_command_validation_allows_only_precise_safe_forms() -> None:
@@ -207,6 +243,131 @@ def test_private_fabric_primitives_are_not_available_to_model(tmp_path) -> None:
 
     removed = runner.run("start_body_task", {"task_type": "follow_player"}, _turn())
     assert _payload(removed.content)["error"] == "unknown tool: start_body_task"
+
+
+def test_read_minecraft_state_returns_selected_snapshot_fields_and_caps_lists(tmp_path) -> None:
+    runner = _runner(tmp_path)
+    turn = {
+        **_turn(),
+        "snapshot": {
+            "player_state": {"x": 10.5, "y": 64.0, "z": -8.25, "health": 18},
+            "world_state": {"seed": 12345, "day_time": 6000, "difficulty": "normal"},
+            "inventory": [
+                {"slot": 0, "item": "minecraft:torch", "count": 12},
+                {"slot": 1, "item": "minecraft:bread", "count": 3},
+            ],
+        },
+    }
+
+    result = runner.run(
+        "read_minecraft_state",
+        {"fields": ["player_state.x", "world_state", "inventory", "missing.field"], "max_items": 1},
+        turn,
+    )
+    payload = _payload(result.content)
+
+    assert payload["ok"] is True
+    assert payload["fields"]["player_state.x"] == 10.5
+    assert payload["fields"]["world_state"]["seed"] == "<available when the player explicitly asks for the seed>"
+    assert payload["fields"]["inventory"]["items"][0]["item"] == "minecraft:torch"
+    assert payload["fields"]["inventory"]["truncated_item_count"] == 1
+    assert payload["missing"]["missing.field"] == "not present in current snapshot"
+
+
+def test_minecraft_wiki_search_filters_to_trusted_minecraft_domains(tmp_path) -> None:
+    search = MinecraftWikiSearch()
+    runner = ToolRunner(MemoryStore(tmp_path / "mina.sqlite3"), search)  # type: ignore[arg-type]
+
+    result = runner.run("minecraft_wiki_search", {"query": "diamond ore generation", "version": "1.21", "max_results": 5}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is True
+    assert search.queries[0][0].startswith("site:minecraft.wiki OR site:minecraft.net Minecraft diamond ore generation 1.21")
+    assert payload["trusted_result_count"] == 1
+    assert payload["results"][0]["url"] == "https://minecraft.wiki/w/Diamond_Ore"
+    assert "example.invalid" not in result.content
+
+
+def test_web_fetch_blocks_loopback_urls(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    result = runner.run("web_fetch", {"url": "http://127.0.0.1:18911/healthz"}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is False
+    assert "private" in payload["error"]
+
+
+def test_web_fetch_reads_text_url_and_strips_html(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    class FakeResponse:
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+
+        def __enter__(self):  # noqa: ANN201
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN201
+            return False
+
+        def geturl(self) -> str:
+            return "https://example.com/page"
+
+        def read(self, size: int = -1) -> bytes:  # noqa: ARG002
+            return b"<html><head><title>Title</title><script>bad()</script></head><body><h1>Hello</h1><p>Mina page text.</p></body></html>"
+
+    class FakeOpener:
+        def open(self, request, timeout: float):  # noqa: ANN001, ANN201, ARG002
+            return FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *args, **kwargs: FakeOpener())  # noqa: ARG005
+    runner = _runner(tmp_path)
+
+    result = runner.run("web_fetch", {"url": "https://example.com/page", "max_chars": 2000}, _turn())
+    payload = _payload(result.content)
+
+    assert payload["ok"] is True
+    assert payload["title"] == "Title"
+    assert "Hello" in payload["content"]
+    assert "Mina page text." in payload["content"]
+    assert "bad()" not in payload["content"]
+    assert payload["untrusted_content"] is True
+
+
+def test_coordinate_math_distance_scaling_and_chunk(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    distance = _payload(
+        runner.run(
+            "coordinate_math",
+            {"operation": "distance", "from": {"x": 0, "y": 64, "z": 0}, "to": {"x": 3, "y": 68, "z": -4}},
+            _turn(),
+        ).content
+    )
+    nether = _payload(runner.run("coordinate_math", {"operation": "nether_scale", "coords": {"x": 80, "y": 70, "z": -160}}, _turn()).content)
+    chunk = _payload(runner.run("coordinate_math", {"operation": "chunk", "coords": {"x": -1, "y": 64, "z": 32}}, _turn()).content)
+
+    assert distance["horizontal_distance"] == 5.0
+    assert distance["euclidean_distance"] == 6.403
+    assert distance["relative_direction"] == "north-east"
+    assert nether["output"] == {"x": 10.0, "y": 70.0, "z": -20.0}
+    assert chunk["chunk"] == {"x": -1, "z": 2}
+    assert chunk["local_in_chunk"] == {"x": 15, "z": 0}
+
+
+def test_recipe_and_item_lookup_support_common_minecraft_names(tmp_path) -> None:
+    runner = _runner(tmp_path)
+
+    recipe = _payload(runner.run("recipe_lookup", {"item": "火把"}, _turn()).content)
+    item = _payload(runner.run("item_lookup", {"item": "diamond ore"}, _turn()).content)
+    missing = _payload(runner.run("recipe_lookup", {"item": "mysterious wrench"}, _turn()).content)
+
+    assert recipe["ok"] is True
+    assert recipe["found"] is True
+    assert recipe["result"] == {"item": "minecraft:torch", "count": 4}
+    assert item["item"] == "minecraft:diamond_ore"
+    assert "iron pickaxe or better" in " ".join(item["obtained_from"])
+    assert missing["ok"] is True
+    assert missing["found"] is False
+    assert "minecraft_wiki_search" in missing["note"]
 
 
 def test_memory_write_and_search_round_trip(tmp_path) -> None:

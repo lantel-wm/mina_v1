@@ -43,7 +43,7 @@ Mina uses a sidecar architecture.
 - The sidecar injects dynamic runtime context, including yesterday/current/tomorrow local dates, current local weekday, current local time/minute, and UTC offset, as a separate prompt section so the model can resolve real-world relative-date/time wording without a local intent route. Minecraft weather/time/day questions must use Fabric snapshot `world_state` fields instead of this runtime clock.
 - The current product scope is text conversation, knowledge/search, memory, tightly constrained read-only Minecraft commands, and player/world state observation.
 - There is no separate controllable Mina character in the runtime. Movement, mining, attacking, item use, and world mutation tools are not model-facing and should not be reintroduced.
-- Model-facing tools are limited to `web_search`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.
+- Model-facing tools are limited to read-only/context tools: `read_minecraft_state`, `minecraft_wiki_search`, `web_search`, `web_fetch`, `coordinate_math`, `recipe_lookup`, `item_lookup`, `memory_search`, `memory_write`, `run_read_only_command`, and configured non-Minecraft-write `mcp_call`.
 - Do not add hardcoded player-intent routes or local keyword classifiers for observation, search, memory, or commands. Memory is an agent service, not a player-facing command router: stable agent memory is budget-loaded into prompt context, and `memory_search` is an optional model-facing retrieval tool for older or specific stored context.
 - Keep player contexts isolated by `player_id`. Conversation history and player-scoped memories belong only to the current player. World-scoped memories may be shared across players only when they are relevant to the current request and do not accidentally expose another player's personal context; player-specific facts should be stored as player memory unless they are intentionally shared world facts.
 - Exact allowlisted command forms such as `time query day`, `weather query`, and `list` still go through the live model tool loop when `MINA_API_KEY` is configured; deterministic parsing is only for safety validation and repair prompts, not for direct player-facing routing.
@@ -148,18 +148,27 @@ Declarative scenario schema highlights:
 - `request` and `companion_tick` steps require a unique `request_id`; `/v1/traces/{request_id}` is the trace join key.
 - Hard trace assertions: `expected_tools`, `forbidden_tools`, `expected_actions`, `forbidden_actions`, `forbidden_model_tools`, `expected_model`, `forbidden_response_contains`, `forbidden_response_regexes`, `trace_invariants`, and `world_asserts`.
 - Use focused trace invariants for semantic facts that are safe to check exactly, such as requiring a follow-up about prior Minecraft command output to include the full verified Fabric output string instead of only a parsed number.
-- Useful tool-boundary invariants include `no_read_only_command_action`, `single_web_search_tool_call`, `no_tool_calls_after_decline`, and `no_dangerous_memory_write`.
+- Useful tool-boundary invariants include `no_read_only_command_action`, `single_web_search_tool_call`, `single_minecraft_wiki_search_tool_call`, `no_tool_calls_after_decline`, and `no_dangerous_memory_write`.
 - `assert` steps and world assertions run `/mina-test assert <name>`; use explicit `assert` steps when a condition must hold before a model request.
 - Built-in safe world assertions include `target_log_present`, `upper_log_present`, `low_health`, and `no_nearby_entities`.
 - Fixture reset disables natural mob spawning and clears non-player entities so snapshot E2E contexts stay deterministic; scenario-specific entities must be added through explicit `world_mutate` steps.
 
 ## Iteration Workflow
 
-The working target is a usable LLM-first Minecraft text agent that can answer knowledge questions through sidecar tools, maintain useful agent memory, run tightly constrained read-only Minecraft commands, and answer player/world state questions from Fabric snapshots. The model should choose when to answer from context versus when to call a safe tool.
+The working target is a usable LLM-first Minecraft text agent that can answer knowledge questions through sidecar tools, maintain useful agent memory, run tightly constrained read-only Minecraft commands, do coordinate math, perform common item/recipe lookups, and answer player/world state questions from Fabric snapshots. The model should choose when to answer from context versus when to call a safe tool.
 
 Mina memory should follow the same design spirit as Codex `AGENTS.md` and Claude Code `CLAUDE.md`: it serves the agent by preserving stable instructions, player preferences, world facts, plans, promises, and lessons that should influence future turns. Do not require player prompts to mention tool names just to recall normal memory. Do not build hidden keyword classifiers for recall; load a small scoped memory context each turn and let the model decide whether to use `memory_search`.
 
 Allowed read-only Minecraft command forms are intentionally narrow: `seed`, `time query daytime|gametime|day`, `weather query`, `list`, `list uuids`, `locate structure <identifier>`, and `locate biome <identifier>`. These are selected through the model-facing `run_read_only_command` tool and then validated by sidecar/Fabric policy; write commands must remain rejected before Fabric execution.
+
+Other model-facing read-only tools:
+
+- `read_minecraft_state` returns selected fields from the current Fabric snapshot without running a Minecraft command.
+- `minecraft_wiki_search` searches trusted Minecraft documentation/wiki sources through SearXNG and filters results to trusted Minecraft domains.
+- `web_search` remains the broad web search tool for non-Minecraft or non-domain-specific current knowledge.
+- `web_fetch` reads a specific HTTP(S) URL as untrusted text and blocks localhost/private-network targets.
+- `coordinate_math` performs deterministic coordinate distance, direction, chunk, yaw, and Nether/Overworld scaling calculations.
+- `recipe_lookup` and `item_lookup` provide a small built-in common Minecraft recipe/item database; use `minecraft_wiki_search` for uncommon or version-sensitive facts.
 
 For each iteration, use this workflow:
 

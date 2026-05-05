@@ -144,7 +144,18 @@ def test_unconfigured_mcp_tool_is_not_exposed_to_model(tmp_path) -> None:
     harness.run_turn(_turn("你好 Mina", "req-no-mcp"))
 
     names = [spec["function"]["name"] for spec in model.calls[0]["tools"]]
-    assert names == ["web_search", "memory_search", "memory_write", "run_read_only_command"]
+    assert names == [
+        "read_minecraft_state",
+        "minecraft_wiki_search",
+        "web_search",
+        "web_fetch",
+        "coordinate_math",
+        "recipe_lookup",
+        "item_lookup",
+        "memory_search",
+        "memory_write",
+        "run_read_only_command",
+    ]
 
 
 def test_companion_tick_exposes_no_tools_to_model(tmp_path) -> None:

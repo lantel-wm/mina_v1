@@ -52,7 +52,7 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "held item" in SYSTEM_PROMPT
     assert "dimension" in SYSTEM_PROMPT
     assert "block at/below feet" in SYSTEM_PROMPT
-    assert "item/block/effect/biome/dimension ID" in SYSTEM_PROMPT
+    assert "Preserve exact IDs" in SYSTEM_PROMPT
     assert "do not mention safety, monsters, entities" in SYSTEM_PROMPT
     assert "capability questions" in SYSTEM_PROMPT
     assert "one sentence/一句话" in SYSTEM_PROMPT

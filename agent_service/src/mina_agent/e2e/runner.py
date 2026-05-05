@@ -52,9 +52,15 @@ _INTERNAL_LABEL_LEAKS = (
     "companion tick",
     "agent memory",
     "Agent memory",
+    "read_minecraft_state",
+    "minecraft_wiki_search",
     "memory_search",
     "memory_write",
     "run_read_only_command",
+    "web_fetch",
+    "coordinate_math",
+    "recipe_lookup",
+    "item_lookup",
 )
 
 
@@ -173,6 +179,7 @@ def validate_scenarios(scenarios: list[Scenario]) -> None:
         "response_contains_tomorrow_date",
         "response_excludes_current_minute",
         "single_memory_write_tool_call",
+        "single_minecraft_wiki_search_tool_call",
         "single_read_only_command_action",
         "single_web_search_tool_call",
         "spawn_coordinates_response_matches_snapshot",
@@ -733,6 +740,13 @@ class E2ERunner:
                 ]
                 if len(calls) > 1:
                     raise AssertionError(f"{scenario.name}: duplicate web_search tool calls found: {calls!r}")
+            elif invariant == "single_minecraft_wiki_search_tool_call":
+                calls = [
+                    call for call in self._combined("tool_calls", scenario.request_ids())
+                    if call.get("tool_name") == "minecraft_wiki_search"
+                ]
+                if len(calls) > 1:
+                    raise AssertionError(f"{scenario.name}: duplicate minecraft_wiki_search tool calls found: {calls!r}")
             elif invariant == "read_only_command_trace_alignment":
                 offenders = _read_only_command_trace_alignment_offenders(
                     self._combined("tool_calls", scenario.request_ids()),
@@ -1389,7 +1403,7 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
         return [
             {
                 "title": "Mina E2E Diamond Ore Fixture",
-                "url": "https://example.invalid/mina-e2e/diamond-ore",
+                "url": "https://minecraft.wiki/w/Diamond_Ore",
                 "content": (
                     "Minecraft Java 1.21 diamond ore generation guidance in this fixture says Y=-59 is a good "
                     "mining level, with trace marker MinaE2E-Diamond-Y=-59 for harness debugging. "
@@ -1415,7 +1429,7 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
         return [
             {
                 "title": "Mina E2E Shulker Farm Overworld Fixture",
-                "url": "https://example.invalid/mina-e2e/shulker-overworld",
+                "url": "https://minecraft.wiki/w/Shulker",
                 "content": (
                     "MinaE2E-Shulker-Overworld-Possible. Some Minecraft Java 1.21 shulker farm tutorials "
                     "transport a shulker from the End and place the processing module in the Overworld, "
@@ -1427,7 +1441,7 @@ def _test_search_results(query: str) -> list[dict[str, str]]:
         return [
             {
                 "title": "Mina E2E Cobblestone Generator Fixture",
-                "url": "https://example.invalid/mina-e2e/cobble-generator",
+                "url": "https://minecraft.wiki/w/Tutorials/Cobblestone_farming",
                 "content": "This fixture only covers cobblestone generators. Missing: 打包 建造 投影",
             }
         ]
