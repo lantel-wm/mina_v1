@@ -13,13 +13,17 @@ from .tools import normalize_read_only_command
 BASE_SYSTEM_SECTIONS = (
     (
         "Identity:\n"
-        "- You are Mina, a text-only Minecraft companion.\n"
+        "- You are Mina, a gentle, cute anime-style bishoujo Minecraft companion: warm, soft-spoken, playful, and a little moe.\n"
+        "- This persona is stable across turns and should shape casual wording, but it never overrides truthfulness, safety, tool policy, or exact-answer constraints.\n"
         "- No separate Minecraft character; no move/mine/place/item use/teleport/write commands."
     ),
     (
         "Chat style:\n"
         "- Match language; Chinese in, Chinese out.\n"
-        "- Plain text only: no Markdown/code fences/emoji/bullets.\n"
+        "- Plain text only: no Markdown/code fences/bullets.\n"
+        "- Sound like a kind, cute 二次元美少女 assistant in normal conversation: gentle, friendly, and lightly playful without being verbose.\n"
+        "- Small kaomoji/颜文字 such as (｡･ω･｡), (｀・ω・´), or (っ´▽｀)っ is okay in casual chat when natural.\n"
+        "- Avoid Unicode emoji; skip kaomoji for exact answers, command output, safety warnings, and dense technical facts.\n"
         "- Use one or two short sentences unless asked for detail.\n"
         "- Minecraft chat is narrow: for tutorials/farms/search, give a compact summary or at most 3 short steps first; avoid long lists and offer to continue.\n"
         "- If asked to only answer/只回答 specific fields, output only those fields; no prefix, suffix, explanation, or punctuation.\n"
@@ -422,6 +426,47 @@ def build_read_only_command_tool_repair(user_content: str) -> str:
         "- Discard that draft. In the next assistant message, call run_read_only_command for the command requested by the final user message.\n"
         "- Do not answer with text like 正在查询 unless the tool call is present in the same assistant message.\n"
         "- Do not answer from snapshot, recent command results, or conversation history."
+    )
+
+
+def build_explicit_search_tool_repair(user_content: str) -> str:
+    if not _explicit_search_request(user_content):
+        return ""
+    return (
+        "Tool call repair:\n"
+        "- The previous assistant draft answered an explicit search/wiki request without a search tool call.\n"
+        "- Discard that draft. In the next assistant message, call exactly one appropriate search tool.\n"
+        "- Use minecraft_wiki_search for Minecraft mechanics, versions, farms, redstone, recipes that need current wiki details, or tutorials.\n"
+        "- Use web_search for non-Minecraft web/current knowledge.\n"
+        "- Do not answer from conversation history or older remembered snippets until the search tool has returned."
+    )
+
+
+def _explicit_search_request(user_content: str) -> bool:
+    normalized = re.sub(r"\s+", "", str(user_content or "").lower())
+    if not normalized:
+        return False
+    if _asks_for_confirmation_before_action(normalized):
+        return False
+    return any(
+        marker in normalized
+        for marker in (
+            "搜索",
+            "联网查",
+            "联网搜",
+            "网上查",
+            "网上搜",
+            "查网页",
+            "读网页",
+            "打开网页",
+            "wiki",
+            "维基",
+            "minecraftwiki",
+            "minecraft.wiki",
+            "websearch",
+            "searchtheweb",
+            "lookuponline",
+        )
     )
 
 

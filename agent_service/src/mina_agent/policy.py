@@ -70,10 +70,13 @@ def minecraft_chat_text(content: str) -> str:
     text = _EMOJI_RE.sub("", text)
     text = _DECORATIVE_CHAT_RE.sub("", text)
     text = _PROCESS_PREAMBLE_RE.sub("", text)
-    text = re.sub(r"(?m)^\s*[-*•]\s+", "", text)
-    text = re.sub(r"[ \t]*\n+[ \t]*", " ", text)
-    text = re.sub(r"[ \t]{2,}", " ", text)
-    return text.strip()
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = re.sub(r"^\s*(?:[-*•]+|\d{1,2}[.．、])\s+", "", raw_line)
+        line = re.sub(r"[ \t]{2,}", " ", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def normalize_health_unit_claims(content: str, snapshot: dict[str, Any] | None) -> str:

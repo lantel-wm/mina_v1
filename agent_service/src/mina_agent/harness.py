@@ -5,7 +5,7 @@ import logging
 from typing import Any, Callable
 
 from .config import Settings
-from .context import build_messages, build_read_only_command_tool_repair
+from .context import build_explicit_search_tool_repair, build_messages, build_read_only_command_tool_repair
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .policy import ResponsePolicyRuntime, is_tool_error, normalize_health_unit_claims, strip_player_name_address
@@ -118,6 +118,17 @@ class AgentHarness:
                         state.messages.append({"role": "system", "content": command_tool_repair})
                         self._debug("turn repair request_id=%s reason=read_only_command_without_tool", request_id)
                         continue
+                    search_tool_repair = build_explicit_search_tool_repair(message)
+                    if (
+                        search_tool_repair
+                        and not state.search_tool_seen
+                        and state.search_tool_repairs < 1
+                        and subturn < self.settings.max_tool_turns
+                    ):
+                        state.search_tool_repairs += 1
+                        state.messages.append({"role": "system", "content": search_tool_repair})
+                        self._debug("turn repair request_id=%s reason=explicit_search_without_tool", request_id)
+                        continue
                     review = policy.review_final_content(
                         str(assistant_message.get("content") or ""),
                         can_repair=subturn < self.settings.max_tool_turns,
@@ -194,6 +205,8 @@ class AgentHarness:
                     else:
                         self._emit_tool_progress(request_id, name, args)
                         result = self.tools.run(name, args, turn)
+                    if name in {"web_search", "minecraft_wiki_search", "web_fetch", "read_url"}:
+                        state.search_tool_seen = True
                     result_actions = state.collect_result_actions(result)
                     if result_actions:
                         state.invalid_tool_results = 0

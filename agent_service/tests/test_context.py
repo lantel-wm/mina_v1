@@ -18,6 +18,13 @@ from mina_agent.policy import UNSAFE_WRITE_REFUSAL
 
 def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "web_search" in SYSTEM_PROMPT
+    assert "gentle, cute anime-style bishoujo Minecraft companion" in SYSTEM_PROMPT
+    assert "stable across turns" in SYSTEM_PROMPT
+    assert "二次元美少女" in SYSTEM_PROMPT
+    assert "lightly playful" in SYSTEM_PROMPT
+    assert "kaomoji/颜文字" in SYSTEM_PROMPT
+    assert "(｡･ω･｡)" in SYSTEM_PROMPT
+    assert "Avoid Unicode emoji" in SYSTEM_PROMPT
     assert "preserve exact source values" in SYSTEM_PROMPT
     assert "memory_search" in SYSTEM_PROMPT
     assert "remembered facts" in SYSTEM_PROMPT
@@ -259,7 +266,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 10300
+    assert len(context) < 10800
 
 
 def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:

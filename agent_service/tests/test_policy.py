@@ -27,7 +27,7 @@ def test_minecraft_chat_text_collapses_markdown_lists_to_plain_chat() -> None:
     - 生命值：20
     """
 
-    assert minecraft_chat_text(content) == "状态 坐标：X=0.5 生命值：20"
+    assert minecraft_chat_text(content) == "状态\n坐标：X=0.5\n生命值：20"
 
 
 def test_minecraft_chat_text_strips_process_preamble() -> None:

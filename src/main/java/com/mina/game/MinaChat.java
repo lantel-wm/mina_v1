@@ -5,9 +5,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
-import java.util.ArrayList;
-import java.util.List;
-
 final class MinaChat {
 	private MinaChat() {
 	}
@@ -83,22 +80,14 @@ final class MinaChat {
 		if (player == null || content == null || content.isBlank()) {
 			return;
 		}
-		boolean first = true;
-		for (String chunk : chatChunks(content)) {
-			player.sendSystemMessage(line(first ? prefix : continuationPrefix(), chunk, bodyStyles));
-			first = false;
-		}
+		player.sendSystemMessage(line(prefix, content, bodyStyles));
 	}
 
 	private static void broadcast(MinecraftServer server, Component prefix, ChatFormatting bodyStyle, String content) {
 		if (server == null || content == null || content.isBlank()) {
 			return;
 		}
-		boolean first = true;
-		for (String chunk : chatChunks(content)) {
-			server.getPlayerList().broadcastSystemMessage(line(first ? prefix : continuationPrefix(), chunk, bodyStyle), false);
-			first = false;
-		}
+		server.getPlayerList().broadcastSystemMessage(line(prefix, content, bodyStyle), false);
 	}
 
 	private static Component line(Component prefix, String chunk, ChatFormatting... bodyStyles) {
@@ -121,25 +110,10 @@ final class MinaChat {
 			.append(Component.literal("] ").withStyle(ChatFormatting.DARK_GRAY));
 	}
 
-	private static Component continuationPrefix() {
-		return Component.empty();
-	}
-
 	private static String formatMinaContent(String content) {
 		if (content == null || content.isBlank()) {
 			return "";
 		}
-		return content.replaceAll("\\s+", " ").strip();
-	}
-
-	private static List<String> chatChunks(String content) {
-		List<String> chunks = new ArrayList<>();
-		for (String rawLine : content.split("\\R", -1)) {
-			String line = rawLine.strip();
-			if (!line.isBlank()) {
-				chunks.add(line);
-			}
-		}
-		return chunks;
+		return content.strip();
 	}
 }

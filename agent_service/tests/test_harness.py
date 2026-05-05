@@ -544,6 +544,53 @@ def test_web_search_uses_model_tool_loop_and_filters_prompt_injection_result(tmp
     assert len(model.calls) == 2
 
 
+def test_explicit_search_request_model_miss_gets_llm_tool_repair(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "根据之前资料，钻石矿适合在 Y=-59。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-search",
+                            "type": "function",
+                            "function": {
+                                "name": "minecraft_wiki_search",
+                                "arguments": json.dumps({"query": "钻石矿 最新高度", "max_results": 5}),
+                            },
+                        }
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "查到的标记是 MinaE2E-Diamond-Y=-59。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("联网搜索 钻石矿 最新高度", "req-search-repair"))
+
+    assert "MinaE2E-Diamond-Y=-59" in response["messages"][0]["content"]
+    assert len(model.calls) == 3
+    assert any("explicit search/wiki request" in message["content"] for message in model.calls[1]["messages"])
+    assert search.queries == ["site:minecraft.wiki OR site:minecraft.net Minecraft 钻石矿 最新高度"]
+    assert [call["tool_name"] for call in memory.recent_tool_calls("req-search-repair")] == ["minecraft_wiki_search"]
+
+
 def test_memory_write_and_recall_use_model_tool_loop(tmp_path) -> None:
     model = FakeDeepSeek(
         [
