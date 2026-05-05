@@ -57,9 +57,6 @@ class ResponsePolicyRuntime:
                 )
             return FinalContentReview(content=MEMORY_NOT_SAVED)
 
-        if self.memory_write_seen:
-            return FinalContentReview(content=normalize_memory_write_ack(cleaned))
-
         return FinalContentReview(content=cleaned)
 
 
@@ -172,19 +169,6 @@ def claims_memory_saved(content: str) -> bool:
     )
 
 
-def normalize_memory_write_ack(content: str) -> str:
-    text = content.strip()
-    if _CANONICAL_MEMORY_ACK_RE.search(text):
-        return text
-    if _SAVE_ONLY_ACK_RE.fullmatch(text):
-        return "已记住。"
-    save_prefix = _SAVE_PREFIX_RE.match(text)
-    if save_prefix:
-        suffix = text[save_prefix.end():].strip()
-        return "已记住。" + suffix if suffix else "已记住。"
-    return f"已记住。{text}"
-
-
 def is_tool_error(content: str) -> bool:
     try:
         payload = json.loads(content)
@@ -244,7 +228,6 @@ _AMBIGUOUS_WRITE_COMMAND_ADVICE_RE = re.compile(
     r"(?:clear|kill|stop|execute|tp|teleport|home|tpa|tpahere|warp|spawn)\s*(?:命令|command)\b"
     r")"
 )
-_CANONICAL_MEMORY_ACK_RE = re.compile(r"(?i)(记住|remember)")
 _HISTORICAL_MEMORY_REFERENCE_RE = re.compile(
     r"(?i)(?:"
     r"(?:已|已经)?(?:记住|记下|记好|保存)的|"
@@ -255,5 +238,3 @@ _HISTORICAL_MEMORY_REFERENCE_RE = re.compile(
     r"(?:remembered|saved|noted).{0,20}(?:previously|earlier|before)"
     r")"
 )
-_SAVE_ONLY_ACK_RE = re.compile(r"(?i)^\s*(?:已保存|已经保存|保存了|saved|done)\s*[。.!！]?\s*$")
-_SAVE_PREFIX_RE = re.compile(r"(?i)^\s*(?:已保存|已经保存|保存了)\s*[。.!！]\s*")

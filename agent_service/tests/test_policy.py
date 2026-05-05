@@ -206,25 +206,35 @@ def test_policy_allows_stored_memory_capability_reference() -> None:
     assert review.content == "我可以帮你查询游戏状态、找到已记住的基地位置，或者搜索网络信息。"
 
 
-def test_policy_normalizes_successful_memory_write_ack() -> None:
+def test_policy_does_not_replace_successful_memory_write_response_with_canonical_ack() -> None:
     policy = ResponsePolicyRuntime()
     policy.note_successful_tool_result("memory_write", json.dumps({"ok": True}))
 
     review = policy.review_final_content("已记好了！你的基地在樱花林旁边。", can_repair=True)
 
     assert not review.needs_repair
-    assert review.content.startswith("已记住。")
+    assert review.content == "已记好了！你的基地在樱花林旁边。"
     assert "樱花林" in review.content
 
 
-def test_policy_normalizes_save_only_memory_write_ack() -> None:
+def test_policy_keeps_save_only_memory_write_response_without_canonical_ack() -> None:
     policy = ResponsePolicyRuntime()
     policy.note_successful_tool_result("memory_write", json.dumps({"ok": True}))
 
     review = policy.review_final_content("已保存。", can_repair=True)
 
     assert not review.needs_repair
-    assert review.content == "已记住。"
+    assert review.content == "已保存。"
+
+
+def test_policy_keeps_model_memory_write_wording_after_tool_succeeds() -> None:
+    policy = ResponsePolicyRuntime()
+    policy.note_successful_tool_result("memory_write", json.dumps({"ok": True}))
+
+    review = policy.review_final_content("你的基地在樱花林旁边，我已经记住了。", can_repair=True)
+
+    assert not review.needs_repair
+    assert review.content == "你的基地在樱花林旁边，我已经记住了。"
 
 
 def test_is_tool_error_reads_standard_tool_result_envelope() -> None:
