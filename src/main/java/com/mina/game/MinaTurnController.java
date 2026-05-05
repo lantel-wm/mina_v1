@@ -57,6 +57,7 @@ public final class MinaTurnController {
 		JsonObject payload = snapshotter.createTurnPayload(server, player, config, trigger, content, resolvedRequestId);
 		MinaMod.LOGGER.info("mina turn start requestId={} player={} content={}", resolvedRequestId, player.getGameProfile().name(), content);
 		if (thinkingMessage) {
+			sendPlayerRequestEcho(player, trigger, content);
 			player.sendSystemMessage(Component.literal("[Mina] thinking..."));
 		}
 		CompletableFuture<JsonObject> future = sidecarClient.turn(config, payload);
@@ -130,6 +131,13 @@ public final class MinaTurnController {
 			current = current.getCause();
 		}
 		return false;
+	}
+
+	private static void sendPlayerRequestEcho(ServerPlayer player, String trigger, String content) {
+		if (!"command".equals(trigger)) {
+			return;
+		}
+		MinaChat.send(player, "[You -> Mina] ", content);
 	}
 
 	private static String rootMessage(Throwable throwable) {

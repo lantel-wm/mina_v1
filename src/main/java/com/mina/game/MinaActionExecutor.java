@@ -21,7 +21,6 @@ import java.util.regex.Pattern;
 
 public final class MinaActionExecutor {
 	private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9_:.\\-/#]+");
-	private static final int CHAT_CHUNK_LIMIT = 240;
 	private static final Set<String> READ_ONLY_TIME_QUERIES = Set.of("daytime", "gametime", "day");
 	private final ThreadLocal<List<CommandExecution>> commandLog = ThreadLocal.withInitial(ArrayList::new);
 
@@ -218,58 +217,18 @@ public final class MinaActionExecutor {
 	}
 
 	private static void message(ServerPlayer player, String content) {
-		if (player != null && content != null && !content.isBlank()) {
-			for (String chunk : chatChunks(content)) {
-				player.sendSystemMessage(Component.literal("[Mina] " + chunk));
-			}
-		}
+		MinaChat.send(player, "[Mina] ", content);
 	}
 
 	private static void commandOutput(ServerPlayer player, String content) {
 		if (player != null && content != null && !content.isBlank()) {
 			MinaMod.LOGGER.info("mina send command output content={}", content);
-			for (String chunk : chatChunks(content)) {
-				player.sendSystemMessage(Component.literal("[Mina command] " + chunk));
-			}
+			MinaChat.send(player, "[Mina command] ", content);
 		}
 	}
 
 	private static void broadcast(MinecraftServer server, String content) {
-		if (server != null && content != null && !content.isBlank()) {
-			for (String chunk : chatChunks(content)) {
-				server.getPlayerList().broadcastSystemMessage(Component.literal("[Mina] " + chunk), false);
-			}
-		}
-	}
-
-	private static List<String> chatChunks(String content) {
-		List<String> chunks = new ArrayList<>();
-		for (String rawLine : content.split("\\R", -1)) {
-			String line = rawLine.strip();
-			if (line.isBlank()) {
-				continue;
-			}
-			while (line.length() > CHAT_CHUNK_LIMIT) {
-				int split = bestSplit(line, CHAT_CHUNK_LIMIT);
-				chunks.add(line.substring(0, split).strip());
-				line = line.substring(split).strip();
-			}
-			if (!line.isBlank()) {
-				chunks.add(line);
-			}
-		}
-		return chunks;
-	}
-
-	private static int bestSplit(String line, int limit) {
-		int split = Math.min(limit, line.length());
-		for (int index = split; index > Math.max(0, split - 40); index--) {
-			char current = line.charAt(index - 1);
-			if (Character.isWhitespace(current) || current == '，' || current == ',' || current == '。' || current == '.') {
-				return index;
-			}
-		}
-		return split;
+		MinaChat.broadcast(server, "[Mina] ", content);
 	}
 
 	private static String stripSlash(String command) {
