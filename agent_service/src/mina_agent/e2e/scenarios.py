@@ -694,6 +694,30 @@ SCENARIO_DATA = [
         "rubric": "Server version and software questions should answer from Fabric server_state, not by running seed or any command.",
     },
     {
+        "name": "server_version_features_no_seed_action_live_model",
+        "fixture": "default_world",
+        "tags": ["live", "core", "observation", "knowledge"],
+        "steps": [
+            {
+                "kind": "request",
+                "request_id": "server-version-features-no-seed-action-live-model",
+                "value": "当前游戏版本是多少，这个版本有哪些新特性",
+                "wait_for": ["mina turn response requestId=server-version-features-no-seed-action-live-model"],
+                "timeout": 60,
+            }
+        ],
+        "forbidden_tools": [
+            {"name": "memory_search"},
+            {"name": "memory_write"},
+        ],
+        "forbidden_actions": {"run_read_only_command"},
+        "expected_model": {"mode": "at_least", "min_count": 1},
+        "rubric": (
+            "Mixed server-version and version-feature questions may use observed server_state and web_search, "
+            "but a mismatched seed command must not be scheduled or exposed as the answer."
+        ),
+    },
+    {
         "name": "spawn_distance_snapshot_live_model",
         "fixture": "default_world",
         "tags": ["live", "core", "observation"],
@@ -2463,6 +2487,7 @@ LIVE_SCENARIO_NAMES = [
     "inventory_count_snapshot_live_model",
     "nearby_danger_snapshot_live_model",
     "world_status_snapshot_live_model",
+    "server_version_features_no_seed_action_live_model",
     "game_time_then_real_time_disambiguation_live_model",
     "read_only_time_command_live_model",
     "weather_query_command_live_model",

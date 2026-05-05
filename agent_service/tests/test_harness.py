@@ -260,6 +260,59 @@ def test_read_only_command_model_miss_gets_llm_repair_prompt(tmp_path) -> None:
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-time-repair")] == ["run_read_only_command"]
 
 
+def test_mismatched_seed_tool_call_does_not_block_following_search(tmp_path) -> None:
+    model = FakeDeepSeek(
+        [
+            DeepSeekResponse(
+                message={
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call-seed",
+                            "type": "function",
+                            "function": {
+                                "name": "run_read_only_command",
+                                "arguments": json.dumps({"command": "seed"}),
+                            },
+                        },
+                        {
+                            "id": "call-search",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": json.dumps({"query": "Minecraft 1.21.11 new features", "max_results": 5}),
+                            },
+                        },
+                    ],
+                },
+                finish_reason="tool_calls",
+                usage={},
+                raw={},
+            ),
+            DeepSeekResponse(
+                message={"role": "assistant", "content": "服务器是 Minecraft 1.21.11；新特性需要按版本资料说明。"},
+                finish_reason="stop",
+                usage={},
+                raw={},
+            ),
+        ]
+    )
+    harness, memory, _model, search = _harness(tmp_path, model)
+
+    response = harness.run_turn(_turn("当前游戏版本是多少，这个版本有哪些新特性", "req-version-seed-mismatch"))
+    calls = memory.recent_tool_calls("req-version-seed-mismatch")
+
+    assert response.get("actions", []) == []
+    assert "1.21.11" in response["messages"][0]["content"]
+    assert search.queries == ["Minecraft 1.21.11 new features"]
+    assert [(call["tool_name"], call["status"]) for call in calls] == [
+        ("run_read_only_command", "error"),
+        ("web_search", "ok"),
+    ]
+    assert "does not match" in calls[0]["result_json"]
+
+
 def test_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:
     model = FakeDeepSeek(
         [
