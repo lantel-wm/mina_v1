@@ -260,7 +260,7 @@ def test_read_only_command_model_miss_gets_llm_repair_prompt(tmp_path) -> None:
     assert [call["tool_name"] for call in memory.recent_tool_calls("req-time-repair")] == ["run_read_only_command"]
 
 
-def test_mismatched_seed_tool_call_does_not_block_following_search(tmp_path) -> None:
+def test_mixed_action_and_sidecar_tools_defer_action_until_model_reconsiders(tmp_path) -> None:
     model = FakeDeepSeek(
         [
             DeepSeekResponse(
@@ -307,10 +307,11 @@ def test_mismatched_seed_tool_call_does_not_block_following_search(tmp_path) -> 
     assert "1.21.11" in response["messages"][0]["content"]
     assert search.queries == ["Minecraft 1.21.11 new features"]
     assert [(call["tool_name"], call["status"]) for call in calls] == [
-        ("run_read_only_command", "error"),
+        ("run_read_only_command", "ok"),
         ("web_search", "ok"),
     ]
-    assert "does not match" in calls[0]["result_json"]
+    deferred_content = json.loads(calls[0]["result_json"])["content"]
+    assert json.loads(deferred_content)["deferred"] is True
 
 
 def test_read_only_command_never_runs_without_model_tool_call(tmp_path) -> None:

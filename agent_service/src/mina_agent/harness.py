@@ -9,7 +9,7 @@ from .context import build_messages, build_read_only_command_tool_repair
 from .deepseek import DeepSeekClient, DeepSeekError
 from .memory import MemoryStore
 from .policy import ResponsePolicyRuntime, is_tool_error, normalize_health_unit_claims, strip_player_name_address
-from .schemas import TurnResponse
+from .schemas import ToolResult, TurnResponse
 from .tools import (
     ToolRunner,
     tool_specs,
@@ -180,7 +180,10 @@ class AgentHarness:
                         name,
                         _log_preview(json.dumps(args, ensure_ascii=False), 1200),
                     )
-                    result = self.tools.run(name, args, turn)
+                    if _should_defer_action_tool(name, tool_calls):
+                        result = _deferred_action_tool_result(name)
+                    else:
+                        result = self.tools.run(name, args, turn)
                     result_actions = state.collect_result_actions(result)
                     if result_actions:
                         state.invalid_tool_results = 0
@@ -269,6 +272,36 @@ def _result_actions(result: Any) -> list[dict[str, Any]]:
     if isinstance(result_actions, list):
         actions.extend(action for action in result_actions if isinstance(action, dict))
     return actions
+
+
+def _should_defer_action_tool(tool_name: str, tool_calls: list[dict[str, Any]]) -> bool:
+    if tool_name != "run_read_only_command":
+        return False
+    names = [
+        str((call.get("function") or {}).get("name") or "")
+        for call in tool_calls
+        if isinstance(call, dict)
+    ]
+    return any(name and name != "run_read_only_command" for name in names)
+
+
+def _deferred_action_tool_result(tool_name: str) -> ToolResult:
+    return ToolResult(
+        content=json.dumps(
+            {
+                "ok": True,
+                "scheduled": False,
+                "deferred": True,
+                "tool": tool_name,
+                "instruction": (
+                    "This Minecraft action was not scheduled because the same assistant message also requested "
+                    "sidecar-only tools. Review the other tool observations first. If the Minecraft command is "
+                    "still needed, call the action tool again in a later assistant step."
+                ),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def _companion_empty_message(turn: dict[str, Any]) -> str | None:

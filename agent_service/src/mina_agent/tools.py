@@ -361,9 +361,6 @@ class ToolRunner:
                     ensure_ascii=False,
                 )
             )
-        semantic_error = _read_only_command_semantic_error(command, turn)
-        if semantic_error:
-            return ToolResult(content=json.dumps({"ok": False, "error": semantic_error}, ensure_ascii=False))
         action = {
             "id": str(uuid.uuid4()),
             "name": "run_read_only_command",
@@ -798,23 +795,3 @@ def _is_read_only_command_parts(parts: list[str]) -> bool:
         and parts[1] in {"structure", "biome"}
         and bool(READ_ONLY_LOCATE_TARGET.fullmatch(parts[2]))
     )
-
-
-def _read_only_command_semantic_error(command: str, turn: dict[str, Any]) -> str:
-    message = str(turn.get("message") or "").strip()
-    if not message:
-        return ""
-    if command == "seed" and not _message_requests_seed(message):
-        return (
-            "The selected read-only command `seed` does not match the player's latest request. "
-            "Only run `seed` when the player explicitly asks for the world seed or enters the seed command."
-        )
-    return ""
-
-
-def _message_requests_seed(message: str) -> bool:
-    normalized_command = normalize_read_only_command(message)
-    if normalized_command == "seed":
-        return True
-    text = message.lower()
-    return bool(re.search(r"(?i)(^|[^\w])/?seed([^\w]|$)", text) or "种子" in message)

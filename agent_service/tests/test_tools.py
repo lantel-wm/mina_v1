@@ -179,29 +179,20 @@ def test_run_read_only_command_rejects_write_commands(tmp_path) -> None:
     assert "Only read-only commands" in payload["error"]
 
 
-def test_seed_command_requires_seed_request_context(tmp_path) -> None:
+def test_seed_command_is_scheduled_when_model_selects_it(tmp_path) -> None:
     runner = _runner(tmp_path)
 
-    rejected = runner.run(
+    result = runner.run(
         "run_read_only_command",
         {"command": "seed"},
         {**_turn(), "message": "当前游戏版本是多少，这个版本有哪些新特性"},
     )
-    explicit = runner.run(
-        "run_read_only_command",
-        {"command": "seed"},
-        {**_turn(), "message": "请执行 seed，只用只读命令查询当前世界种子。"},
-    )
 
-    rejected_payload = _payload(rejected.content)
-    explicit_payload = _payload(explicit.content)
+    payload = _payload(result.content)
 
-    assert rejected_payload["ok"] is False
-    assert "does not match" in rejected_payload["error"]
-    assert rejected.action is None
-    assert explicit_payload["ok"] is True
-    assert explicit.action is not None
-    assert explicit.action["args"] == {"command": "seed"}
+    assert payload["ok"] is True
+    assert result.action is not None
+    assert result.action["args"] == {"command": "seed"}
 
 
 def test_private_fabric_primitives_are_not_available_to_model(tmp_path) -> None:
