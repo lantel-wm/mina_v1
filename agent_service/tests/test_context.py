@@ -57,6 +57,9 @@ def test_system_prompt_excludes_body_tools_and_allows_current_focus() -> None:
     assert "capability questions" in SYSTEM_PROMPT
     assert "one sentence/一句话" in SYSTEM_PROMPT
     assert "only answer/只回答" in SYSTEM_PROMPT
+    assert "Minecraft chat is narrow" in SYSTEM_PROMPT
+    assert "at most 3 short steps" in SYSTEM_PROMPT
+    assert "avoid long lists" in SYSTEM_PROMPT
     assert "no prefix, suffix, explanation, or punctuation" in SYSTEM_PROMPT
     assert "ask that question in your own voice" in SYSTEM_PROMPT
     assert "no closing offer" in SYSTEM_PROMPT
@@ -256,7 +259,7 @@ def test_build_messages_uses_budgeted_snapshot_without_body_state(tmp_path) -> N
     assert "Memory save reminder" not in context
     assert "body_state" not in context
     assert "null" not in context
-    assert len(context) < 10000
+    assert len(context) < 10300
 
 
 def test_command_policy_reminder_is_dynamic_for_exact_command(tmp_path) -> None:

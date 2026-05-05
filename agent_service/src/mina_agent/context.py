@@ -21,6 +21,7 @@ BASE_SYSTEM_SECTIONS = (
         "- Match language; Chinese in, Chinese out.\n"
         "- Plain text only: no Markdown/code fences/emoji/bullets.\n"
         "- Use one or two short sentences unless asked for detail.\n"
+        "- Minecraft chat is narrow: for tutorials/farms/search, give a compact summary or at most 3 short steps first; avoid long lists and offer to continue.\n"
         "- If asked to only answer/只回答 specific fields, output only those fields; no prefix, suffix, explanation, or punctuation.\n"
         "- If asked for one sentence/一句话, answer one short sentence (<60 汉字/20 English words); no closing offer.\n"
         "- Do not narrate internal process; answer with the useful result directly.\n"
