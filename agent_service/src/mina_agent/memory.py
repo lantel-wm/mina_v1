@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -532,10 +533,11 @@ class MemoryStore:
         player_id: str,
         *,
         world_id: str | None = None,
+        query: str = "",
         limit: int = 10,
         max_chars: int = 1600,
     ) -> list[dict[str, Any]]:
-        scope_filters = _agent_scope_filters(player_id, world_id)
+        scope_filters = _agent_context_scope_filters(player_id)
         if not scope_filters:
             return []
         with self._connect() as conn:
@@ -549,11 +551,47 @@ class MemoryStore:
                 """,
                 (*_scope_where_args(scope_filters), limit),
             ).fetchall()
+            world_rows: list[sqlite3.Row] = []
+            if world_id:
+                world_rows = conn.execute(
+                    """
+                    select scope, scope_id, label, content, importance, updated_at
+                    from agent_memories
+                    where scope = ? and scope_id = ?
+                    order by importance desc, updated_at desc, id desc
+                    limit ?
+                    """,
+                    ("world", str(world_id), max(limit * 3, limit)),
+                ).fetchall()
+            known_players = _known_players(conn)
         memories: list[dict[str, Any]] = []
         used_chars = 0
         seen: set[tuple[str, str, str, str]] = set()
-        for row in rows:
-            item = dict(row)
+        candidates = [dict(row) for row in rows]
+        candidates.extend(
+            item
+            for item in (dict(row) for row in world_rows)
+            if _world_memory_is_relevant(
+                item,
+                query=query,
+                current_player_id=player_id,
+                known_players=known_players,
+            )
+        )
+        candidates.sort(
+            key=lambda item: (
+                -int(item.get("importance") or 0),
+                -float(item.get("updated_at") or 0.0),
+            )
+        )
+        for item in candidates:
+            if _memory_result_is_cross_player_leak(
+                item,
+                query=query,
+                current_player_id=player_id,
+                known_players=known_players,
+            ):
+                continue
             key = _agent_memory_key(item)
             if key in seen:
                 continue
@@ -568,6 +606,7 @@ class MemoryStore:
     def search(self, player_id: str, query: str, limit: int = 8, *, world_id: str | None = None) -> list[dict[str, Any]]:
         pattern = f"%{query[:80]}%"
         agent_scope_keys = [_agent_scope_key(scope, scope_id) for scope, scope_id in _agent_scope_filters(player_id, world_id)]
+        scope_filters = _agent_scope_filters(player_id, world_id)
         with self._connect() as conn:
             try:
                 scope_placeholders = ",".join("?" for _ in agent_scope_keys)
@@ -579,7 +618,7 @@ class MemoryStore:
                     fts_scope_args = ()
                 fts_rows = conn.execute(
                     f"""
-                    select kind, label, content, bm25(memory_fts_v2) as score
+                    select kind, scope_id as fts_scope_id, label, content, bm25(memory_fts_v2) as score
                     from memory_fts_v2
                     where memory_fts_v2 match ?
                       and kind = 'agent_memory'
@@ -593,19 +632,27 @@ class MemoryStore:
                 fts_rows = []
             agent_memories = conn.execute(
                 f"""
-                select 'agent_memory' as kind, label, content, updated_at as created_at
+                select 'agent_memory' as kind, scope, scope_id, label, content, updated_at as created_at
                 from agent_memories
-                where {_scope_where_clause(_agent_scope_filters(player_id, world_id))}
+                where {_scope_where_clause(scope_filters)}
                   and content like ?
                 order by importance desc, updated_at desc, id desc
                 limit ?
                 """,
-                (*_scope_where_args(_agent_scope_filters(player_id, world_id)), pattern, limit),
+                (*_scope_where_args(scope_filters), pattern, limit),
             ).fetchall()
+            known_players = _known_players(conn)
         merged: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str, str]] = set()
         for row in fts_rows + agent_memories:
             item = dict(row)
+            if _memory_result_is_cross_player_leak(
+                item,
+                query=query,
+                current_player_id=player_id,
+                known_players=known_players,
+            ):
+                continue
             key = _agent_memory_key(item)
             if key in seen:
                 continue
@@ -763,10 +810,14 @@ def _agent_scope_filters(player_id: str, world_id: str | None = None) -> list[tu
     return filters
 
 
+def _agent_context_scope_filters(player_id: str) -> list[tuple[str, str]]:
+    return [("global", "*"), ("player", str(player_id or "unknown"))]
+
+
 def _scope_where_clause(filters: list[tuple[str, str]]) -> str:
     if not filters:
         return "0"
-    return " or ".join("(scope = ? and scope_id = ?)" for _ in filters)
+    return "(" + " or ".join("(scope = ? and scope_id = ?)" for _ in filters) + ")"
 
 
 def _scope_where_args(filters: list[tuple[str, str]]) -> tuple[str, ...]:
@@ -781,3 +832,148 @@ def _fts_query(query: str) -> str:
     if not terms:
         return '""'
     return " OR ".join(f'"{term}"' for term in terms[:8])
+
+
+def _world_memory_is_relevant(
+    item: dict[str, Any],
+    *,
+    query: str,
+    current_player_id: str,
+    known_players: list[dict[str, str]],
+) -> bool:
+    if _memory_result_is_cross_player_leak(
+        item,
+        query=query,
+        current_player_id=current_player_id,
+        known_players=known_players,
+    ):
+        return False
+    if _query_mentions_player_named_in_item(item, query, known_players):
+        return True
+    return _memory_relevant_to_query(item, query)
+
+
+def _memory_relevant_to_query(item: dict[str, Any], query: str) -> bool:
+    query_tokens = _memory_relevance_tokens(query)
+    if not query_tokens:
+        return False
+    memory_tokens = _memory_relevance_tokens(_memory_item_text(item))
+    return bool(query_tokens & memory_tokens)
+
+
+def _memory_item_text(item: dict[str, Any]) -> str:
+    return " ".join(str(item.get(key) or "") for key in ("label", "content"))
+
+
+def _known_players(conn: sqlite3.Connection) -> list[dict[str, str]]:
+    rows = conn.execute("select player_id, name from players").fetchall()
+    players: list[dict[str, str]] = []
+    for row in rows:
+        name = str(row["name"] or "").strip()
+        if not name or name.lower() in {"mina"}:
+            continue
+        players.append({"player_id": str(row["player_id"] or ""), "name": name})
+    return players
+
+
+def _memory_result_is_cross_player_leak(
+    item: dict[str, Any],
+    *,
+    query: str,
+    current_player_id: str,
+    known_players: list[dict[str, str]],
+) -> bool:
+    scope = _memory_result_scope(item)
+    if scope not in {"world", "global"}:
+        return False
+    text = _memory_item_text(item)
+    for player in known_players:
+        player_id = str(player.get("player_id") or "")
+        name = str(player.get("name") or "")
+        if not name or player_id == str(current_player_id or ""):
+            continue
+        if not _text_mentions_player_name(text, name):
+            continue
+        if _text_mentions_player_name(query, name):
+            return False
+        return True
+    return False
+
+
+def _query_mentions_player_named_in_item(
+    item: dict[str, Any],
+    query: str,
+    known_players: list[dict[str, str]],
+) -> bool:
+    text = _memory_item_text(item)
+    for player in known_players:
+        name = str(player.get("name") or "")
+        if name and _text_mentions_player_name(text, name) and _text_mentions_player_name(query, name):
+            return True
+    return False
+
+
+def _memory_result_scope(item: dict[str, Any]) -> str:
+    scope = str(item.get("scope") or "")
+    if scope:
+        return scope
+    fts_scope_id = str(item.get("fts_scope_id") or "")
+    if ":" in fts_scope_id:
+        return fts_scope_id.split(":", 1)[0]
+    return ""
+
+
+def _text_mentions_player_name(text: str, player_name: str) -> bool:
+    value = str(text or "")
+    name = str(player_name or "").strip()
+    if not value or not name:
+        return False
+    if name.lower() in value.lower():
+        return True
+    compact_value = _compact_identity_text(value)
+    compact_name = _compact_identity_text(name)
+    return bool(compact_name and compact_name in compact_value)
+
+
+_LATIN_MEMORY_TOKEN = re.compile(r"[a-z0-9_]{3,}", re.IGNORECASE)
+_CJK_MEMORY_SEQUENCE = re.compile(r"[\u3400-\u9fff]{2,}")
+_MEMORY_RELEVANCE_STOP_TOKENS = {
+    "什么",
+    "哪里",
+    "哪儿",
+    "怎么",
+    "现在",
+    "之前",
+    "讨论",
+    "我们",
+    "你们",
+    "他们",
+    "这个",
+    "那个",
+    "世界",
+    "记得",
+    "记住",
+    "多少",
+    "附近",
+}
+_MEMORY_RELEVANCE_STOP_CHARS = set("的我你他她它这那哪什么吗呢啊吧")
+
+
+def _memory_relevance_tokens(text: str) -> set[str]:
+    value = str(text or "").lower()
+    tokens = {match.group(0) for match in _LATIN_MEMORY_TOKEN.finditer(value)}
+    for match in _CJK_MEMORY_SEQUENCE.finditer(value):
+        sequence = match.group(0)
+        for size in (2, 3):
+            for index in range(0, max(0, len(sequence) - size + 1)):
+                token = sequence[index:index + size]
+                if token in _MEMORY_RELEVANCE_STOP_TOKENS:
+                    continue
+                if size == 2 and any(char in _MEMORY_RELEVANCE_STOP_CHARS for char in token):
+                    continue
+                tokens.add(token)
+    return tokens
+
+
+def _compact_identity_text(text: str) -> str:
+    return "".join(re.findall(r"[a-z0-9\u3400-\u9fff]+", str(text or "").lower()))

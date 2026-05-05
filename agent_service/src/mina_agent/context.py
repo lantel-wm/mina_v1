@@ -130,7 +130,7 @@ def build_messages(
     snapshot = turn.get("snapshot") or {}
     user_content = str(turn.get("message") or "").strip()
     conversation_history = memory.conversation_history(player_id)
-    agent_memory = memory.agent_context(player_id, world_id=_world_id(turn), limit=10, max_chars=1600)
+    agent_memory = memory.agent_context(player_id, world_id=_world_id(turn), query=user_content, limit=10, max_chars=1600)
     recent_action_results = memory.recent_action_results_for_player(player_id, limit=4)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]

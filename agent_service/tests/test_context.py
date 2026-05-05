@@ -925,6 +925,32 @@ def test_build_messages_loads_world_memory_from_turn_world_id(tmp_path) -> None:
     assert "另一个世界的村庄在西侧" not in content
 
 
+def test_build_messages_keeps_unrelated_cross_player_world_memory_out_of_context(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.upsert_player({"uuid": "player-1", "name": "zzy"})
+    memory.upsert_player({"uuid": "player-2", "name": "__Yan__Yan__"})
+    memory.add_agent_memory(
+        "world",
+        "world",
+        "__yan__yan__ 的家",
+        "__Yan__Yan__ 的家坐标是 (-17.9, 67, 17.8)，位于主世界出生点附近。",
+        importance=5,
+    )
+    turn = {
+        "request_id": "req-player-isolation",
+        "trigger": "command",
+        "message": "我们之前讨论过什么，我忘记了",
+        "world_id": "world",
+        "player": {"uuid": "player-1", "name": "zzy"},
+        "snapshot": {"world_state": {"day_time": 1200}},
+    }
+
+    messages = build_messages(turn, memory)
+    content = "\n".join(message["content"] for message in messages)
+
+    assert "__Yan__Yan__ 的家坐标" not in content
+
+
 def test_build_messages_does_not_add_explicit_command_keyword_hint(tmp_path) -> None:
     memory = MemoryStore(tmp_path / "mina.sqlite3")
     memory.record_action_event(

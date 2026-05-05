@@ -28,7 +28,7 @@ def test_agent_context_loads_scoped_memory_by_importance(tmp_path) -> None:
     memory.add_agent_memory("player", "player-1", "base", "玩家基地在樱花林旁边", importance=5)
     memory.add_agent_memory("player", "other-player", "base", "其他玩家基地在沙漠", importance=5)
 
-    loaded = memory.agent_context("player-1", world_id="minecraft:overworld", limit=10)
+    loaded = memory.agent_context("player-1", world_id="minecraft:overworld", query="村庄在哪里？", limit=10)
     rendered = "\n".join(item["content"] for item in loaded)
 
     assert "玩家基地在樱花林旁边" in rendered
@@ -36,6 +36,40 @@ def test_agent_context_loads_scoped_memory_by_importance(tmp_path) -> None:
     assert "回答要简洁" in rendered
     assert "其他玩家基地" not in rendered
     assert loaded[0]["label"] == "base"
+
+
+def test_memory_search_does_not_return_unrelated_world_memories(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.upsert_player({"uuid": "player-1", "name": "zzy"})
+    memory.upsert_player({"uuid": "player-2", "name": "__Yan__Yan__"})
+    memory.add_agent_memory(
+        "world",
+        "world",
+        "__yan__yan__ 的家",
+        "__Yan__Yan__ 的家坐标是 (-17.9, 67, 17.8)，位于主世界出生点附近。",
+        importance=4,
+    )
+    memory.add_agent_memory("player", "player-1", "玩家身份", "你是 zzy，不是 YanYan__。YanYan__ 是另一个玩家。")
+
+    unrelated = memory.search("player-1", "zzy 之前的对话 讨论过什么", limit=8, world_id="world")
+    explicit = memory.search("player-1", "YanYan 的家", limit=8, world_id="world")
+
+    assert not any("__Yan__Yan__ 的家坐标" in result.get("content", "") for result in unrelated)
+    assert any("__Yan__Yan__ 的家坐标" in result.get("content", "") for result in explicit)
+
+
+def test_agent_context_loads_world_memory_only_when_relevant(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "mina.sqlite3")
+    memory.upsert_player({"uuid": "player-1", "name": "zzy"})
+    memory.add_agent_memory("world", "world", "meeting_point", "这个世界的集合点在南边海滩", importance=4)
+    memory.add_agent_memory("player", "player-1", "preference", "回答坐标要简短", importance=3)
+
+    greeting = memory.agent_context("player-1", world_id="world", query="hi", limit=10)
+    recall = memory.agent_context("player-1", world_id="world", query="集合点在哪里？", limit=10)
+
+    assert any("回答坐标要简短" in item["content"] for item in greeting)
+    assert not any("集合点在南边海滩" in item["content"] for item in greeting)
+    assert any("集合点在南边海滩" in item["content"] for item in recall)
 
 
 def test_agent_memory_rewrite_updates_existing_fact(tmp_path) -> None:
