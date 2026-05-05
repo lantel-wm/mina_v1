@@ -7,17 +7,23 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 final class MinaChat {
+	private static final Pattern SECTION_LABEL = Pattern.compile(
+		"\\s*(材料清单|需要材料|建造步骤|步骤|原理|注意|建议|提示|简化的建法|简化建法|建法|来源|参考)\\s*([:：])\\s*"
+	);
+	private static final Pattern NUMBERED_ITEM_BOUNDARY = Pattern.compile("\\s+(?=(?:\\d{1,2}[.．、]|[一二三四五六七八九十]+[、.．])\\s*[^0-9\\s])");
+
 	private MinaChat() {
 	}
 
 	static void sendMina(ServerPlayer player, String content) {
-		send(player, minaPrefix(), ChatFormatting.WHITE, content);
+		send(player, minaPrefix(), ChatFormatting.WHITE, formatMinaContent(content));
 	}
 
 	static void broadcastMina(MinecraftServer server, String content) {
-		broadcast(server, minaPrefix(), ChatFormatting.WHITE, content);
+		broadcast(server, minaPrefix(), ChatFormatting.WHITE, formatMinaContent(content));
 	}
 
 	static void sendPlayerEcho(ServerPlayer player, String content) {
@@ -123,6 +129,16 @@ final class MinaChat {
 
 	private static Component continuationPrefix() {
 		return Component.empty();
+	}
+
+	private static String formatMinaContent(String content) {
+		if (content == null || content.isBlank()) {
+			return "";
+		}
+		String formatted = content.replace("\r\n", "\n").replace('\r', '\n');
+		formatted = SECTION_LABEL.matcher(formatted).replaceAll("\n$1$2\n");
+		formatted = NUMBERED_ITEM_BOUNDARY.matcher(formatted).replaceAll("\n");
+		return formatted.replaceAll("\\n{3,}", "\n\n").strip();
 	}
 
 	private static List<String> chatChunks(String content) {
