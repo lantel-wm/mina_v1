@@ -217,18 +217,18 @@ public final class MinaActionExecutor {
 	}
 
 	private static void message(ServerPlayer player, String content) {
-		MinaChat.send(player, "[Mina] ", content);
+		MinaChat.sendMina(player, content);
 	}
 
 	private static void commandOutput(ServerPlayer player, String content) {
 		if (player != null && content != null && !content.isBlank()) {
 			MinaMod.LOGGER.info("mina send command output content={}", content);
-			MinaChat.send(player, "[Mina command] ", content);
+			MinaChat.sendCommandOutput(player, content);
 		}
 	}
 
 	private static void broadcast(MinecraftServer server, String content) {
-		MinaChat.broadcast(server, "[Mina] ", content);
+		MinaChat.broadcastMina(server, content);
 	}
 
 	private static String stripSlash(String command) {

@@ -6,7 +6,6 @@ import com.mina.net.SidecarClient;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -48,11 +47,11 @@ public final class MinaCommands {
 	private int executeMina(CommandSourceStack source, String content) {
 		ServerPlayer player = source.getPlayer();
 		if (player == null) {
-			source.sendFailure(Component.literal("Mina can only be used by a player in v1."));
+			source.sendFailure(MinaChat.failure("Mina can only be used by a player in v1."));
 			return 0;
 		}
 		if (!config.enabled) {
-			source.sendFailure(Component.literal("Mina is disabled in config/mina.json."));
+			source.sendFailure(MinaChat.failure("Mina is disabled in config/mina.json."));
 			return 0;
 		}
 
@@ -62,31 +61,31 @@ public final class MinaCommands {
 	private int status(CommandSourceStack source) {
 		sidecarClient.health(config).whenComplete((response, throwable) -> source.getServer().executeIfPossible(() -> {
 			if (throwable != null) {
-				source.sendFailure(Component.literal("Mina sidecar unhealthy: " + rootMessage(throwable)));
+				source.sendFailure(MinaChat.failure("Mina sidecar unhealthy: " + rootMessage(throwable)));
 				return;
 			}
 			String model = response.has("model") ? response.get("model").getAsString() : "unknown";
 			boolean configured = response.has("deepseek_configured") && response.get("deepseek_configured").getAsBoolean();
-			source.sendSuccess(() -> Component.literal("Mina sidecar ok. model=" + model + ", deepseek_configured=" + configured), false);
+			source.sendSuccess(() -> MinaChat.success("sidecar ok. model=" + model + ", deepseek_configured=" + configured), false);
 		}));
 		return 1;
 	}
 
 	private int reload(CommandSourceStack source) {
 		config.reload();
-		source.sendSuccess(() -> Component.literal("Reloaded Mina config."), false);
+		source.sendSuccess(() -> MinaChat.success("Reloaded Mina config."), false);
 		return 1;
 	}
 
 	private int allow(CommandSourceStack source, String player) {
 		config.allow(player);
-		source.sendSuccess(() -> Component.literal("Allowed Mina actions for " + player), false);
+		source.sendSuccess(() -> MinaChat.success("Allowed Mina actions for " + player), false);
 		return 1;
 	}
 
 	private int deny(CommandSourceStack source, String player) {
 		config.deny(player);
-		source.sendSuccess(() -> Component.literal("Removed Mina action allowlist entry " + player), false);
+		source.sendSuccess(() -> MinaChat.notice("Removed Mina action allowlist entry " + player), false);
 		return 1;
 	}
 

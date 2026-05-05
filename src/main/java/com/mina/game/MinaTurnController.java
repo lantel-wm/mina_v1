@@ -5,7 +5,6 @@ import com.google.gson.JsonObject;
 import com.mina.MinaMod;
 import com.mina.config.MinaConfig;
 import com.mina.net.SidecarClient;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -43,7 +42,7 @@ public final class MinaTurnController {
 			return 0;
 		}
 		if (!config.enabled) {
-			player.sendSystemMessage(Component.literal("Mina is disabled in config/mina.json."));
+			MinaChat.sendError(player, "Mina is disabled in config/mina.json.");
 			return 0;
 		}
 
@@ -58,7 +57,7 @@ public final class MinaTurnController {
 		MinaMod.LOGGER.info("mina turn start requestId={} player={} content={}", resolvedRequestId, player.getGameProfile().name(), content);
 		if (thinkingMessage) {
 			sendPlayerRequestEcho(player, trigger, content);
-			player.sendSystemMessage(Component.literal("[Mina] thinking..."));
+			MinaChat.sendThinking(player);
 		}
 		CompletableFuture<JsonObject> future = sidecarClient.turn(config, payload);
 		activeTurns.put(playerId, future);
@@ -71,7 +70,7 @@ public final class MinaTurnController {
 						return;
 					}
 					MinaMod.LOGGER.warn("Mina sidecar turn failed", throwable);
-					player.sendSystemMessage(Component.literal("[Mina] sidecar request failed: " + rootMessage(throwable)));
+					MinaChat.sendError(player, "sidecar request failed: " + rootMessage(throwable));
 					return;
 				}
 				MinaMod.LOGGER.info("mina turn response requestId={} response={}", resolvedRequestId, response);
@@ -137,7 +136,7 @@ public final class MinaTurnController {
 		if (!"command".equals(trigger)) {
 			return;
 		}
-		MinaChat.send(player, "[You -> Mina] ", content);
+		MinaChat.sendPlayerEcho(player, content);
 	}
 
 	private static String rootMessage(Throwable throwable) {
